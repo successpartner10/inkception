@@ -49,6 +49,24 @@ src/
     utils.js            shared helpers
 ```
 
+## Deploy to GitHub Pages
+
+The repo ships with a Pages workflow (`.github/workflows/deploy.yml`) — push to
+`main` and it builds and publishes automatically.
+
+```bash
+git remote add origin https://github.com/<user>/Inkception.git
+git branch -M main
+git push -u origin main
+```
+
+Then in the GitHub repo settings:
+
+1. **Settings → Pages → Source: "GitHub Actions"** (required for this workflow).
+2. First deploy takes ~1–2 min — check **Actions → Deploy to GitHub Pages**.
+
+Live URL: `https://<user>.github.io/Inkception/`
+
 ## Notes
 
 - The AI suite (auto enhance, remove background, upscale 4×, vectorize) runs
