@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+/*
+ * INKCEPTION — design tokens
+ * Derived from DESIGN.md (monochromatic Zen palette, Round Eight geometry,
+ * Plus Jakarta Sans type). Surfaces are layered greys against pure black;
+ * white is reserved for primary actions / active states.
+ */
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* palette */
+  --color-ink: #000000;          /* primary canvas — pure black */
+  --color-surface: #131313;      /* elevated panels */
+  --color-surface-2: #1c1b1b;    /* container-low */
+  --color-surface-3: #201f1f;    /* container */
+  --color-surface-4: #2a2a2a;    /* container-high */
+  --color-fg: #e5e2e1;           /* on-surface */
+  --color-dim: #c4c7c8;          /* on-surface-variant */
+  --color-mute: #8e9192;         /* outline / secondary text */
+  --color-line: #262626;         /* ghost border */
+  --color-line-2: #3a3a3a;       /* stronger structural line */
+  --color-danger: #ffb4ab;       /* error (rarely used) */
+
+  /* round eight geometry */
+  --radius-ink: 0.5rem;          /* 8px — signature radius */
+  --radius-ink-lg: 1rem;         /* 16px — large containers */
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-ink);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  ::selection {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  :focus-visible {
+    outline: 1px solid #ffffff;
+    outline-offset: 2px;
+  }
+
+  button {
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+  }
+
+  input,
+  textarea {
+    font-family: inherit;
+  }
+}
+
+@layer utilities {
+  /* 20px checkerboard — transparency scaffold behind the canvas */
+  .checkerboard {
+    background-image: conic-gradient(#1a1a1a 25%, #0b0b0b 0 50%, #1a1a1a 0 75%, #0b0b0b 0);
+    background-size: 20px 20px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #2a2a2a;
+    border-radius: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #2a2a2a transparent;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .label-xxs {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .label-xs {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .label-sm {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+}

@@ -1,0 +1,10 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="100" fill="#000000"/>
+  <g transform="translate(130, 130)">
+    <!-- ik Monogram -->
+    <path d="M20 10C20 4.47715 24.4772 0 30 0C35.5228 0 40 4.47715 40 10V10C40 15.5228 35.5228 20 30 20C24.4772 20 20 15.5228 20 10V10Z" fill="white"/>
+    <path d="M20 30V110C20 121.046 28.9543 130 40 130H60C71.0457 130 80 121.046 80 110V30" stroke="white" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M80 60L140 120" stroke="white" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M80 90L140 30" stroke="white" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
