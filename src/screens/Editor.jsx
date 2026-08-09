@@ -32,6 +32,9 @@ import {
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../lib/export'
 import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectBBox } from '../lib/segment'
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
+import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas } from '../lib/encode'
+import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
+import { traceImage } from '../lib/trace'
 import { PROMPT_SUGGESTIONS, matchPrompt } from '../lib/prompts'
 import { COLLAGE_LAYOUTS, computeSlots } from '../lib/collage'
 import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
@@ -117,6 +120,9 @@ export function Editor({ project, onBack }) {
   const [motionOpen, setMotionOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
   const [collageOpen, setCollageOpen] = useState(false)
+  const [upscaleOpen, setUpscaleOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteColors, setPaletteColors] = useState([])
   const [eraseMode, setEraseMode] = useState(null) // null | 'erase' | 'fill'
   const [motion, setMotion] = useState({ mode: 'off', speed: 1 })
   const [extraLayers, setExtraLayers] = useState([])
@@ -746,26 +752,6 @@ export function Editor({ project, onBack }) {
         showToast('Auto enhance applied')
       },
     },
-    upscale: {
-      title: 'Upscale 4×',
-      steps: ['Analyzing detail', 'Upsampling', 'Sharpening', 'Rendering 4×'],
-      finalize: async () => {
-        const src = imageSrcRef.current
-        if (!src) return
-        const img = await loadImageElement(src)
-        const w = img.naturalWidth * 4
-        const h = img.naturalHeight * 4
-        const cv = document.createElement('canvas')
-        cv.width = w
-        cv.height = h
-        const ctx = cv.getContext('2d')
-        ctx.imageSmoothingQuality = 'high'
-        ctx.filter = cssFilterString(filtersRef.current)
-        ctx.drawImage(img, 0, 0, w, h)
-        await loadIntoCanvas(cv.toDataURL('image/png'))
-        showToast(`Upscaled 4× → ${w}×${h}`, 'expand')
-      },
-    },
     vectorize: {
       title: 'Vectorize',
       steps: ['Detecting edges', 'Tracing contours', 'Simplifying paths', 'Building SVG'],
@@ -773,6 +759,48 @@ export function Editor({ project, onBack }) {
         setAiView('vectorize')
       },
     },
+  }
+
+  /* Upscale 2× / 4× / 8× — high-quality resample */
+  const runUpscale = async (factor) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setUpscaleOpen(false)
+    setBusy({ kind: 'real', title: `Upscale ${factor}×`, step: 'Rendering at higher resolution…', progress: 45 })
+    try {
+      const img = await loadImageElement(src)
+      const w = img.naturalWidth * factor
+      const h = img.naturalHeight * factor
+      const cv = document.createElement('canvas')
+      cv.width = w
+      cv.height = h
+      const ctx = cv.getContext('2d')
+      ctx.imageSmoothingQuality = 'high'
+      ctx.filter = cssFilterString(filtersRef.current)
+      ctx.drawImage(img, 0, 0, w, h)
+      await loadIntoCanvas(cv.toDataURL('image/png'))
+      setBusy(null)
+      showToast(`Upscaled ${factor}× → ${w}×${h}`, 'expand')
+    } catch {
+      setBusy(null)
+      showToast('Upscale failed', 'close')
+    }
+  }
+
+  /* Color palette extraction — reads actual image content */
+  const runPalette = async () => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy({ kind: 'real', title: 'Color Palette', step: 'Analyzing dominant colors…', progress: 50 })
+    try {
+      const colors = await extractPalette(src, 6)
+      setPaletteColors(colors)
+      setPaletteOpen(true)
+      setBusy(null)
+    } catch {
+      setBusy(null)
+      showToast('Palette extraction failed', 'close')
+    }
   }
 
   const runAi = (kind) => {
@@ -1072,6 +1100,33 @@ export function Editor({ project, onBack }) {
   )
 
   /* --------------------------------- export -------------------------------- */
+  const EXPORT_FORMATS = [
+    { id: 'png', label: 'PNG', hint: 'Lossless' },
+    { id: 'jpg', label: 'JPG', hint: 'Compressed' },
+    { id: 'webp', label: 'WebP', hint: 'Modern' },
+    { id: 'gif', label: 'GIF', hint: 'Animated' },
+    { id: 'mp4', label: 'MP4', hint: 'Video' },
+    { id: 'pdf', label: 'PDF', hint: 'Print' },
+    { id: 'psd', label: 'PSD', hint: 'Layers' },
+    { id: 'svg', label: 'SVG', hint: 'Vector' },
+  ]
+
+  const renderFrameCanvas = async (p) => {
+    const c = fabricRef.current
+    if (imageSrcRef.current) {
+      return renderExport(imageSrcRef.current, {
+        w: p.w,
+        h: p.h,
+        filterString: cssFilterString(filtersRef.current),
+      })
+    }
+    if (c && c.getObjects().length) {
+      const mul = Math.max(1, p.w / Math.max(1, c.getWidth()))
+      return c.toDataURL({ format: 'png', multiplier: mul })
+    }
+    return null
+  }
+
   const doExport = async () => {
     const c = fabricRef.current
     if (!imageSrcRef.current && !(c && c.getObjects().length)) {
@@ -1085,34 +1140,118 @@ export function Editor({ project, onBack }) {
           ? { id: 'original', name: 'Original', w: naturalRef.current.w, h: naturalRef.current.h }
           : EXPORT_PRESETS.find((x) => x.id === preset)
       if (!p || !p.w || !p.h) throw new Error('invalid preset')
-      let dataUrl
-      if (imageSrcRef.current) {
-        dataUrl = await renderExport(imageSrcRef.current, {
-          w: p.w,
-          h: p.h,
-          filterString: cssFilterString(filtersRef.current),
+      const base = slug(project.name)
+      const W = p.w
+      const H = p.h
+
+      if (format === 'gif' || format === 'mp4') {
+        // animated export from the motion effect
+        const src = imageSrcRef.current
+        if (!src) {
+          showToast('GIF/MP4 need an image — animate via Motion first', 'info')
+          setExporting(false)
+          return
+        }
+        setBusy({ kind: 'real', title: format === 'gif' ? 'Export GIF' : 'Export MP4', step: 'Rendering animation…', progress: 40 })
+        const mode = motion.mode === 'off' ? 'zoom' : motion.mode
+        const { frames, fps } = await renderMotionFrames({
+          src,
+          filter: cssFilterString(filtersRef.current),
+          mode,
+          speed: motion.speed || 1,
+          w: W,
+          h: H,
+          seconds: 2.4,
+          fps: 20,
         })
-      } else if (c) {
-        // blank document (e.g. collage on a new canvas) → render canvas objects
-        const mul = Math.max(1, p.w / Math.max(1, c.getWidth()))
-        dataUrl = c.toDataURL({ format: 'png', multiplier: mul })
+        if (format === 'gif') {
+          const blob = gifEncode(frames, Math.round(1000 / fps))
+          downloadBlob(blob, `${base}-${W}x${H}.gif`)
+        } else {
+          const mime = pickVideoMime()
+          if (!mime) throw new Error('video unsupported')
+          const blob = await recordFrames(frames, { fps, mimeType: mime })
+          const ext = mime.includes('mp4') ? 'mp4' : 'webm'
+          downloadBlob(blob, `${base}-${W}x${H}.${ext}`)
+        }
+        setBusy(null)
+        setExportOpen(false)
+        showToast(`Exported ${format.toUpperCase()} (animated)`, 'download')
+        return
       }
-      const ext = format === 'jpg' ? 'jpg' : 'png'
-      if (format === 'jpg') {
-        const img = await loadImageElement(dataUrl)
+
+      let dataUrl = await renderFrameCanvas(p)
+      if (!dataUrl) {
+        showToast('Nothing to export', 'info')
+        return
+      }
+      setBusy({ kind: 'real', title: `Export ${format.toUpperCase()}`, step: 'Encoding…', progress: 60 })
+
+      if (format === 'svg') {
+        // vector: fabric objects → SVG, else trace the image
+        let svg = ''
+        if (c && c.getObjects().length) {
+          svg = c.toSVG()
+        } else {
+          const r = await traceImage(imageSrcRef.current, { detail: 50, smoothing: 40 })
+          svg = r.svg
+        }
+        downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${base}-${W}x${H}.svg`)
+      } else if (format === 'pdf') {
+        const jpg = await new Promise((res) => {
+          const im = new Image()
+          im.onload = () => {
+            const cv = document.createElement('canvas')
+            cv.width = W
+            cv.height = H
+            const ctx = cv.getContext('2d')
+            ctx.drawImage(im, 0, 0, W, H)
+            res(cv.toDataURL('image/jpeg', 0.9))
+          }
+          im.src = dataUrl
+        })
+        const blob = pdfFromJpeg(jpg, W, H)
+        downloadBlob(blob, `${base}-${W}x${H}.pdf`)
+      } else if (format === 'psd') {
+        const im = await loadImageElement(dataUrl)
         const cv = document.createElement('canvas')
-        cv.width = p.w
-        cv.height = p.h
+        cv.width = W
+        cv.height = H
         const ctx = cv.getContext('2d')
         ctx.fillStyle = '#000000'
-        ctx.fillRect(0, 0, p.w, p.h)
-        ctx.drawImage(img, 0, 0)
-        dataUrl = cv.toDataURL('image/jpeg', 0.92)
+        ctx.fillRect(0, 0, W, H)
+        ctx.drawImage(im, 0, 0, W, H)
+        const blob = psdFromCanvas(cv)
+        downloadBlob(blob, `${base}-${W}x${H}.psd`)
+      } else {
+        // png / jpg / webp
+        const ext = format === 'jpg' ? 'jpg' : format
+        if (format === 'jpg') {
+          const im = await loadImageElement(dataUrl)
+          const cv = document.createElement('canvas')
+          cv.width = W
+          cv.height = H
+          const ctx = cv.getContext('2d')
+          ctx.fillStyle = '#000000'
+          ctx.fillRect(0, 0, W, H)
+          ctx.drawImage(im, 0, 0)
+          dataUrl = cv.toDataURL('image/jpeg', 0.92)
+        } else if (format === 'webp') {
+          const im = await loadImageElement(dataUrl)
+          const cv = document.createElement('canvas')
+          cv.width = W
+          cv.height = H
+          const ctx = cv.getContext('2d')
+          ctx.drawImage(im, 0, 0, W, H)
+          dataUrl = cv.toDataURL('image/webp', 0.92)
+        }
+        downloadDataUrl(dataUrl, `${base}-${W}x${H}.${ext}`)
       }
-      downloadDataUrl(dataUrl, `${slug(project.name)}-${p.w}x${p.h}.${ext}`)
+      setBusy(null)
       setExportOpen(false)
-      showToast(`Exported ${p.w}×${p.h} ${ext.toUpperCase()}`, 'download')
+      showToast(`Exported ${W}×${H} ${format.toUpperCase()}`, 'download')
     } catch {
+      setBusy(null)
       showToast('Export failed', 'close')
     } finally {
       setExporting(false)
@@ -1169,6 +1308,8 @@ export function Editor({ project, onBack }) {
           onDecompose={() => runDecompose()}
           onEraser={(m) => startErase(m)}
           onCollage={() => setCollageOpen(true)}
+          onUpscale={() => setUpscaleOpen(true)}
+          onPalette={() => runPalette()}
           upscaled={upscaled}
           onPromptAction={onPromptAction}
         />
@@ -1621,6 +1762,72 @@ export function Editor({ project, onBack }) {
         <CollageBody onBuild={buildCollage} />
       </Modal>
 
+      {/* ----------------------------- upscale modal ------------------------------ */}
+      <Modal
+        open={upscaleOpen}
+        onClose={() => setUpscaleOpen(false)}
+        title="AI Upscale"
+        subtitle="High-quality resample — choose your factor"
+        width="max-w-sm"
+      >
+        <div className="grid grid-cols-3 gap-2">
+          {[2, 4, 8].map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => runUpscale(f)}
+              className="flex flex-col items-center gap-1 rounded-ink border border-line px-3 py-4 transition-colors hover:border-white"
+            >
+              <span className="text-lg font-bold text-fg">{f}×</span>
+              <span className="text-[9px] text-mute">
+                {naturalRef.current.w ? Math.round(naturalRef.current.w * f) : '–'}×
+                {naturalRef.current.h ? Math.round(naturalRef.current.h * f) : '–'}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+          2× for most work · 4× balanced · 8× for large prints (8× can be slow on big originals).
+        </p>
+      </Modal>
+
+      {/* ----------------------------- palette modal ------------------------------ */}
+      <Modal
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        title="Color Palette"
+        subtitle="Dominant colors extracted from the image"
+        width="max-w-sm"
+      >
+        {paletteColors.length > 0 && (
+          <>
+            <div className="flex h-16 w-full overflow-hidden rounded-ink-lg border border-line">
+              {paletteColors.map((p) => (
+                <div key={p.hex} className="h-full flex-1" style={{ background: p.hex }} title={p.hex} />
+              ))}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-1.5">
+              {paletteColors.map((p) => (
+                <button
+                  key={p.hex}
+                  type="button"
+                  onClick={() => {
+                    try {
+                      navigator.clipboard.writeText(p.hex)
+                      showToast(`Copied ${p.hex}`, 'check')
+                    } catch { /* clipboard unavailable */ }
+                  }}
+                  className="rounded-ink border border-line px-2 py-1.5 text-center font-mono text-[10px] text-dim transition-colors hover:border-white hover:text-white"
+                >
+                  {p.hex}
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-[10px] text-mute">Tap a hex to copy. Real color analysis — no preset.</p>
+          </>
+        )}
+      </Modal>
+
       {/* -------------------------------- export modal ----------------------------- */}
       <Modal
         open={exportOpen}
@@ -1700,24 +1907,34 @@ export function Editor({ project, onBack }) {
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <span className="label-xs text-mute">Format</span>
-            <div className="flex rounded-ink border border-line p-0.5">
-              {['png', 'jpg'].map((fm) => (
+            <div className="flex flex-wrap gap-1">
+              {EXPORT_FORMATS.map((fm) => (
                 <button
-                  key={fm}
+                  key={fm.id}
                   type="button"
-                  onClick={() => setFormat(fm)}
+                  title={fm.hint}
+                  onClick={() => setFormat(fm.id)}
                   className={cn(
-                    'rounded-[6px] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors',
-                    format === fm ? 'bg-white text-black' : 'text-dim hover:text-white',
+                    'rounded-[6px] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors',
+                    format === fm.id ? 'bg-white text-black' : 'border border-line text-dim hover:text-white',
                   )}
                 >
-                  {fm}
+                  {fm.label}
                 </button>
               ))}
             </div>
           </div>
           <span className="label-xs text-mute">{imageLabel}</span>
         </div>
+        {(format === 'gif' || format === 'mp4') && (
+          <p className="mt-2 text-[10px] text-mute">
+            Animated — uses the Motion effect ({motion.mode === 'off' ? 'slow zoom' : motion.mode}). Enable
+            Motion in the AI tab for control.
+          </p>
+        )}
+        {format === 'svg' && <p className="mt-2 text-[10px] text-mute">Vector export of canvas objects; photos are edge-traced.</p>}
+        {format === 'psd' && <p className="mt-2 text-[10px] text-mute">Flattened RGB PSD — opens in Photoshop/affinity.</p>}
+        {format === 'pdf' && <p className="mt-2 text-[10px] text-mute">Single-page PDF at the selected size (JPEG-embedded).</p>}
 
         <div className="mt-6 flex items-center justify-end gap-3">
           <Button variant="ghost" onClick={() => setExportOpen(false)}>
@@ -1886,9 +2103,9 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
 
 /* -------------------------------- tab: AI --------------------------------- */
 function AITab({
-  busy, onRemoveBg, onReplaceBg, onEnhance, onUpscale, onVectorize,
+  busy, onRemoveBg, onReplaceBg, onEnhance, onVectorize,
   onRetouch, onDenoise, onLut, onCrop, onMotion, onBatch, onDecompose, onEraser,
-  onCollage, upscaled, onPromptAction,
+  onCollage, onUpscale, onPalette, upscaled, onPromptAction,
 }) {
   const [phrase, setPhrase] = useState('')
 
@@ -1919,7 +2136,7 @@ function AITab({
         { icon: 'wind', title: 'Denoise', desc: 'Adaptive noise removal', onClick: onDenoise },
         { icon: 'sliders', title: 'Color Grade', desc: 'Match reference look', onClick: onLut },
         { icon: 'sparkle', title: 'Auto Enhance', desc: 'Exposure & color', onClick: onEnhance },
-        { icon: 'expand', title: 'Upscale 4×', desc: 'Resolution', onClick: onUpscale, disabled: upscaled, tag: upscaled ? 'Applied' : undefined },
+        { icon: 'expand', title: 'Upscale', desc: '2× · 4× · 8×', onClick: onUpscale, disabled: upscaled, tag: upscaled ? 'Applied' : undefined },
         { icon: 'penTool', title: 'Vectorize', desc: 'Raster → SVG', onClick: onVectorize },
       ],
     },
@@ -1929,6 +2146,7 @@ function AITab({
         { icon: 'play', title: 'Motion', desc: 'Animated preview', onClick: onMotion },
         { icon: 'layers', title: 'Batch AI', desc: 'Many images, one op', onClick: onBatch },
         { icon: 'grid', title: 'Collage Studio', desc: '2–12 photos · 12 layouts', onClick: onCollage },
+        { icon: 'droplet', title: 'Color Palette', desc: 'Extract dominant colors', onClick: onPalette },
       ],
     },
   ]

@@ -4,6 +4,7 @@
 
 import { useRef, useState } from 'react'
 import { cn, fileToDataUrl, formatDate } from '../lib/utils'
+import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS } from '../lib/export'
 import { Icon } from '../components/Icon'
 import { Button, Chip, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
@@ -14,20 +15,18 @@ const FILTERS = [
   { id: 'archived', label: 'Archived' },
 ]
 
-const TEMPLATES = [
-  { id: 'sq', label: 'Square', dim: '1080×1080', w: 1080, h: 1080, icon: 'grid' },
-  { id: 'portrait', label: 'Portrait', dim: '1080×1350', w: 1080, h: 1350, icon: 'image' },
-  { id: 'story', label: 'Story / Reel', dim: '1080×1920', w: 1080, h: 1920, icon: 'expand' },
-  { id: 'wide', label: 'Wide', dim: '1920×1080', w: 1920, h: 1080, icon: 'fit' },
-  { id: 'poster', label: 'Poster', dim: '1350×1800', w: 1350, h: 1800, icon: 'layers' },
-]
-
 export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTemplate }) {
   const [filter, setFilter] = useState('all')
   const [pendingDelete, setPendingDelete] = useState(null)
   const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateGroup, setTemplateGroup] = useState('all')
   const [importing, setImporting] = useState(false)
   const fileRef = useRef(null)
+
+  const recent = [...projects]
+    .sort((a, b) => new Date(b.opened || b.date || 0) - new Date(a.opened || a.date || 0))
+    .slice(0, 5)
+  const templatePresets = EXPORT_PRESETS.filter((p) => templateGroup === 'all' || p.platform === templateGroup)
 
   const onFile = async (e) => {
     const f = e.target.files && e.target.files[0]
@@ -97,6 +96,44 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
             </div>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
           </section>
+
+          {/* Recent files */}
+          {recent.length > 0 && (
+            <section className="mt-10">
+              <div className="flex items-center gap-3">
+                <h2 className="label-sm text-fg">Recent Files</h2>
+                <Chip active>{recent.length}</Chip>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {recent.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onOpen(p.id)}
+                    className="group flex items-center gap-3 rounded-ink border border-line p-2.5 text-left transition-colors hover:border-white"
+                  >
+                    <div className="h-11 w-11 shrink-0 overflow-hidden rounded-ink border border-line bg-surface-2">
+                      {p.img && !p.template ? (
+                        <img src={p.img} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-mute">
+                          <Icon name="grid" size={16} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-semibold text-fg">{p.name}</div>
+                      <div className="mt-0.5 text-[10px] text-mute">
+                        {p.template ? `${p.template.w}×${p.template.h}` : `${p.layers} Layers`} ·{' '}
+                        {formatDate(p.opened || p.date)}
+                      </div>
+                    </div>
+                    <Icon name="chevronRight" size={14} className="shrink-0 text-mute opacity-0 transition-opacity group-hover:opacity-100" />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Projects */}
           <section className="mt-12">
@@ -191,36 +228,96 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
         </span>
       </footer>
 
-      {/* Template picker — start a project from a blank canvas size */}
+      {/* Template picker — blank canvas at any export size (grouped) */}
       <Modal
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
         title="Open Template"
-        subtitle="Start with a blank canvas at a preset size"
-        width="max-w-md"
+        subtitle="Blank canvas at any export size — grouped by platform"
+        width="max-w-2xl"
       >
-        <div className="grid grid-cols-2 gap-3">
-          {TEMPLATES.map((t) => (
+        <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
+          <button
+            type="button"
+            onClick={() => setTemplateGroup('all')}
+            className={cn(
+              'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+              templateGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+            )}
+          >
+            All · {EXPORT_PRESETS.length}
+          </button>
+          {EXPORT_GROUPS.map((g) => (
             <button
-              key={t.id}
+              key={g}
               type="button"
-              onClick={() => {
-                setTemplateOpen(false)
-                onTemplate({ w: t.w, h: t.h, label: t.label })
-              }}
-              className="flex items-center gap-3 rounded-ink border border-line p-3.5 text-left transition-colors hover:border-white"
+              onClick={() => setTemplateGroup(g)}
+              className={cn(
+                'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                templateGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+              )}
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
-                <Icon name={t.icon} size={16} />
-              </span>
-              <span>
-                <span className="block text-xs font-semibold text-fg">{t.label}</span>
-                <span className="mt-0.5 block text-[10px] text-mute">{t.dim}</span>
-              </span>
+              {g} · {EXPORT_PRESETS.filter((p) => p.platform === g).length}
             </button>
           ))}
         </div>
-        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+        <div className="mt-3 max-h-[46vh] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
+          {templateGroup === 'all'
+            ? EXPORT_GROUPS.map((g) => (
+                <div key={g}>
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <Icon name={PLATFORM_ICONS[g]} size={13} className="text-mute" />
+                    <span className="label-xs text-dim">{g}</span>
+                    <span className="h-px flex-1 bg-line" />
+                  </div>
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    {EXPORT_PRESETS.filter((p) => p.platform === g).map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          setTemplateOpen(false)
+                          onTemplate({ w: t.w, h: t.h, label: `${t.name} (${t.w}×${t.h})` })
+                        }}
+                        className="flex items-center gap-2 rounded-ink border border-line px-2.5 py-2 text-left transition-colors hover:border-white"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
+                          <Icon name={PLATFORM_ICONS[t.platform]} size={13} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[11px] font-semibold text-fg">{t.name}</span>
+                          <span className="block text-[9px] text-mute">{t.w}×{t.h} · {t.ratio}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))
+            : (
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {templatePresets.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setTemplateOpen(false)
+                      onTemplate({ w: t.w, h: t.h, label: `${t.name} (${t.w}×${t.h})` })
+                    }}
+                    className="flex items-center gap-2 rounded-ink border border-line px-2.5 py-2 text-left transition-colors hover:border-white"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
+                      <Icon name={PLATFORM_ICONS[t.platform]} size={13} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[11px] font-semibold text-fg">{t.name}</span>
+                      <span className="block text-[9px] text-mute">{t.w}×{t.h} · {t.ratio}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+        </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-mute">
           Opens the editor with a blank document — then use Collage Studio to add photos, or Open
           to import an image.
         </p>

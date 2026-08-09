@@ -75,6 +75,7 @@ export default function App() {
   const openProject = (id) => {
     setCurrentId(id)
     setView('editor')
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, opened: new Date().toISOString() } : p)))
   }
 
   const deleteProject = (id) => setProjects((ps) => ps.filter((p) => p.id !== id))
