@@ -38,7 +38,15 @@ function loadProjects() {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length) return parsed
+      if (Array.isArray(parsed) && parsed.length) {
+        // blob: URLs die after a page reload — replace them so the project
+        // still opens (user re-imports the image via Open).
+        return parsed.map((p) =>
+          typeof p.img === 'string' && p.img.startsWith('blob:')
+            ? { ...p, img: asset('samples/bw.jpg') }
+            : p,
+        )
+      }
     }
   } catch {
     /* fall through to seeds */
@@ -67,13 +75,16 @@ export default function App() {
     document.title = current ? `${current.name} — Inkception` : 'Inkception — AI Design Studio'
   }, [current])
 
-  const createProject = (img) => {
+  const createProject = (img, template) => {
     const p = {
       id: `p-${Date.now()}`,
-      name: `Untitled ${String(untitledCounter++).padStart(2, '0')}`,
+      name: template
+        ? `${template.label} Template`
+        : `Untitled ${String(untitledCounter++).padStart(2, '0')}`,
       layers: 4,
       date: new Date().toISOString(),
       img: img || asset('samples/bw.jpg'),
+      ...(template ? { template: { w: template.w, h: template.h } } : {}),
     }
     setProjects((ps) => [p, ...ps])
     setCurrentId(p.id)
@@ -110,6 +121,7 @@ export default function App() {
       onNew={createProject}
       onDelete={deleteProject}
       onImportMedia={(url) => createProject(url)}
+      onTemplate={(t) => createProject(null, t)}
     />
   )
 }

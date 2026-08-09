@@ -127,6 +127,7 @@ export function Editor({ project, onBack }) {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [upscaled, setUpscaled] = useState(false)
+  const [isTemplate, setIsTemplate] = useState(false)
 
   useEffect(() => {
     beforeAfterRef.current = beforeAfter
@@ -150,16 +151,21 @@ export function Editor({ project, onBack }) {
   const showToast = useCallback((msg, icon) => setToast({ msg, icon }), [])
 
   /* ------------------------------ fit / sizing ----------------------------- */
-  const computeFit = useCallback(() => {
+  const calcFitFor = useCallback((w, h) => {
     const stage = stageWrapRef.current
-    const nat = naturalRef.current
-    if (!stage || !nat.w || !nat.h) return
+    if (!stage || !w || !h) return null
     const availW = stage.clientWidth - 64
     const availH = stage.clientHeight - 64
-    if (availW < 40 || availH < 40) return
-    const s = Math.min(availW / nat.w, availH / nat.h)
-    setFit({ w: Math.round(nat.w * s), h: Math.round(nat.h * s) })
+    if (availW < 40 || availH < 40) return null
+    const s = Math.min(availW / w, availH / h)
+    return { w: Math.round(w * s), h: Math.round(h * s) }
   }, [])
+
+  const computeFit = useCallback(() => {
+    const nat = naturalRef.current
+    const f = calcFitFor(nat.w, nat.h)
+    if (f) setFit(f)
+  }, [calcFitFor])
 
   useEffect(() => {
     computeFit()
@@ -292,6 +298,7 @@ export function Editor({ project, onBack }) {
       setFx({ ...QUICK_DEFAULTS })
       setLayerOpacity(100)
       setBlendMode('normal')
+      setIsTemplate(false)
       setImageSrc(src)
       imageSrcRef.current = src
       try {
@@ -306,6 +313,13 @@ export function Editor({ project, onBack }) {
   )
 
   useEffect(() => {
+    if (project.template) {
+      // blank document template (from Gallery → Open Template)
+      setIsTemplate(true)
+      naturalRef.current = { w: project.template.w, h: project.template.h }
+      computeFit()
+      return
+    }
     const base = import.meta.env.BASE_URL
     loadIntoCanvas(project.img || `${base}samples/bw.jpg`)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1258,19 +1272,36 @@ export function Editor({ project, onBack }) {
           >
             {!imageSrc && extraLayers.length === 0 && (
               <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-ink">
-                <span className="flex h-14 w-14 items-center justify-center rounded-ink-lg border border-line text-mute">
-                  <Icon name="image" size={24} />
-                </span>
-                <p className="text-sm text-dim">No image loaded</p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon="folder"
-                  onClick={() => fileRef.current && fileRef.current.click()}
-                >
-                  Open File
-                </Button>
-                <p className="text-[10px] text-mute">…or drop an image anywhere on the canvas</p>
+                {isTemplate ? (
+                  <>
+                    <span className="flex h-14 w-14 items-center justify-center rounded-ink-lg border border-line text-mute">
+                      <Icon name="grid" size={24} />
+                    </span>
+                    <p className="text-sm text-dim">
+                      Blank {naturalRef.current.w || '–'}×{naturalRef.current.h || '–'} canvas
+                    </p>
+                    <Button variant="primary" size="sm" icon="grid" onClick={() => setCollageOpen(true)}>
+                      Add Photos / Collage
+                    </Button>
+                    <p className="text-[10px] text-mute">or open a file to start with an image</p>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex h-14 w-14 items-center justify-center rounded-ink-lg border border-line text-mute">
+                      <Icon name="image" size={24} />
+                    </span>
+                    <p className="text-sm text-dim">No image loaded</p>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon="folder"
+                      onClick={() => fileRef.current && fileRef.current.click()}
+                    >
+                      Open File
+                    </Button>
+                    <p className="text-[10px] text-mute">…or drop an image anywhere on the canvas</p>
+                  </>
+                )}
               </div>
             )}
 
@@ -2267,6 +2298,28 @@ function BatchBody({ onRun, result, onClear }) {
   )
 }
 
+/* ------------------------- collage layout preview ------------------------- */
+function LayoutPreview({ layoutId, active }) {
+  const meta = COLLAGE_LAYOUTS.find((l) => l.id === layoutId)
+  const slots = computeSlots(layoutId, meta.max, 1, 1)
+  return (
+    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[4px] bg-surface-2">
+      {slots.map((s, i) => (
+        <span
+          key={i}
+          className={cn('absolute rounded-[2px]', active ? 'bg-white' : 'bg-line-2')}
+          style={{
+            left: `${s.x * 100}%`,
+            top: `${s.y * 100}%`,
+            width: `${s.w * 100}%`,
+            height: `${s.h * 100}%`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 /* ----------------------------- collage studio body ------------------------ */
 const COLLAGE_SIZES = [
   { id: 'sq', label: 'Square', w: 1080, h: 1080 },
@@ -2405,12 +2458,12 @@ function CollageBody({ onBuild }) {
         </label>
       )}
 
-      {/* Layouts */}
+      {/* Layouts — collage template list with visual previews */}
       <div className="mt-4 flex items-center gap-2">
-        <span className="label-xs text-dim">Layouts</span>
+        <span className="label-xs text-dim">Collage Templates</span>
         <span className="h-px flex-1 bg-line" />
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+      <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
         {COLLAGE_LAYOUTS.map((l) => {
           const ok = photos.length >= l.min && photos.length <= l.max
           return (
@@ -2420,12 +2473,23 @@ function CollageBody({ onBuild }) {
               onClick={() => setLayout(l.id)}
               disabled={!ok}
               className={cn(
-                'rounded-ink border px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] transition-colors',
-                layout === l.id && ok ? 'border-white bg-white text-black' : 'border-line text-dim hover:border-line-2 hover:text-white',
-                !ok && 'opacity-35',
+                'group rounded-ink border p-1.5 transition-colors',
+                layout === l.id && ok
+                  ? 'border-white bg-surface-2'
+                  : ok
+                    ? 'border-line hover:border-line-2'
+                    : 'border-line opacity-35',
               )}
             >
-              {l.name}
+              <LayoutPreview layoutId={l.id} active={layout === l.id && ok} />
+              <span
+                className={cn(
+                  'mt-1 block truncate text-center text-[9px] font-bold uppercase tracking-[0.04em]',
+                  layout === l.id && ok ? 'text-white' : 'text-dim',
+                )}
+              >
+                {l.name}
+              </span>
             </button>
           )
         })}

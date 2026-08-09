@@ -3,9 +3,9 @@
 // hero card, 2-col scrollable project grid.
 
 import { useRef, useState } from 'react'
-import { cn, formatDate } from '../lib/utils'
+import { cn, fileToDataUrl, formatDate } from '../lib/utils'
 import { Icon } from '../components/Icon'
-import { Button, Chip, IconBtn } from '../components/ui'
+import { Button, Chip, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
 
 const FILTERS = [
@@ -14,15 +14,35 @@ const FILTERS = [
   { id: 'archived', label: 'Archived' },
 ]
 
-export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia }) {
+const TEMPLATES = [
+  { id: 'sq', label: 'Square', dim: '1080×1080', w: 1080, h: 1080, icon: 'grid' },
+  { id: 'portrait', label: 'Portrait', dim: '1080×1350', w: 1080, h: 1350, icon: 'image' },
+  { id: 'story', label: 'Story / Reel', dim: '1080×1920', w: 1080, h: 1920, icon: 'expand' },
+  { id: 'wide', label: 'Wide', dim: '1920×1080', w: 1920, h: 1080, icon: 'fit' },
+  { id: 'poster', label: 'Poster', dim: '1350×1800', w: 1350, h: 1800, icon: 'layers' },
+]
+
+export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTemplate }) {
   const [filter, setFilter] = useState('all')
   const [pendingDelete, setPendingDelete] = useState(null)
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [importing, setImporting] = useState(false)
   const fileRef = useRef(null)
 
-  const onFile = (e) => {
+  const onFile = async (e) => {
     const f = e.target.files && e.target.files[0]
-    if (f && f.type.startsWith('image/')) onImportMedia(URL.createObjectURL(f))
     e.target.value = ''
+    if (!f || !f.type.startsWith('image/')) return
+    setImporting(true)
+    try {
+      // data URL (not blob:) so the project survives page reloads
+      const dataUrl = await fileToDataUrl(f)
+      onImportMedia(dataUrl)
+    } catch {
+      onImportMedia(URL.createObjectURL(f))
+    } finally {
+      setImporting(false)
+    }
   }
 
   const now = Date.now()
@@ -64,8 +84,12 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia }) {
                 size="lg"
                 icon="upload"
                 onClick={() => fileRef.current && fileRef.current.click()}
+                disabled={importing}
               >
-                Open / Add Media
+                {importing ? 'Importing…' : 'Open / Add Media'}
+              </Button>
+              <Button variant="ghost" size="lg" icon="grid" onClick={() => setTemplateOpen(true)}>
+                Templates
               </Button>
               <span className="hidden text-[10px] font-semibold uppercase tracking-[0.14em] text-mute sm:block">
                 ⌘N
@@ -136,6 +160,41 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia }) {
           {window.__INKCEPTION_VERSION__ || 'v-dev'} · © 2026 Inkception
         </span>
       </footer>
+
+      {/* Template picker — start a project from a blank canvas size */}
+      <Modal
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        title="Open Template"
+        subtitle="Start with a blank canvas at a preset size"
+        width="max-w-md"
+      >
+        <div className="grid grid-cols-2 gap-3">
+          {TEMPLATES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setTemplateOpen(false)
+                onTemplate({ w: t.w, h: t.h, label: t.label })
+              }}
+              className="flex items-center gap-3 rounded-ink border border-line p-3.5 text-left transition-colors hover:border-white"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
+                <Icon name={t.icon} size={16} />
+              </span>
+              <span>
+                <span className="block text-xs font-semibold text-fg">{t.label}</span>
+                <span className="mt-0.5 block text-[10px] text-mute">{t.dim}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+          Opens the editor with a blank document — then use Collage Studio to add photos, or Open
+          to import an image.
+        </p>
+      </Modal>
     </div>
   )
 }

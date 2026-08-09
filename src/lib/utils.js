@@ -21,6 +21,37 @@ export function loadImageElement(src) {
   })
 }
 
+/**
+ * Convert a File into a persistable data URL (downscaled JPEG when large).
+ * blob: URLs die after a page reload, so anything stored in localStorage
+ * must be a data URL. Keeps images small enough to fit storage limits.
+ */
+export function fileToDataUrl(file, maxSide = 1600, quality = 0.9) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onerror = () => reject(new Error('read failed'))
+    fr.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('decode failed'))
+      img.onload = () => {
+        const s = Math.min(1, maxSide / Math.max(img.width, img.height))
+        // keep the original PNG if it's already small enough
+        if (s >= 1 && file.type === 'image/png' && fr.result.length < 900000) {
+          resolve(fr.result)
+          return
+        }
+        const cv = document.createElement('canvas')
+        cv.width = Math.max(1, Math.round(img.width * s))
+        cv.height = Math.max(1, Math.round(img.height * s))
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height)
+        resolve(cv.toDataURL('image/jpeg', quality))
+      }
+      img.src = fr.result
+    }
+    fr.readAsDataURL(file)
+  })
+}
+
 export function formatDate(d) {
   const date = d instanceof Date ? d : new Date(d)
   if (Number.isNaN(date.getTime())) return '—'
