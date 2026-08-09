@@ -311,13 +311,20 @@ export function Editor({ project, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /* canvas sizing — keeps existing objects (collage layers survive resizes) */
+  useEffect(() => {
+    const c = fabricRef.current
+    if (!c || !fit.w || !fit.h) return
+    c.setDimensions({ width: fit.w, height: fit.h })
+    c.setViewportTransform([1, 0, 0, 1, 0, 0])
+  }, [fit])
+
+  /* base image — replaces only the old base image, never wipes other objects */
   useEffect(() => {
     if (!fit.w || !fit.h || !imageSrc) return
     let alive = true
     const c = fabricRef.current
     if (!c) return
-    c.setDimensions({ width: fit.w, height: fit.h })
-    c.setViewportTransform([1, 0, 0, 1, 0, 0])
     ;(async () => {
       try {
         const img = await FabricImage.fromURL(imageSrc, { crossOrigin: 'anonymous' })
@@ -333,7 +340,7 @@ export function Editor({ project, onBack }) {
           evented: true,
         })
         img.filters = buildFabricFilters(filtersRef.current)
-        c.clear()
+        if (imgObjRef.current) c.remove(imgObjRef.current)
         c.add(img)
         c.requestRenderAll()
         imgObjRef.current = img
@@ -573,20 +580,43 @@ export function Editor({ project, onBack }) {
 
   /* --------------------------- collage studio (#9) -------------------------- */
   const buildCollage = useCallback(
-    async (layoutId, urls) => {
+    async (layoutId, urls, opts = {}) => {
       const c = fabricRef.current
       if (!c || !urls.length) return
       setCollageOpen(false)
-      // remove previous collage objects
-      decompRef.current.filter((d) => d.id.startsWith('col-')).forEach((d) => c.remove(d.img))
-      decompRef.current = decompRef.current.filter((d) => !d.id.startsWith('col-'))
-      setTool('select')
-      const W = fit.w
-      const H = fit.h
+      const { placement = 'current', size, append = false } = opts
+
+      let W = fit.w
+      let H = fit.h
+
+      // Option A — place on a brand-new blank document
+      if (placement === 'new' && size) {
+        if (imgObjRef.current) c.remove(imgObjRef.current)
+        imgObjRef.current = null
+        setImageSrc(null)
+        imageSrcRef.current = null
+        naturalRef.current = { w: size.w, h: size.h }
+        const nf = calcFitFor(size.w, size.h) || { w: 640, h: 640 }
+        setFit(nf)
+        W = nf.w
+        H = nf.h
+        // fresh document → clear any prior collage/base objects
+        decompRef.current.forEach((d) => c.remove(d.img))
+        decompRef.current = []
+        setExtraLayers([])
+      }
+
+      // Option B — append: keep existing collage layers, add new photos on top
+      if (append === false) {
+        decompRef.current.filter((d) => d.id.startsWith('col-')).forEach((d) => c.remove(d.img))
+        decompRef.current = decompRef.current.filter((d) => !d.id.startsWith('col-'))
+      }
+
       if (!W || !H) {
         showToast('Canvas not ready', 'close')
         return
       }
+      setTool('select')
       setBusy({ kind: 'real', title: 'Collage Studio', step: 'Arranging photos…', progress: 40 })
       try {
         const slots = computeSlots(layoutId, urls.length, W, H)
@@ -610,21 +640,32 @@ export function Editor({ project, onBack }) {
             evented: true,
           })
           if (rot) img.set('angle', rot[i % rot.length])
+          if (append) {
+            // cascade new photos slightly so nothing is hidden exactly underneath
+            img.set({ left: img.left + (i % 5) * 22, top: img.top + (i % 5) * 22 })
+          }
           c.add(img)
-          decompRef.current.push({ id: `col-${i}`, img, name: `Photo ${i + 1}`, type: 'Collage', dataUrl: urls[i], visible: true })
+          decompRef.current.push({ id: `col-${Date.now()}-${i}`, img, name: `Photo ${i + 1}`, type: 'Collage', dataUrl: urls[i], visible: true })
         }
         c.requestRenderAll()
         setExtraLayers(
           decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })),
         )
         setBusy(null)
-        showToast(`Collage built — ${urls.length} photos on canvas`, 'grid')
+        showToast(
+          placement === 'new'
+            ? `New ${size.w}×${size.h} canvas with ${urls.length} photos`
+            : append
+              ? `Added ${urls.length} photos to the canvas`
+              : `Collage built — ${urls.length} photos on canvas`,
+          'grid',
+        )
       } catch {
         setBusy(null)
         showToast('Collage failed', 'close')
       }
     },
-    [fit.w, fit.h, showToast],
+    [fit.w, fit.h, calcFitFor, showToast],
   )
 
   /* ------------------------------ AI pipeline ------------------------------ */
@@ -1018,8 +1059,9 @@ export function Editor({ project, onBack }) {
 
   /* --------------------------------- export -------------------------------- */
   const doExport = async () => {
-    if (!imageSrcRef.current) {
-      showToast('No image to export', 'info')
+    const c = fabricRef.current
+    if (!imageSrcRef.current && !(c && c.getObjects().length)) {
+      showToast('Nothing to export', 'info')
       return
     }
     setExporting(true)
@@ -1029,11 +1071,18 @@ export function Editor({ project, onBack }) {
           ? { id: 'original', name: 'Original', w: naturalRef.current.w, h: naturalRef.current.h }
           : EXPORT_PRESETS.find((x) => x.id === preset)
       if (!p || !p.w || !p.h) throw new Error('invalid preset')
-      let dataUrl = await renderExport(imageSrcRef.current, {
-        w: p.w,
-        h: p.h,
-        filterString: cssFilterString(filtersRef.current),
-      })
+      let dataUrl
+      if (imageSrcRef.current) {
+        dataUrl = await renderExport(imageSrcRef.current, {
+          w: p.w,
+          h: p.h,
+          filterString: cssFilterString(filtersRef.current),
+        })
+      } else if (c) {
+        // blank document (e.g. collage on a new canvas) → render canvas objects
+        const mul = Math.max(1, p.w / Math.max(1, c.getWidth()))
+        dataUrl = c.toDataURL({ format: 'png', multiplier: mul })
+      }
       const ext = format === 'jpg' ? 'jpg' : 'png'
       if (format === 'jpg') {
         const img = await loadImageElement(dataUrl)
@@ -1207,7 +1256,7 @@ export function Editor({ project, onBack }) {
             )}
             style={{ width: fit.w || 320, height: fit.h || 240 }}
           >
-            {!imageSrc && (
+            {!imageSrc && extraLayers.length === 0 && (
               <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-ink">
                 <span className="flex h-14 w-14 items-center justify-center rounded-ink-lg border border-line text-mute">
                   <Icon name="image" size={24} />
@@ -2219,9 +2268,19 @@ function BatchBody({ onRun, result, onClear }) {
 }
 
 /* ----------------------------- collage studio body ------------------------ */
+const COLLAGE_SIZES = [
+  { id: 'sq', label: 'Square', w: 1080, h: 1080 },
+  { id: 'portrait', label: 'Portrait', w: 1080, h: 1350 },
+  { id: 'story', label: 'Story / Reel', w: 1080, h: 1920 },
+  { id: 'wide', label: 'Wide', w: 1920, h: 1080 },
+]
+
 function CollageBody({ onBuild }) {
   const [photos, setPhotos] = useState([]) // { url, name }
   const [layout, setLayout] = useState('grid4')
+  const [placement, setPlacement] = useState('current') // 'current' | 'new'
+  const [newSize, setNewSize] = useState('sq')
+  const [append, setAppend] = useState(false)
   const inputRef = useRef(null)
 
   const addFiles = (files) => {
@@ -2234,6 +2293,15 @@ function CollageBody({ onBuild }) {
 
   const current = COLLAGE_LAYOUTS.find((l) => l.id === layout)
   const fits = photos.length >= (current?.min ?? 99) && photos.length <= (current?.max ?? 0)
+  const size = COLLAGE_SIZES.find((s) => s.id === newSize)
+
+  const build = () => {
+    onBuild(layout, photos.map((p) => p.url), {
+      placement,
+      size: placement === 'new' ? { w: size.w, h: size.h } : null,
+      append: placement === 'current' && append,
+    })
+  }
 
   return (
     <div>
@@ -2274,6 +2342,70 @@ function CollageBody({ onBuild }) {
         </div>
       )}
 
+      {/* Placement — current canvas vs new image */}
+      <div className="mt-4 flex items-center gap-2">
+        <span className="label-xs text-dim">Place On</span>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={() => setPlacement('current')}
+          className={cn(
+            'rounded-ink border px-3 py-2 text-left transition-colors',
+            placement === 'current' ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+          )}
+        >
+          <span className="block text-[11px] font-bold text-fg">Current Canvas</span>
+          <span className="mt-0.5 block text-[9px] text-mute">Adds to what's already open</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPlacement('new')}
+          className={cn(
+            'rounded-ink border px-3 py-2 text-left transition-colors',
+            placement === 'new' ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+          )}
+        >
+          <span className="block text-[11px] font-bold text-fg">New Image</span>
+          <span className="mt-0.5 block text-[9px] text-mute">Fresh document for the collage</span>
+        </button>
+      </div>
+
+      {placement === 'new' && (
+        <div className="mt-2 grid grid-cols-4 gap-1.5">
+          {COLLAGE_SIZES.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setNewSize(s.id)}
+              className={cn(
+                'rounded-ink border px-1 py-2 text-center transition-colors',
+                newSize === s.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+              )}
+            >
+              <span className="block text-[9px] font-bold uppercase tracking-[0.04em] text-fg">{s.label}</span>
+              <span className="mt-0.5 block text-[8px] text-mute">
+                {s.w}×{s.h}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {placement === 'current' && (
+        <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-ink border border-line px-3 py-2">
+          <input
+            type="checkbox"
+            checked={append}
+            onChange={(e) => setAppend(e.target.checked)}
+            className="h-3.5 w-3.5 accent-white"
+          />
+          <span className="text-[10px] text-dim">Add to existing collage (keep current layers)</span>
+        </label>
+      )}
+
+      {/* Layouts */}
       <div className="mt-4 flex items-center gap-2">
         <span className="label-xs text-dim">Layouts</span>
         <span className="h-px flex-1 bg-line" />
@@ -2307,9 +2439,9 @@ function CollageBody({ onBuild }) {
           variant="primary"
           icon="grid"
           disabled={!fits || photos.length < 2}
-          onClick={() => onBuild(layout, photos.map((p) => p.url))}
+          onClick={build}
         >
-          Build Collage
+          {placement === 'new' ? `Create ${size.w}×${size.h}` : append ? 'Add Photos' : 'Build Collage'}
         </Button>
       </div>
     </div>
