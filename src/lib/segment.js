@@ -54,11 +54,10 @@ function segmentOnce(seg, img) {
 }
 
 /**
- * Produce a true transparent-background cutout of the subject.
- * Returns { dataUrl, width, height, coverage } where coverage is the fraction
- * of pixels classified as subject (0..1) — used to detect "no subject".
+ * Segment the subject; returns source canvas, binary mask and coverage.
+ * Used by makeCutout, smart crop and layer decomposition.
  */
-export async function makeCutout(src, { maxSize = 1024 } = {}) {
+export async function segmentImage(src, { maxSize = 1024 } = {}) {
   const seg = await getSegmenter()
   const img = await loadImageElement(src)
   const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight))
@@ -86,21 +85,51 @@ export async function makeCutout(src, { maxSize = 1024 } = {}) {
   const mctx = mCv.getContext('2d', { willReadFrequently: true })
   const mdata = mctx.getImageData(0, 0, mCv.width, mCv.height).data
 
-  // Apply mask alpha to the source image → true cutout with soft edges.
-  const out = sctx.getImageData(0, 0, w, h)
+  const maskData = new Uint8Array(w * h)
   let covered = 0
+  for (let i = 0; i < w * h; i++) {
+    const a = mdata[i * 4 + 3] / 255
+    if (a > 0.6) { maskData[i] = 1; covered++ }
+  }
+
+  return { srcCv, sctx, w, h, scale, mask: { data: maskData, w, h }, coverage: covered / (w * h) }
+}
+
+/**
+ * Produce a true transparent-background cutout of the subject.
+ * Returns { dataUrl, width, height, coverage } where coverage is the fraction
+ * of pixels classified as subject (0..1) — used to detect "no subject".
+ */
+export async function makeCutout(src, { maxSize = 1024 } = {}) {
+  const { srcCv, sctx, w, h, mask, coverage } = await segmentImage(src, { maxSize })
+  const out = sctx.getImageData(0, 0, w, h)
   for (let i = 0; i < out.data.length; i += 4) {
-    const a = mdata[i + 3] / 255
-    out.data[i + 3] = Math.round(out.data[i + 3] * a)
-    if (a > 0.6) covered++
+    out.data[i + 3] = Math.round(out.data[i + 3] * mask.data[i / 4])
   }
   sctx.putImageData(out, 0, 0)
+  return { dataUrl: srcCv.toDataURL('image/png'), width: w, height: h, coverage }
+}
 
+/** Subject bounding box in natural pixels (for smart crop). Returns null if no subject. */
+export async function subjectBBox(src, { maxSize = 640 } = {}) {
+  const { mask, scale } = await segmentImage(src, { maxSize })
+  const m = mask.data
+  let minX = mask.w, minY = mask.h, maxX = -1, maxY = -1
+  for (let y = 0; y < mask.h; y++) {
+    for (let x = 0; x < mask.w; x++) {
+      if (m[y * mask.w + x]) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  if (maxX < 0) return null
+  const inv = 1 / scale
   return {
-    dataUrl: srcCv.toDataURL('image/png'),
-    width: w,
-    height: h,
-    coverage: covered / (w * h),
+    x: Math.round(minX * inv), y: Math.round(minY * inv),
+    w: Math.round((maxX - minX + 1) * inv), h: Math.round((maxY - minY + 1) * inv),
   }
 }
 

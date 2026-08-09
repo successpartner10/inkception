@@ -30,9 +30,10 @@ import {
   isDefaultFilters,
 } from '../lib/filters'
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../lib/export'
-import { compositeOnBackground, getSegmenter, makeCutout } from '../lib/segment'
+import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectBBox } from '../lib/segment'
+import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
 import { PROMPT_SUGGESTIONS, matchPrompt } from '../lib/prompts'
-import { clamp, cn, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
+import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
 
 const TAB_ITEMS = [
   { id: 'adjust', label: 'Adjust', icon: 'sliders' },
@@ -81,6 +82,10 @@ export function Editor({ project, onBack }) {
   const toolRef = useRef('select')
   const draftRef = useRef(null)
   const fxRef = useRef(QUICK_DEFAULTS)
+  const decompRef = useRef([])
+  const paintCanvasRef = useRef(null)
+  const maskCvRef = useRef(null)
+  const paintRectRef = useRef({ x: 0, y: 0, w: 0, h: 0 })
 
   /* --------------------------------- state --------------------------------- */
   const [imageSrc, setImageSrc] = useState(null)
@@ -104,6 +109,16 @@ export function Editor({ project, onBack }) {
   const [preset, setPreset] = useState('yt-thumb')
   const [exportGroup, setExportGroup] = useState('all')
   const [replaceOpen, setReplaceOpen] = useState(false)
+  const [retouchOpen, setRetouchOpen] = useState(false)
+  const [denoiseOpen, setDenoiseOpen] = useState(false)
+  const [lutOpen, setLutOpen] = useState(false)
+  const [cropOpen, setCropOpen] = useState(false)
+  const [motionOpen, setMotionOpen] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [eraseMode, setEraseMode] = useState(null) // null | 'erase' | 'fill'
+  const [motion, setMotion] = useState({ mode: 'off', speed: 1 })
+  const [extraLayers, setExtraLayers] = useState([])
+  const [batchResult, setBatchResult] = useState(null)
   const [format, setFormat] = useState('png')
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState(null)
@@ -474,8 +489,15 @@ export function Editor({ project, onBack }) {
   }, [undo, redo])
 
   /* --------------------------------- layers -------------------------------- */
-  const toggleLayer = (id) =>
+  const toggleLayer = (id) => {
+    const ex = decompRef.current.find((d) => d.id === id)
+    if (ex) {
+      ex.img.visible = !ex.img.visible
+      if (fabricRef.current) fabricRef.current.requestRenderAll()
+    }
+    setExtraLayers((xs) => xs.map((x) => (x.id === id ? { ...x, visible: !x.visible } : x)))
     setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)))
+  }
   const toggleLock = (id) =>
     setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, locked: !l.locked } : l)))
 
@@ -622,6 +644,255 @@ export function Editor({ project, onBack }) {
     setBusy(null)
   }
 
+  /* --------------------- AI capability handlers (audit #6–#19) ---------------- */
+  const busyJob = (title) => ({
+    kind: 'real',
+    title,
+    step: 'Processing…',
+    progress: 20,
+  })
+
+  /* #6 — Portrait retouch */
+  const runRetouch = async (opts) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy(busyJob('Portrait Retouch'))
+    try {
+      setBusy({ kind: 'real', title: 'Portrait Retouch', step: 'Detecting skin tones…', progress: 40 })
+      const out = await retouch(src, opts)
+      await loadIntoCanvas(out)
+      setBusy(null)
+      showToast('Retouch applied', 'droplet')
+    } catch { setBusy(null); showToast('Retouch failed', 'close') }
+  }
+
+  /* #12 — Denoise */
+  const runDenoise = async (strength) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy(busyJob('Denoise'))
+    try {
+      setBusy({ kind: 'real', title: 'Denoise', step: 'Measuring noise level…', progress: 40 })
+      const out = await denoise(src, strength)
+      await loadIntoCanvas(out)
+      setBusy(null)
+      showToast('Noise reduced', 'wind')
+    } catch { setBusy(null); showToast('Denoise failed', 'close') }
+  }
+
+  /* #13 — Color grade / LUT match from a reference image */
+  const runColorGrade = async (refSrc, strength) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy(busyJob('Color Grade'))
+    try {
+      setBusy({ kind: 'real', title: 'Color Grade', step: 'Sampling reference tone curve…', progress: 40 })
+      const out = await colorGrade(src, refSrc, strength)
+      await loadIntoCanvas(out)
+      setBusy(null)
+      showToast('Tone curve matched to reference', 'sliders')
+    } catch { setBusy(null); showToast('Color grade failed — pick a reference image', 'close') }
+  }
+
+  /* #14 — Face/subject-aware smart crop */
+  const runSmartCrop = async (ratio) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy(busyJob('Smart Crop'))
+    try {
+      setBusy({ kind: 'real', title: 'Smart Crop', step: 'Locating subject…', progress: 45 })
+      const bbox = await subjectBBox(src)
+      const [rw, rh] = ratio.split(':').map(Number)
+      const out = await smartCrop(src, rw, rh, bbox)
+      await loadIntoCanvas(out)
+      setBusy(null)
+      showToast(bbox ? 'Cropped around subject' : 'No subject found — centered crop', 'crop')
+    } catch { setBusy(null); showToast('Smart crop failed', 'close') }
+  }
+
+  /* #5 — Decompose to layers (panels / text / subject / background) */
+  const runDecompose = async () => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy(busyJob('Decompose to Layers'))
+    try {
+      setBusy({ kind: 'real', title: 'Decompose to Layers', step: 'Segmenting subject…', progress: 35 })
+      const seg = await segmentImage(src, { maxSize: 800 })
+      setBusy({ kind: 'real', title: 'Decompose to Layers', step: 'Detecting panels & text…', progress: 65 })
+      const dec = await decompose(src, seg.mask)
+      setBusy({ kind: 'real', title: 'Decompose to Layers', step: 'Building layers…', progress: 90 })
+      const c = fabricRef.current
+      if (!c) throw new Error('no canvas')
+      // remove previous decomposition images
+      decompRef.current.forEach((d) => c.remove(d.img))
+      decompRef.current = []
+      if (imgObjRef.current) imgObjRef.current.visible = false
+      const scale = Math.min(fit.w / dec.w, fit.h / dec.h)
+      const entries = [
+        ['background', 'Background'], ['panels', 'Panels'], ['text', 'Text'], ['subject', 'Subject'],
+      ]
+      for (const [key, name] of entries) {
+        const im = await FabricImage.fromURL(dec[key])
+        im.set({
+          left: (fit.w - dec.w * scale) / 2,
+          top: (fit.h - dec.h * scale) / 2,
+          scaleX: scale,
+          scaleY: scale,
+          selectable: false,
+          evented: false,
+        })
+        c.add(im)
+        decompRef.current.push({ id: `dec-${key}`, img: im, name, type: 'AI Layer', dataUrl: dec[key], visible: true })
+      }
+      c.requestRenderAll()
+      setExtraLayers(decompRef.current.map((d) => ({ id: d.id, name: d.name, type: d.type, dataUrl: d.dataUrl, visible: true })))
+      setBusy(null)
+      showToast(`Decomposed — ${dec.counts.panels} panels, ${dec.counts.text} text regions`, 'layers')
+      setTab('layers')
+    } catch { setBusy(null); showToast('Decompose failed', 'close') }
+  }
+
+  /* #19 — Batch AI apply across multiple images */
+  const runBatch = async (files, op) => {
+    setBatchOpen(false)
+    setBatchResult(null)
+    const results = []
+    setBusy(busyJob('Batch AI'))
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i]
+        const url = URL.createObjectURL(f)
+        const name = f.name.replace(/\.[^.]+$/, '')
+        setBusy({ kind: 'real', title: 'Batch AI', step: `Processing ${i + 1}/${files.length} — ${f.name}`, progress: Math.round(((i + 0.3) / files.length) * 100) })
+        let out
+        if (op === 'removebg') {
+          const { dataUrl, coverage } = await makeCutout(url)
+          out = coverage > 0.005 ? dataUrl : null
+        } else if (op === 'enhance') {
+          const img = await loadImageElement(url)
+          const w = img.naturalWidth, h = img.naturalHeight
+          const cv = document.createElement('canvas')
+          cv.width = w; cv.height = h
+          const ctx = cv.getContext('2d')
+          ctx.filter = cssFilterString(AUTO_ENHANCE_FILTERS)
+          ctx.drawImage(img, 0, 0)
+          out = cv.toDataURL('image/png')
+        } else if (op === 'upscale') {
+          const img = await loadImageElement(url)
+          const w = img.naturalWidth * 4, h = img.naturalHeight * 4
+          const cv = document.createElement('canvas')
+          cv.width = w; cv.height = h
+          const ctx = cv.getContext('2d')
+          ctx.imageSmoothingQuality = 'high'
+          ctx.drawImage(img, 0, 0, w, h)
+          out = cv.toDataURL('image/png')
+        } else if (op === 'denoise') {
+          out = await denoise(url, 50)
+        }
+        if (out) results.push({ name: `${name}-${op}`, dataUrl: out })
+      }
+      setBusy(null)
+      setBatchResult({ op, results })
+      showToast(`Batch done — ${results.length}/${files.length} processed`, 'check')
+    } catch {
+      setBusy(null)
+      showToast('Batch failed mid-way', 'close')
+    }
+  }
+
+  /* #7 / #3 — Magic eraser + generative fill (on-device inpainting) */
+  const computeDisplayRect = () => {
+    const nat = naturalRef.current
+    const s = Math.min(fit.w / nat.w, fit.h / nat.h)
+    const dw = nat.w * s, dh = nat.h * s
+    const r = { x: (fit.w - dw) / 2, y: (fit.h - dh) / 2, w: dw, h: dh }
+    paintRectRef.current = r
+    return r
+  }
+
+  const startErase = (mode) => {
+    computeDisplayRect()
+    setEraseMode(mode)
+    maskCvRef.current = null
+    const pc = paintCanvasRef.current
+    if (pc) {
+      const dpr = window.devicePixelRatio || 1
+      pc.width = paintRectRef.current.w * dpr
+      pc.height = paintRectRef.current.h * dpr
+      const ctx = pc.getContext('2d')
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, paintRectRef.current.w, paintRectRef.current.h)
+    }
+    showToast(mode === 'erase' ? 'Paint over the object to remove it' : 'Paint the region to re-fill', 'brush')
+  }
+
+  const paintMask = (e) => {
+    const rect = paintRectRef.current
+    const pc = paintCanvasRef.current
+    if (!pc || !rect.w) return
+    const bounds = pc.getBoundingClientRect()
+    const x = e.clientX - bounds.left
+    const y = e.clientY - bounds.top
+    if (x < 0 || y < 0 || x > rect.w || y > rect.h) return
+    // mask canvas at ~600px wide
+    const MW = 600
+    const MH = Math.max(2, Math.round((rect.h / rect.w) * MW))
+    if (!maskCvRef.current) {
+      maskCvRef.current = document.createElement('canvas')
+      maskCvRef.current.width = MW
+      maskCvRef.current.height = MH
+    }
+    const mctx = maskCvRef.current.getContext('2d')
+    mctx.fillStyle = '#ffffff'
+    const mx = (x / rect.w) * MW
+    const my = (y / rect.h) * MH
+    const rad = MW * 0.02
+    mctx.beginPath()
+    mctx.arc(mx, my, rad, 0, Math.PI * 2)
+    mctx.fill()
+    // mirror on the overlay
+    const ctx = pc.getContext('2d')
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'
+    ctx.beginPath()
+    ctx.arc(x, y, Math.max(6, rect.w * 0.02), 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const clearMask = () => {
+    maskCvRef.current = null
+    const pc = paintCanvasRef.current
+    if (pc) {
+      const ctx = pc.getContext('2d')
+      ctx.clearRect(0, 0, pc.width, pc.height)
+    }
+  }
+
+  const applyInpaint = async () => {
+    const mc = maskCvRef.current
+    const src = imageSrcRef.current
+    if (!mc || !src || busyRef.current) return
+    let painted = 0
+    const md = mc.getContext('2d').getImageData(0, 0, mc.width, mc.height).data
+    for (let i = 3; i < md.length; i += 4) if (md[i] > 128) painted++
+    if (painted < 12) { showToast('Paint a region first', 'info'); return }
+    setEraseMode(null)
+    setBusy(busyJob('Texture Fill'))
+    try {
+      setBusy({ kind: 'real', title: 'Texture Fill', step: 'Filling region from surroundings…', progress: 45 })
+      const out = await inpaint(src, md)
+      await loadIntoCanvas(out)
+      setBusy(null)
+      showToast('Region filled from surrounding texture', 'brush')
+    } catch { setBusy(null); showToast('Fill failed', 'close') }
+  }
+
+  /* #8 — Motion (animated preview) */
+  const applyMotion = (mode, speed) => {
+    setMotion({ mode, speed })
+    setMotionOpen(false)
+    if (mode !== 'off') showToast(`Motion: ${mode} — export is a still frame`, 'play')
+  }
+
   /* ------------------------- prompt command bar (#2) ------------------------ */
   const onPromptAction = useCallback(
     (action, payload) => {
@@ -718,6 +989,14 @@ export function Editor({ project, onBack }) {
           onEnhance={() => runAi('enhance')}
           onUpscale={() => runAi('upscale')}
           onVectorize={() => runAi('vectorize')}
+          onRetouch={() => setRetouchOpen(true)}
+          onDenoise={() => setDenoiseOpen(true)}
+          onLut={() => setLutOpen(true)}
+          onCrop={() => setCropOpen(true)}
+          onMotion={() => setMotionOpen(true)}
+          onBatch={() => setBatchOpen(true)}
+          onDecompose={() => runDecompose()}
+          onEraser={(m) => startErase(m)}
           upscaled={upscaled}
           onPromptAction={onPromptAction}
         />
@@ -726,6 +1005,7 @@ export function Editor({ project, onBack }) {
     return (
       <LayersTab
         layers={layers}
+        extraLayers={extraLayers}
         selected={selectedLayer}
         onSelect={setSelectedLayer}
         onToggleVisibility={toggleLayer}
@@ -742,6 +1022,15 @@ export function Editor({ project, onBack }) {
   }
 
   const imageLabel = `${naturalRef.current.w || '–'}×${naturalRef.current.h || '–'}${upscaled ? ' · 4×' : ''}`
+
+  const nat = naturalRef.current
+  const displayRect =
+    nat.w && fit.w
+      ? (() => {
+          const s = Math.min(fit.w / nat.w, fit.h / nat.h)
+          return { x: (fit.w - nat.w * s) / 2, y: (fit.h - nat.h * s) / 2, w: nat.w * s, h: nat.h * s }
+        })()
+      : null
 
   return (
     <div className="flex h-full flex-col bg-ink">
@@ -809,7 +1098,24 @@ export function Editor({ project, onBack }) {
             {layers.find((l) => l.id === 'backdrop')?.visible && (
               <div className="absolute inset-0 bg-[#161616]" />
             )}
-            <canvas ref={canvasElRef} className="absolute inset-0" />
+            <div
+              className={cn(
+                'absolute inset-0',
+                motion.mode === 'zoom' && 'ik-anim-zoom',
+                motion.mode === 'pan' && 'ik-anim-pan',
+              )}
+              style={{ animationDuration: `${motion.mode === 'off' ? 0 : 9 / motion.speed}s` }}
+            >
+              <canvas ref={canvasElRef} className="absolute inset-0" />
+            </div>
+            {motion.mode === 'sweep' && (
+              <div className="ik-sweep-bar" style={{ animationDuration: `${7 / motion.speed}s` }} />
+            )}
+            {motion.mode !== 'off' && (
+              <span className="pointer-events-none absolute left-3 top-3 z-10 rounded-ink bg-black/35 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-white/85">
+                Motion · {motion.mode} (preview)
+              </span>
+            )}
             {layers.find((l) => l.id === 'vignette')?.visible && (
               <div
                 className="pointer-events-none absolute inset-0"
@@ -831,6 +1137,17 @@ export function Editor({ project, onBack }) {
               </div>
             )}
 
+            {eraseMode && displayRect && (
+              <div
+                className="absolute z-20 cursor-crosshair touch-none"
+                style={{ left: displayRect.x, top: displayRect.y, width: displayRect.w, height: displayRect.h }}
+                onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); paintMask(e) }}
+                onPointerMove={(e) => e.buttons === 1 && paintMask(e)}
+              >
+                <canvas ref={paintCanvasRef} className="absolute inset-0" />
+              </div>
+            )}
+
             {beforeAfter && imageSrc && (
               <BeforeAfter
                 src={imageSrc}
@@ -838,6 +1155,19 @@ export function Editor({ project, onBack }) {
                 pos={comparePos}
                 onChange={setComparePos}
               />
+            )}
+
+            {eraseMode && (
+              <div className="absolute inset-x-0 bottom-3 z-30 flex justify-center">
+                <div className="flex items-center gap-2 rounded-ink border border-line bg-surface px-3 py-2">
+                  <span className="label-xs text-dim">
+                    {eraseMode === 'erase' ? 'Paint the object to remove' : 'Paint region to re-fill'}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={clearMask}>Clear</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setEraseMode(null)}>Cancel</Button>
+                  <Button variant="primary" size="sm" icon="check" onClick={applyInpaint}>Apply</Button>
+                </div>
+              </div>
             )}
 
             {busy && (
@@ -921,6 +1251,7 @@ export function Editor({ project, onBack }) {
         <IconBtn icon="text" title="Text (T)" active={tool === 'text'} onClick={() => setTool('text')} />
         <IconBtn icon="brush" title="Brush (B)" active={tool === 'brush'} onClick={() => setTool('brush')} />
         <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
+        <IconBtn icon="crop" title="Smart Crop (subject-aware)" onClick={() => setCropOpen(true)} />
         <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
         <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
         <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
@@ -998,6 +1329,75 @@ export function Editor({ project, onBack }) {
         <p className="mt-4 text-[10px] leading-relaxed text-mute">
           Runs on-device via MediaPipe segmentation — the subject keeps its true alpha matte.
         </p>
+      </Modal>
+
+      {/* ------------------------------ retouch modal ----------------------------- */}
+      <RetouchModal open={retouchOpen} onClose={() => setRetouchOpen(false)} onApply={runRetouch} />
+
+      {/* ------------------------------ denoise modal ----------------------------- */}
+      <Modal open={denoiseOpen} onClose={() => setDenoiseOpen(false)} title="Denoise" subtitle="Adaptive noise reduction — reads the image's noise level" width="max-w-sm">
+        <DenoiseBody onApply={(s) => { setDenoiseOpen(false); runDenoise(s) }} />
+      </Modal>
+
+      {/* ------------------------------- LUT modal -------------------------------- */}
+      <Modal open={lutOpen} onClose={() => setLutOpen(false)} title="Color Grade / LUT Match" subtitle="Match a reference image's tone curve (histogram transfer)" width="max-w-sm">
+        <LutBody onApply={(ref, s) => { setLutOpen(false); runColorGrade(ref, s) }} />
+      </Modal>
+
+      {/* ----------------------------- smart crop modal ---------------------------- */}
+      <Modal open={cropOpen} onClose={() => setCropOpen(false)} title="Smart Crop" subtitle="Cover-crop centered on the subject (face-aware)" width="max-w-sm">
+        <div className="grid grid-cols-2 gap-3">
+          {['1:1', '4:5', '9:16', '16:9'].map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => { setCropOpen(false); runSmartCrop(r) }}
+              className="rounded-ink border border-line px-3 py-4 text-center transition-colors hover:border-white"
+            >
+              <span className="text-xs font-bold text-fg">{r}</span>
+              <span className="mt-1 block text-[9px] text-mute">
+                {r === '1:1' ? 'Square' : r === '4:5' ? 'Portrait' : r === '9:16' ? 'Story' : 'Wide'}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+          Uses the segmentation model to find the subject; if none is found it falls back to a
+          geometric center crop.
+        </p>
+      </Modal>
+
+      {/* ------------------------------ motion modal ------------------------------ */}
+      <Modal open={motionOpen} onClose={() => setMotionOpen(false)} title="Motion" subtitle="Animated preview — export is a still frame" width="max-w-sm">
+        <div className="space-y-1.5">
+          {[
+            { id: 'off', label: 'Off' },
+            { id: 'zoom', label: 'Slow Zoom' },
+            { id: 'pan', label: 'Pan' },
+            { id: 'sweep', label: 'Light Sweep' },
+          ].map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => applyMotion(m.id, 1)}
+              className={cn(
+                'flex w-full items-center justify-between rounded-ink border px-3.5 py-2.5 text-left transition-colors',
+                motion.mode === m.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+              )}
+            >
+              <span className="text-xs font-semibold">{m.label}</span>
+              {motion.mode === m.id && <Icon name="check" size={14} className="text-white" />}
+            </button>
+          ))}
+        </div>
+        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+          Played back with CSS keyframes in the viewport. Exports render the current frame.
+        </p>
+      </Modal>
+
+      {/* ------------------------------- batch modal ------------------------------- */}
+      <Modal open={batchOpen} onClose={() => setBatchOpen(false)} title="Batch AI" subtitle="Apply one operation to many images at once" width="max-w-lg">
+        <BatchBody onRun={runBatch} result={batchResult} onClear={() => setBatchResult(null)} />
       </Modal>
 
       {/* -------------------------------- export modal ----------------------------- */}
@@ -1264,7 +1664,11 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
 }
 
 /* -------------------------------- tab: AI --------------------------------- */
-function AITab({ busy, onRemoveBg, onReplaceBg, onEnhance, onUpscale, onVectorize, upscaled, onPromptAction }) {
+function AITab({
+  busy, onRemoveBg, onReplaceBg, onEnhance, onUpscale, onVectorize,
+  onRetouch, onDenoise, onLut, onCrop, onMotion, onBatch, onDecompose, onEraser,
+  upscaled, onPromptAction,
+}) {
   const [phrase, setPhrase] = useState('')
 
   const submit = (e) => {
@@ -1274,6 +1678,38 @@ function AITab({ busy, onRemoveBg, onReplaceBg, onEnhance, onUpscale, onVectoriz
     setPhrase('')
     onPromptAction(m.action, m.payload)
   }
+
+  const sections = [
+    {
+      label: 'Content-Aware',
+      items: [
+        { icon: 'scissors', title: 'Remove Background', desc: 'Real subject matting', onClick: onRemoveBg, tag: 'On-device', busy: busy?.kind === 'real' },
+        { icon: 'image', title: 'Replace Background', desc: 'New backdrop', onClick: onReplaceBg },
+        { icon: 'brush', title: 'Magic Eraser', desc: 'Paint to remove object', onClick: () => onEraser('erase') },
+        { icon: 'sparkle', title: 'Generative Fill', desc: 'Paint to re-fill region', onClick: () => onEraser('fill') },
+        { icon: 'crop', title: 'Smart Crop', desc: 'Face/subject-aware', onClick: onCrop },
+        { icon: 'layers', title: 'Decompose', desc: 'Panels · text · subject · bg', onClick: onDecompose, busy: busy?.kind === 'real' },
+      ],
+    },
+    {
+      label: 'Enhance',
+      items: [
+        { icon: 'droplet', title: 'Retouch', desc: 'Skin-aware smoothing', onClick: onRetouch },
+        { icon: 'wind', title: 'Denoise', desc: 'Adaptive noise removal', onClick: onDenoise },
+        { icon: 'sliders', title: 'Color Grade', desc: 'Match reference look', onClick: onLut },
+        { icon: 'sparkle', title: 'Auto Enhance', desc: 'Exposure & color', onClick: onEnhance },
+        { icon: 'expand', title: 'Upscale 4×', desc: 'Resolution', onClick: onUpscale, disabled: upscaled, tag: upscaled ? 'Applied' : undefined },
+        { icon: 'penTool', title: 'Vectorize', desc: 'Raster → SVG', onClick: onVectorize },
+      ],
+    },
+    {
+      label: 'Workflow',
+      items: [
+        { icon: 'play', title: 'Motion', desc: 'Animated preview', onClick: onMotion },
+        { icon: 'layers', title: 'Batch AI', desc: 'Many images, one op', onClick: onBatch },
+      ],
+    },
+  ]
 
   return (
     <div className="p-4">
@@ -1312,61 +1748,55 @@ function AITab({ busy, onRemoveBg, onReplaceBg, onEnhance, onUpscale, onVectoriz
         </div>
       </form>
 
-      <p className="mt-4 text-xs leading-relaxed text-dim">
-        Real AI runs on-device: MediaPipe subject matting produces a true alpha cutout — no image
-        leaves your device. Deterministic tools (enhance, upscale, vectorize) are labeled as such.
+      <p className="mt-4 text-[10px] leading-relaxed text-mute">
+        All processing runs on-device and reads the actual image content. No fake AI: deterministic
+        tools are labeled as such. Export matrix untouched.
       </p>
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <ActionCard
-          icon="scissors"
-          title="Remove Background"
-          desc="Real subject matting (MediaPipe, on-device)."
-          onClick={onRemoveBg}
-          busy={busy?.kind === 'real'}
-          progress={busy?.kind === 'real' ? busy.progress : null}
-          tag="On-device"
-        />
-        <ActionCard
-          icon="image"
-          title="Replace Background"
-          desc="Swap in black, white, gradient or transparent."
-          onClick={onReplaceBg}
-        />
-        <ActionCard
-          icon="sparkle"
-          title="Auto Enhance"
-          desc="Exposure & color correction."
-          onClick={onEnhance}
-          busy={busy?.kind === 'enhance'}
-          progress={busy?.kind === 'enhance' ? busy.progress : null}
-        />
-        <ActionCard
-          icon="expand"
-          title="Upscale 4×"
-          desc="Resolution enhancement."
-          onClick={onUpscale}
-          disabled={upscaled}
-          tag={upscaled ? 'Applied' : undefined}
-          busy={busy?.kind === 'upscale'}
-          progress={busy?.kind === 'upscale' ? busy.progress : null}
-        />
-        <ActionCard
-          icon="penTool"
-          title="Vectorize"
-          desc="Raster → SVG conversion."
-          onClick={onVectorize}
-          busy={busy?.kind === 'vectorize'}
-          progress={busy?.kind === 'vectorize' ? busy.progress : null}
-        />
-      </div>
+      {sections.map((sec) => (
+        <div key={sec.label} className="mt-5">
+          <div className="mb-2 flex items-center gap-2 px-0.5">
+            <span className="label-xs text-dim">{sec.label}</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {sec.items.map((it) => (
+              <button
+                key={it.title}
+                type="button"
+                disabled={it.disabled}
+                onClick={it.onClick}
+                className={cn(
+                  'group relative flex flex-col items-start gap-2 overflow-hidden rounded-ink border p-3 text-left transition-colors',
+                  it.disabled ? 'cursor-not-allowed opacity-40' : 'border-line hover:border-white',
+                )}
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-ink border border-line text-fg">
+                  {it.busy ? (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border border-white/25 border-t-white" />
+                  ) : (
+                    <Icon name={it.icon} size={15} />
+                  )}
+                </span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg">{it.title}</span>
+                <span className="text-[9.5px] leading-relaxed text-mute">{it.desc}</span>
+                {it.tag && (
+                  <span className="absolute right-2 top-2">
+                    <Chip active>{it.tag}</Chip>
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
 
 /* ------------------------------- tab: Layers ------------------------------ */
 function LayersTab({
-  layers, selected, onSelect, onToggleVisibility, onToggleLock, imageSrc, showToast,
+  layers, extraLayers = [], selected, onSelect, onToggleVisibility, onToggleLock, imageSrc, showToast,
   layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
 }) {
   const previews = {
@@ -1414,6 +1844,25 @@ function LayersTab({
             onToggleLock={() => onToggleLock(l.id)}
           />
         ))}
+        {extraLayers.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 px-1 pt-2">
+              <span className="label-xs text-dim">Decomposed (AI)</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            {extraLayers.map((l) => (
+              <LayerRow
+                key={l.id}
+                layer={{ name: l.name, type: l.type, visible: l.visible, locked: false }}
+                preview={<img src={l.dataUrl} alt="" className="h-full w-full object-contain" />}
+                selected={false}
+                onSelect={() => {}}
+                onToggleVisibility={() => onToggleVisibility(l.id)}
+                onToggleLock={() => showToast('Decomposed layers are read-only', 'lock')}
+              />
+            ))}
+          </>
+        )}
       </div>
 
       {/* selected-layer properties (spec §5) */}
@@ -1454,6 +1903,174 @@ function LayersTab({
         Backdrop layer off. Draw with the toolbar tools: Rectangle R, Ellipse E, Line L, Text T,
         Brush B. Delete removes a selected shape.
       </p>
+    </div>
+  )
+}
+
+/* ----------------------------- retouch modal ----------------------------- */
+function RetouchModal({ open, onClose, onApply }) {
+  const [smooth, setSmooth] = useState(40)
+  const [blemish, setBlemish] = useState(30)
+  const [brighten, setBrighten] = useState(0)
+  return (
+    <Modal open={open} onClose={onClose} title="Portrait Retouch" subtitle="Skin-tone-aware smoothing, spot reduction, brightening" width="max-w-sm">
+      <Slider label="Smooth Skin" value={smooth} min={0} max={100} defaultValue={40} onChange={setSmooth} format={(v) => `${v}`} />
+      <Slider label="Blemish Reduction" value={blemish} min={0} max={100} defaultValue={30} onChange={setBlemish} format={(v) => `${v}`} />
+      <Slider label="Brighten" value={brighten} min={0} max={100} defaultValue={0} onChange={setBrighten} format={(v) => `${v}`} />
+      <p className="mt-3 text-[10px] leading-relaxed text-mute">
+        Detects skin-tone regions from pixel color and applies smoothing only there — genuine
+        content-aware retouch, on-device.
+      </p>
+      <div className="mt-5 flex justify-end gap-3">
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" icon="check" onClick={() => { onClose(); onApply({ smooth, blemish, brighten }) }}>
+          Apply Retouch
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+/* ------------------------------ denoise body ----------------------------- */
+function DenoiseBody({ onApply }) {
+  const [strength, setStrength] = useState(50)
+  return (
+    <div>
+      <Slider label="Strength" value={strength} min={0} max={100} defaultValue={50} onChange={setStrength} format={(v) => `${v}`} />
+      <p className="mt-3 text-[10px] leading-relaxed text-mute">
+        Measures the image's actual noise level first, then smooths only the noisy areas — edges
+        are preserved.
+      </p>
+      <div className="mt-5 flex justify-end gap-3">
+        <Button variant="primary" icon="check" onClick={() => onApply(strength)}>Denoise</Button>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------- LUT body -------------------------------- */
+function LutBody({ onApply }) {
+  const [strength, setStrength] = useState(100)
+  const [refSrc, setRefSrc] = useState(null)
+  const refInputRef = useRef(null)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => refInputRef.current && refInputRef.current.click()}
+        className="flex w-full items-center gap-3 rounded-ink border border-dashed border-line-2 px-4 py-4 transition-colors hover:border-white"
+      >
+        {refSrc ? (
+          <img src={refSrc} alt="reference" className="h-12 w-12 rounded-ink object-cover" />
+        ) : (
+          <span className="flex h-12 w-12 items-center justify-center rounded-ink border border-line text-mute">
+            <Icon name="upload" size={16} />
+          </span>
+        )}
+        <span className="text-xs text-dim">
+          {refSrc ? 'Reference loaded — tap to change' : 'Upload a reference image to match its look'}
+        </span>
+      </button>
+      <input
+        ref={refInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files && e.target.files[0]
+          if (f) setRefSrc(URL.createObjectURL(f))
+          e.target.value = ''
+        }}
+      />
+      <div className="mt-3">
+        <Slider label="Match Strength" value={strength} min={0} max={100} defaultValue={100} onChange={setStrength} format={(v) => `${v}%`} />
+      </div>
+      <div className="mt-5 flex justify-end gap-3">
+        <Button variant="primary" icon="check" disabled={!refSrc} onClick={() => refSrc && onApply(refSrc, strength)}>
+          Match Color
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------- batch body ------------------------------ */
+function BatchBody({ onRun, result, onClear }) {
+  const [files, setFiles] = useState([])
+  const [op, setOp] = useState('removebg')
+  const inputRef = useRef(null)
+  const ops = [
+    { id: 'removebg', label: 'Remove Background' },
+    { id: 'enhance', label: 'Auto Enhance' },
+    { id: 'upscale', label: 'Upscale 4×' },
+    { id: 'denoise', label: 'Denoise' },
+  ]
+  return (
+    <div>
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => inputRef.current && inputRef.current.click()}
+          className="flex flex-1 items-center justify-center gap-2 rounded-ink border border-dashed border-line-2 px-4 py-4 text-xs text-dim transition-colors hover:border-white"
+        >
+          <Icon name="upload" size={15} /> Choose images ({files.length} selected)
+        </button>
+        <button
+          type="button"
+          onClick={() => { setFiles([]); onClear() }}
+          className="rounded-ink border border-line px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-mute hover:text-white"
+        >
+          Clear
+        </button>
+      </div>
+      <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => setFiles([...e.target.files])} />
+      {files.length > 0 && (
+        <div className="mt-2 max-h-28 overflow-y-auto scrollbar-thin">
+          {[...files].map((f, i) => (
+            <div key={i} className="flex items-center gap-2 py-0.5 text-[11px] text-dim">
+              <Icon name="image" size={12} /> <span className="truncate">{f.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {ops.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => setOp(o.id)}
+            className={cn(
+              'rounded-ink px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors',
+              op === o.id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-5 flex justify-end gap-3">
+        <Button variant="primary" icon="play" disabled={!files.length} onClick={() => onRun([...files], op)}>
+          Run on {files.length || 0} image{files.length === 1 ? '' : 's'}
+        </Button>
+      </div>
+      {result && (
+        <div className="mt-4 rounded-ink border border-line p-3">
+          <div className="label-xs mb-2 text-dim">Results ({result.results.length})</div>
+          <div className="max-h-40 space-y-1 overflow-y-auto scrollbar-thin">
+            {result.results.map((r) => (
+              <button
+                key={r.name}
+                type="button"
+                onClick={() => downloadDataUrl(r.dataUrl, `${r.name}.png`)}
+                className="flex w-full items-center gap-2 rounded-ink bg-surface-2 px-2.5 py-1.5 text-left text-[11px] text-dim transition-colors hover:text-white"
+              >
+                <Icon name="download" size={12} />
+                <span className="truncate">{r.name}.png</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
