@@ -32,7 +32,7 @@ import {
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../lib/export'
 import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectBBox } from '../lib/segment'
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
-import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas } from '../lib/encode'
+import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas, psdFromLayers } from '../lib/encode'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
 import { PROMPT_SUGGESTIONS, matchPrompt } from '../lib/prompts'
@@ -59,6 +59,24 @@ export const BLEND_MODES = [
   'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
   'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion',
 ]
+
+/* friendly layer name for PSD export */
+function layerNameFor(obj, baseImg, decomp) {
+  if (obj === baseImg) return 'Image'
+  const d = decomp.find((x) => x.img === obj)
+  if (d) return d.name
+  const map = {
+    image: 'Image',
+    rect: 'Rectangle',
+    ellipse: 'Ellipse',
+    line: 'Line',
+    'i-text': 'Text',
+    textbox: 'Text',
+    path: 'Brush Stroke',
+    polygon: 'Shape',
+  }
+  return map[obj.type] || (obj.name || 'Layer')
+}
 
 const LAYER_DEFAULTS = [
   { id: 'text', name: 'Editorial Text', type: 'Type', visible: true, locked: false },
@@ -1213,16 +1231,61 @@ export function Editor({ project, onBack }) {
         const blob = pdfFromJpeg(jpg, W, H)
         downloadBlob(blob, `${base}-${W}x${H}.pdf`)
       } else if (format === 'psd') {
-        const im = await loadImageElement(dataUrl)
-        const cv = document.createElement('canvas')
-        cv.width = W
-        cv.height = H
-        const ctx = cv.getContext('2d')
-        ctx.fillStyle = '#000000'
-        ctx.fillRect(0, 0, W, H)
-        ctx.drawImage(im, 0, 0, W, H)
-        const blob = psdFromCanvas(cv)
-        downloadBlob(blob, `${base}-${W}x${H}.psd`)
+        const c = fabricRef.current
+        const objs = c && c.getObjects().length ? [...c.getObjects()].reverse() : []
+        if (objs.length) {
+          const mul = Math.max(1, W / Math.max(1, c.getWidth()))
+          const saved = objs.map((o) => ({ o, visible: o.visible, opacity: o.opacity, gco: o.globalCompositeOperation }))
+          const layers = []
+          for (let oi = 0; oi < objs.length; oi++) {
+            const o = objs[oi]
+            try {
+              for (const s of saved) if (s.o !== o) s.o.visible = false
+              o.visible = true
+              o.opacity = 1
+              o.globalCompositeOperation = 'source-over'
+              c.requestRenderAll()
+              const url = c.toDataURL({ format: 'png', multiplier: mul })
+              const meta = saved[oi]
+              let name = layerNameFor(o, imgObjRef.current, decompRef.current)
+              if (!name) name = `Layer ${oi + 1}`
+              layers.push({
+                name,
+                opacity: meta.opacity,
+                visible: meta.visible,
+                blend: meta.gco || 'source-over',
+                dataUrl: url,
+                top: 0,
+                left: 0,
+              })
+            } catch {
+              /* skip unrenderable object */
+            }
+          }
+          for (const s of saved) {
+            s.o.visible = s.visible
+            s.o.opacity = s.opacity
+            s.o.globalCompositeOperation = s.gco
+          }
+          c.requestRenderAll()
+          const compUrl = c.toDataURL({ format: 'png', multiplier: mul })
+          const blob = await psdFromLayers(W, H, layers, compUrl)
+          downloadBlob(blob, `${base}-${W}x${H}.psd`)
+        } else if (imageSrcRef.current) {
+          // no fabric objects → flattened single-layer PSD
+          const im = await loadImageElement(dataUrl)
+          const cv = document.createElement('canvas')
+          cv.width = W
+          cv.height = H
+          const ctx = cv.getContext('2d')
+          ctx.fillStyle = '#000000'
+          ctx.fillRect(0, 0, W, H)
+          ctx.drawImage(im, 0, 0, W, H)
+          const blob = psdFromCanvas(cv)
+          downloadBlob(blob, `${base}-${W}x${H}.psd`)
+        } else {
+          throw new Error('nothing to export')
+        }
       } else {
         // png / jpg / webp
         const ext = format === 'jpg' ? 'jpg' : format
@@ -1933,7 +1996,12 @@ export function Editor({ project, onBack }) {
           </p>
         )}
         {format === 'svg' && <p className="mt-2 text-[10px] text-mute">Vector export of canvas objects; photos are edge-traced.</p>}
-        {format === 'psd' && <p className="mt-2 text-[10px] text-mute">Flattened RGB PSD — opens in Photoshop/affinity.</p>}
+        {format === 'psd' && (
+          <p className="mt-2 text-[10px] text-mute">
+            Layered PSD — each canvas object (image, shapes, text, collage photos, AI layers) becomes
+            an editable layer with its name, opacity, visibility and blend mode preserved.
+          </p>
+        )}
         {format === 'pdf' && <p className="mt-2 text-[10px] text-mute">Single-page PDF at the selected size (JPEG-embedded).</p>}
 
         <div className="mt-6 flex items-center justify-end gap-3">

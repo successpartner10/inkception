@@ -211,8 +211,227 @@ export function pdfFromJpeg(jpegDataUrl, w, h) {
   return new Blob([pdf], { type: 'application/pdf' })
 }
 
-/* ------------------------------ PSD (flat) ----------------------------- */
+/* ------------------------------ PSD (layered) ----------------------------- */
+// A real layered PSD writer: one layer record per canvas object, with
+// name, opacity, visibility, blend mode, and RLE-compressed channel data
+// (R/G/B + alpha mask per layer). Opens in Photoshop/Affinity with
+// editable layers intact.
 
+const PSD_BLEND_KEYS = {
+  'source-over': 'norm',
+  normal: 'norm',
+  multiply: 'mult',
+  screen: 'scrn',
+  overlay: 'over',
+  darken: 'dark',
+  lighten: 'lite',
+  'color-dodge': 'div ',
+  'color-burn': 'idiv',
+  'hard-light': 'hLit',
+  'soft-light': 'sLit',
+  difference: 'diff',
+  exclusion: 'smud',
+}
+
+class BW {
+  constructor() { this.a = [] }
+  u8(...n) { for (const x of n) this.a.push(x & 0xff) }
+  str(s) { for (let i = 0; i < s.length; i++) this.a.push(s.charCodeAt(i) & 0xff) }
+  be16(n) { this.a.push((n >> 8) & 0xff, n & 0xff) }
+  be32(n) { this.a.push((n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff) }
+  patchBe32(offset, n) {
+    this.a[offset] = (n >>> 24) & 0xff
+    this.a[offset + 1] = (n >>> 16) & 0xff
+    this.a[offset + 2] = (n >>> 8) & 0xff
+    this.a[offset + 3] = n & 0xff
+  }
+  bytes() { return new Uint8Array(this.a) }
+  len() { return this.a.length }
+}
+
+function rlePack(row) {
+  // PackBits-style row encoder (PSD RLE)
+  const out = []
+  let i = 0
+  const n = row.length
+  while (i < n) {
+    let run = 1
+    while (i + run < n && row[i + run] === row[i] && run < 128) run++
+    if (run >= 3) {
+      out.push(257 - run, row[i])
+      i += run
+    } else {
+      const lit = []
+      while (i < n && lit.length < 128) {
+        let r2 = 1
+        while (i + r2 < n && row[i + r2] === row[i] && r2 < 128) r2++
+        if (r2 >= 3) break
+        lit.push(row[i])
+        i++
+      }
+      out.push(lit.length - 1, ...lit)
+    }
+  }
+  return out
+}
+
+function rleChannel(data, w, h) {
+  const packedRows = []
+  let total = 0
+  for (let y = 0; y < h; y++) {
+    const packed = rlePack(data.subarray(y * w, (y + 1) * w))
+    packedRows.push(packed)
+    total += 2 + packed.length
+  }
+  return { packedRows, total }
+}
+
+function loadCv(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const cv = document.createElement('canvas')
+      cv.width = img.naturalWidth || img.width
+      cv.height = img.naturalHeight || img.height
+      cv.getContext('2d').drawImage(img, 0, 0)
+      resolve(cv)
+    }
+    img.onerror = reject
+    img.src = dataUrl
+  })
+}
+
+const clamp01 = (v) => Math.min(1, Math.max(0, v === undefined ? 1 : v))
+
+/**
+ * Write a layered PSD.
+ * @param {number} w canvas width
+ * @param {number} h canvas height
+ * @param {Array} layers top-down: [{ name, opacity(0..1), visible, blend('source-over'|...),
+ *                                    dataUrl (PNG with alpha, canvas-sized, object composited),
+ *                                    top, left }]
+ * @param {string} compositeDataUrl flattened full-canvas PNG (optional)
+ */
+export async function psdFromLayers(w, h, layers, compositeDataUrl) {
+  const W = Math.round(w)
+  const H = Math.round(h)
+  const ordered = [...layers].reverse() // PSD stores bottom-up
+
+  const rendered = []
+  for (const L of ordered) {
+    const cv = await loadCv(L.dataUrl)
+    const id = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height)
+    const lw = cv.width
+    const lh = cv.height
+    const n = lw * lh
+    const chR = new Uint8Array(n), chG = new Uint8Array(n), chB = new Uint8Array(n), chA = new Uint8Array(n)
+    let hasAlpha = false
+    for (let i = 0; i < n; i++) {
+      chR[i] = id.data[i * 4]
+      chG[i] = id.data[i * 4 + 1]
+      chB[i] = id.data[i * 4 + 2]
+      chA[i] = id.data[i * 4 + 3]
+      if (id.data[i * 4 + 3] < 255) hasAlpha = true
+    }
+    const chans = []
+    if (hasAlpha) chans.push({ id: -1, data: chA })
+    chans.push({ id: 0, data: chR }, { id: 1, data: chG }, { id: 2, data: chB })
+    rendered.push({
+      top: Math.max(0, Math.round(L.top || 0)),
+      left: Math.max(0, Math.round(L.left || 0)),
+      rw: lw,
+      rh: lh,
+      name: String(L.name || 'Layer').slice(0, 31),
+      opacity: Math.round(clamp01(L.opacity) * 255),
+      visible: L.visible !== false,
+      blend: PSD_BLEND_KEYS[L.blend] || 'norm',
+      channels: chans.map((c) => ({ id: c.id, ...rleChannel(c.data, lw, lh) })),
+    })
+  }
+
+  // composite (flattened) RGB
+  let comp = null
+  if (compositeDataUrl) {
+    const cv = await loadCv(compositeDataUrl)
+    const id = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height)
+    const n = cv.width * cv.height
+    comp = { r: new Uint8Array(n), g: new Uint8Array(n), b: new Uint8Array(n) }
+    for (let i = 0; i < n; i++) {
+      comp.r[i] = id.data[i * 4]
+      comp.g[i] = id.data[i * 4 + 1]
+      comp.b[i] = id.data[i * 4 + 2]
+    }
+  }
+
+  const out = new BW()
+  // header
+  out.str('8BPS')
+  out.be16(1)
+  out.u8(0, 0, 0, 0, 0, 0)
+  out.be16(3) // RGB
+  out.be32(H)
+  out.be32(W)
+  out.be16(8)
+  out.be16(3)
+  out.be32(0) // color mode data
+  out.be32(0) // image resources
+
+  // layer & mask section
+  const sec = new BW()
+  sec.be16(rendered.length)
+  for (const rec of rendered) {
+    sec.be32(rec.top)
+    sec.be32(rec.left)
+    sec.be32(rec.top + rec.rh)
+    sec.be32(rec.left + rec.rw)
+    sec.be16(rec.channels.length)
+    for (const ch of rec.channels) {
+      sec.be16(ch.id)
+      sec.be32(ch.total + 2) // +2 for the RLE compression marker
+    }
+    sec.str('8BIM')
+    sec.str(rec.blend)
+    sec.u8(rec.opacity)
+    sec.u8(0) // clipping
+    sec.u8(8 | (rec.visible ? 2 : 0)) // flags: psd5.0+ (+visible bit)
+    sec.u8(0) // filler
+    const extraStart = sec.len()
+    sec.be32(0) // extra data length (patched)
+    sec.be32(0) // layer mask data length
+    sec.be32(0) // blending ranges length
+    const nb = [...rec.name].map((c) => c.charCodeAt(0) & 0xff)
+    sec.u8(nb.length, ...nb)
+    while ((nb.length + 1) % 4 !== 0) sec.u8(0) // name padded to 4
+    sec.be32(0) // additional layer info length
+    sec.patchBe32(extraStart, sec.len() - extraStart - 4)
+    // channel data (RLE) follows the record
+    for (const ch of rec.channels) {
+      sec.be16(1) // compression = RLE
+      for (const row of ch.packedRows) {
+        sec.be16(row.length)
+        sec.u8(...row)
+      }
+    }
+  }
+  sec.be32(0) // global layer mask length
+  sec.be32(0) // additional layer info length
+  out.be32(sec.len())
+  out.u8(...sec.a)
+
+  // image data (composite)
+  out.be16(0) // raw
+  if (comp) {
+    out.u8(...comp.r)
+    out.u8(...comp.g)
+    out.u8(...comp.b)
+  } else {
+    for (let i = 0; i < W * H * 3; i++) out.u8(0)
+  }
+
+  return new Blob([out.bytes()], { type: 'image/vnd.adobe.photoshop' })
+}
+
+/** Flattened RGB PSD fallback (used when there are no canvas objects). */
 export function psdFromCanvas(cv) {
   const { data, width: W, height: H } = canvas2d(cv).getImageData(0, 0, cv.width, cv.height)
   const len = W * H
