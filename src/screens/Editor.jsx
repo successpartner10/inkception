@@ -33,6 +33,7 @@ import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../
 import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectBBox } from '../lib/segment'
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
 import { PROMPT_SUGGESTIONS, matchPrompt } from '../lib/prompts'
+import { COLLAGE_LAYOUTS, computeSlots } from '../lib/collage'
 import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
 
 const TAB_ITEMS = [
@@ -115,6 +116,7 @@ export function Editor({ project, onBack }) {
   const [cropOpen, setCropOpen] = useState(false)
   const [motionOpen, setMotionOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
+  const [collageOpen, setCollageOpen] = useState(false)
   const [eraseMode, setEraseMode] = useState(null) // null | 'erase' | 'fill'
   const [motion, setMotion] = useState({ mode: 'off', speed: 1 })
   const [extraLayers, setExtraLayers] = useState([])
@@ -326,8 +328,9 @@ export function Editor({ project, onBack }) {
           top: (fit.h - img.height * scale) / 2,
           scaleX: scale,
           scaleY: scale,
-          selectable: false,
-          evented: false,
+          // selectable so users can select & delete the on-screen image
+          selectable: true,
+          evented: true,
         })
         img.filters = buildFabricFilters(filtersRef.current)
         c.clear()
@@ -468,13 +471,8 @@ export function Editor({ project, onBack }) {
         else if (k === 't') setTool('text')
         else if (k === 'b') setTool('brush')
         else if (e.key === 'Delete' || e.key === 'Backspace') {
-          const c = fabricRef.current
-          const act = c && c.getActiveObject()
-          if (act && act !== imgObjRef.current) {
-            e.preventDefault()
-            c.remove(act)
-            c.requestRenderAll()
-          }
+          e.preventDefault()
+          deleteActive()
         } else if (e.key === 'Escape') {
           const c = fabricRef.current
           if (c) {
@@ -486,7 +484,7 @@ export function Editor({ project, onBack }) {
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [undo, redo])
+  }, [undo, redo, deleteActive])
 
   /* --------------------------------- layers -------------------------------- */
   const toggleLayer = (id) => {
@@ -523,6 +521,111 @@ export function Editor({ project, onBack }) {
     img.visible = sub ? sub.visible : true
     if (fabricRef.current) fabricRef.current.requestRenderAll()
   }, [layers])
+
+  /* --------------------------- delete / on-screen --------------------------- */
+  const deleteWholeImage = useCallback(() => {
+    const c = fabricRef.current
+    if (!c) return
+    decompRef.current.forEach((d) => c.remove(d.img))
+    decompRef.current = []
+    setExtraLayers([])
+    if (imgObjRef.current) c.remove(imgObjRef.current)
+    imgObjRef.current = null
+    setImageSrc(null)
+    imageSrcRef.current = null
+    naturalRef.current = { w: 0, h: 0 }
+    setUpscaled(false)
+    setEraseMode(null)
+    setBeforeAfter(false)
+    setFx({ ...QUICK_DEFAULTS })
+    c.requestRenderAll()
+    showToast('Image deleted', 'trash')
+  }, [showToast])
+
+  const deleteActive = useCallback(() => {
+    const c = fabricRef.current
+    if (!c) return
+    const act = c.getActiveObject()
+    if (act) {
+      if (act === imgObjRef.current) return deleteWholeImage()
+      c.remove(act)
+      c.requestRenderAll()
+      return
+    }
+    if (imgObjRef.current) return deleteWholeImage()
+    showToast('Nothing to delete', 'info')
+  }, [deleteWholeImage, showToast])
+
+  const deleteLayer = useCallback(
+    (id) => {
+      const c = fabricRef.current
+      const d = decompRef.current.find((x) => x.id === id)
+      if (d && c) c.remove(d.img)
+      decompRef.current = decompRef.current.filter((x) => x.id !== id)
+      setExtraLayers(
+        decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })),
+      )
+      if (c) c.requestRenderAll()
+      showToast('Layer deleted', 'trash')
+    },
+    [showToast],
+  )
+
+  /* --------------------------- collage studio (#9) -------------------------- */
+  const buildCollage = useCallback(
+    async (layoutId, urls) => {
+      const c = fabricRef.current
+      if (!c || !urls.length) return
+      setCollageOpen(false)
+      // remove previous collage objects
+      decompRef.current.filter((d) => d.id.startsWith('col-')).forEach((d) => c.remove(d.img))
+      decompRef.current = decompRef.current.filter((d) => !d.id.startsWith('col-'))
+      setTool('select')
+      const W = fit.w
+      const H = fit.h
+      if (!W || !H) {
+        showToast('Canvas not ready', 'close')
+        return
+      }
+      setBusy({ kind: 'real', title: 'Collage Studio', step: 'Arranging photos…', progress: 40 })
+      try {
+        const slots = computeSlots(layoutId, urls.length, W, H)
+        const rot =
+          layoutId === 'polaroid'
+            ? [-6, 6, 5, -5, 4]
+            : layoutId === 'overlap'
+              ? [-3, 3, -2, 2, -2]
+              : null
+        for (let i = 0; i < slots.length && i < urls.length; i++) {
+          const slot = slots[i]
+          const img = await FabricImage.fromURL(urls[i])
+          const px = { x: slot.x * W, y: slot.y * H, w: slot.w * W, h: slot.h * H }
+          const s = Math.min(px.w / img.width, px.h / img.height)
+          img.set({
+            left: px.x + (px.w - img.width * s) / 2,
+            top: px.y + (px.h - img.height * s) / 2,
+            scaleX: s,
+            scaleY: s,
+            selectable: true,
+            evented: true,
+          })
+          if (rot) img.set('angle', rot[i % rot.length])
+          c.add(img)
+          decompRef.current.push({ id: `col-${i}`, img, name: `Photo ${i + 1}`, type: 'Collage', dataUrl: urls[i], visible: true })
+        }
+        c.requestRenderAll()
+        setExtraLayers(
+          decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })),
+        )
+        setBusy(null)
+        showToast(`Collage built — ${urls.length} photos on canvas`, 'grid')
+      } catch {
+        setBusy(null)
+        showToast('Collage failed', 'close')
+      }
+    },
+    [fit.w, fit.h, showToast],
+  )
 
   /* ------------------------------ AI pipeline ------------------------------ */
   /* REAL subject matting — replaces the old deterministic trick (audit #1). */
@@ -904,6 +1007,7 @@ export function Editor({ project, onBack }) {
       if (action === 'fx') return setFx((f) => ({ ...f, ...payload }))
       if (action === 'filters') return commitFilters({ ...filtersRef.current, ...payload })
       if (action === 'reset') return resetAll()
+      if (action === 'collage') return setCollageOpen(true)
       if (action === 'undo') return undo()
       if (action === 'redo') return redo()
       showToast('Try: "remove background", "make it warmer", "upscale 4×"', 'info')
@@ -914,6 +1018,10 @@ export function Editor({ project, onBack }) {
 
   /* --------------------------------- export -------------------------------- */
   const doExport = async () => {
+    if (!imageSrcRef.current) {
+      showToast('No image to export', 'info')
+      return
+    }
     setExporting(true)
     try {
       const p =
@@ -997,6 +1105,7 @@ export function Editor({ project, onBack }) {
           onBatch={() => setBatchOpen(true)}
           onDecompose={() => runDecompose()}
           onEraser={(m) => startErase(m)}
+          onCollage={() => setCollageOpen(true)}
           upscaled={upscaled}
           onPromptAction={onPromptAction}
         />
@@ -1010,6 +1119,7 @@ export function Editor({ project, onBack }) {
         onSelect={setSelectedLayer}
         onToggleVisibility={toggleLayer}
         onToggleLock={toggleLock}
+        onDeleteLayer={deleteLayer}
         imageSrc={imageSrc}
         showToast={showToast}
         layerOpacity={layerOpacity}
@@ -1046,6 +1156,7 @@ export function Editor({ project, onBack }) {
         <div className="hidden items-center gap-0.5 lg:flex">
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
           <IconBtn icon="redo" title="Redo (⌘⇧Z)" disabled={!canRedo} onClick={redo} />
+          <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
           <div className="mx-2 h-5 w-px bg-line" />
           <Button
             variant="secondary"
@@ -1062,6 +1173,7 @@ export function Editor({ project, onBack }) {
         <div className="flex items-center gap-0.5 lg:hidden">
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
           <IconBtn icon="redo" title="Redo (⌘⇧Z)" disabled={!canRedo} onClick={redo} />
+          <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
           <IconBtn icon="folder" title="Open file" onClick={() => fileRef.current && fileRef.current.click()} />
           <IconBtn icon="export" title="Export (⌘E)" onClick={() => setExportOpen(true)} />
         </div>
@@ -1095,6 +1207,24 @@ export function Editor({ project, onBack }) {
             )}
             style={{ width: fit.w || 320, height: fit.h || 240 }}
           >
+            {!imageSrc && (
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-ink">
+                <span className="flex h-14 w-14 items-center justify-center rounded-ink-lg border border-line text-mute">
+                  <Icon name="image" size={24} />
+                </span>
+                <p className="text-sm text-dim">No image loaded</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="folder"
+                  onClick={() => fileRef.current && fileRef.current.click()}
+                >
+                  Open File
+                </Button>
+                <p className="text-[10px] text-mute">…or drop an image anywhere on the canvas</p>
+              </div>
+            )}
+
             {layers.find((l) => l.id === 'backdrop')?.visible && (
               <div className="absolute inset-0 bg-[#161616]" />
             )}
@@ -1400,6 +1530,17 @@ export function Editor({ project, onBack }) {
         <BatchBody onRun={runBatch} result={batchResult} onClear={() => setBatchResult(null)} />
       </Modal>
 
+      {/* ----------------------------- collage modal ------------------------------ */}
+      <Modal
+        open={collageOpen}
+        onClose={() => setCollageOpen(false)}
+        title="Collage Studio"
+        subtitle="2–12 photos · 12 AI layouts"
+        width="max-w-xl"
+      >
+        <CollageBody onBuild={buildCollage} />
+      </Modal>
+
       {/* -------------------------------- export modal ----------------------------- */}
       <Modal
         open={exportOpen}
@@ -1667,7 +1808,7 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
 function AITab({
   busy, onRemoveBg, onReplaceBg, onEnhance, onUpscale, onVectorize,
   onRetouch, onDenoise, onLut, onCrop, onMotion, onBatch, onDecompose, onEraser,
-  upscaled, onPromptAction,
+  onCollage, upscaled, onPromptAction,
 }) {
   const [phrase, setPhrase] = useState('')
 
@@ -1707,6 +1848,7 @@ function AITab({
       items: [
         { icon: 'play', title: 'Motion', desc: 'Animated preview', onClick: onMotion },
         { icon: 'layers', title: 'Batch AI', desc: 'Many images, one op', onClick: onBatch },
+        { icon: 'grid', title: 'Collage Studio', desc: '2–12 photos · 12 layouts', onClick: onCollage },
       ],
     },
   ]
@@ -1796,8 +1938,8 @@ function AITab({
 
 /* ------------------------------- tab: Layers ------------------------------ */
 function LayersTab({
-  layers, extraLayers = [], selected, onSelect, onToggleVisibility, onToggleLock, imageSrc, showToast,
-  layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
+  layers, extraLayers = [], selected, onSelect, onToggleVisibility, onToggleLock, onDeleteLayer,
+  imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
 }) {
   const previews = {
     text: <span className="text-[10px] font-extrabold tracking-widest text-fg">Tt</span>,
@@ -1858,7 +2000,8 @@ function LayersTab({
                 selected={false}
                 onSelect={() => {}}
                 onToggleVisibility={() => onToggleVisibility(l.id)}
-                onToggleLock={() => showToast('Decomposed layers are read-only', 'lock')}
+                onToggleLock={() => showToast('AI layers are read-only', 'lock')}
+                onDelete={() => onDeleteLayer(l.id)}
               />
             ))}
           </>
@@ -2071,6 +2214,104 @@ function BatchBody({ onRun, result, onClear }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ----------------------------- collage studio body ------------------------ */
+function CollageBody({ onBuild }) {
+  const [photos, setPhotos] = useState([]) // { url, name }
+  const [layout, setLayout] = useState('grid4')
+  const inputRef = useRef(null)
+
+  const addFiles = (files) => {
+    const add = [...files].slice(0, 12 - photos.length).map((f) => ({ url: URL.createObjectURL(f), name: f.name }))
+    const next = [...photos, ...add]
+    setPhotos(next)
+    const fits = COLLAGE_LAYOUTS.find((l) => next.length >= l.min && next.length <= l.max)
+    if (fits) setLayout(fits.id)
+  }
+
+  const current = COLLAGE_LAYOUTS.find((l) => l.id === layout)
+  const fits = photos.length >= (current?.min ?? 99) && photos.length <= (current?.max ?? 0)
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => inputRef.current && inputRef.current.click()}
+        className="flex w-full items-center justify-center gap-2 rounded-ink border border-dashed border-line-2 px-4 py-4 text-xs text-dim transition-colors hover:border-white"
+      >
+        <Icon name="upload" size={15} /> Choose photos ({photos.length}/12)
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) addFiles(e.target.files)
+          e.target.value = ''
+        }}
+      />
+
+      {photos.length > 0 && (
+        <div className="mt-3 grid grid-cols-6 gap-2">
+          {photos.map((p, i) => (
+            <div key={i} className="group relative aspect-square overflow-hidden rounded-ink border border-line">
+              <img src={p.url} alt={p.name} className="h-full w-full object-cover" />
+              <button
+                type="button"
+                onClick={() => setPhotos(photos.filter((_, ix) => ix !== i))}
+                className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-ink bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                title="Remove"
+              >
+                <Icon name="close" size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center gap-2">
+        <span className="label-xs text-dim">Layouts</span>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+        {COLLAGE_LAYOUTS.map((l) => {
+          const ok = photos.length >= l.min && photos.length <= l.max
+          return (
+            <button
+              key={l.id}
+              type="button"
+              onClick={() => setLayout(l.id)}
+              disabled={!ok}
+              className={cn(
+                'rounded-ink border px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] transition-colors',
+                layout === l.id && ok ? 'border-white bg-white text-black' : 'border-line text-dim hover:border-line-2 hover:text-white',
+                !ok && 'opacity-35',
+              )}
+            >
+              {l.name}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <span className="text-[10px] text-mute">
+          {current ? `${current.min}–${current.max} photos required` : 'Pick a layout'}
+        </span>
+        <Button
+          variant="primary"
+          icon="grid"
+          disabled={!fits || photos.length < 2}
+          onClick={() => onBuild(layout, photos.map((p) => p.url))}
+        >
+          Build Collage
+        </Button>
+      </div>
     </div>
   )
 }

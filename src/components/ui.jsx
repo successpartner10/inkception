@@ -313,7 +313,7 @@ export function ActionCard({ icon, title, desc, onClick, busy, progress, disable
 
 /* --------------------------------- LayerRow --------------------------------- */
 
-export function LayerRow({ layer, preview, selected, onSelect, onToggleVisibility, onToggleLock }) {
+export function LayerRow({ layer, preview, selected, onSelect, onToggleVisibility, onToggleLock, onDelete }) {
   return (
     <div
       role="button"
@@ -356,6 +356,17 @@ export function LayerRow({ layer, preview, selected, onSelect, onToggleVisibilit
             onToggleLock()
           }}
         />
+        {onDelete && (
+          <IconBtn
+            icon="trash"
+            size={15}
+            title="Delete layer"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+          />
+        )}
       </div>
     </div>
   )

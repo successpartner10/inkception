@@ -53,6 +53,9 @@ export function matchPrompt(raw) {
   if (has('saturate') || has('vivid')) return { action: 'filters', payload: { saturation: 120 } }
   if (has('desaturate') || has('muted')) return { action: 'filters', payload: { saturation: 60 } }
 
+  // collage
+  if (has('collage') || has('mosaic') || (has('layout') && has('photo'))) return { action: 'collage' }
+
   // history
   if (has('undo') || has('revert')) return { action: 'undo' }
   if (has('redo')) return { action: 'redo' }
