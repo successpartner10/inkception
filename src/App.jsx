@@ -67,13 +67,13 @@ export default function App() {
     document.title = current ? `${current.name} — Inkception` : 'Inkception — AI Design Studio'
   }, [current])
 
-  const createProject = () => {
+  const createProject = (img) => {
     const p = {
       id: `p-${Date.now()}`,
       name: `Untitled ${String(untitledCounter++).padStart(2, '0')}`,
       layers: 4,
       date: new Date().toISOString(),
-      img: asset('samples/bw.jpg'),
+      img: img || asset('samples/bw.jpg'),
     }
     setProjects((ps) => [p, ...ps])
     setCurrentId(p.id)
@@ -109,6 +109,7 @@ export default function App() {
       onOpen={openProject}
       onNew={createProject}
       onDelete={deleteProject}
+      onImportMedia={(url) => createProject(url)}
     />
   )
 }

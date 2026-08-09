@@ -3,8 +3,15 @@
 A monochrome, AI-first design studio. Pure black. Pure focus.
 
 Built from the **Inkception** design system (`DESIGN.md`): Zen minimalism, strict
-monochromatic palette, Plus Jakarta Sans, "Round Eight" (8px) geometry, tonal
-layering instead of shadows, ghost borders.
+monochromatic palette, Raleway wordmark + Plus Jakarta Sans UI, "Round Eight"
+(8px) geometry, tonal layering instead of shadows, ghost borders.
+
+## Live
+
+🌐 **https://successpartner10.github.io/inkception/**
+
+The site deploys automatically whenever `main` is updated (GitHub Actions →
+`.github/workflows/deploy.yml`), so the URL always reflects the latest push.
 
 ## Stack
 

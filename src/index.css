@@ -8,6 +8,7 @@
  */
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Raleway", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 
   /* palette */
   --color-ink: #000000;          /* primary canvas — pure black */

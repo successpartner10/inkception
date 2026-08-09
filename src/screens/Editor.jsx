@@ -19,7 +19,6 @@ import {
 import { LayerRow } from '../components/ui'
 import { BeforeAfter } from '../components/BeforeAfter'
 import { VectorizePanel } from '../components/VectorizePanel'
-import { Monogram } from '../components/Logo'
 import {
   AUTO_ENHANCE_FILTERS,
   DEFAULT_FILTERS,
@@ -27,7 +26,7 @@ import {
   cssFilterString,
   isDefaultFilters,
 } from '../lib/filters'
-import { EXPORT_PRESETS, renderExport } from '../lib/export'
+import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../lib/export'
 import { clamp, cn, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
 
 const TAB_ITEMS = [
@@ -75,7 +74,8 @@ export function Editor({ project, onBack }) {
   const [tab, setTab] = useState('adjust')
   const [aiView, setAiView] = useState('grid')
   const [exportOpen, setExportOpen] = useState(false)
-  const [preset, setPreset] = useState('ig-feed')
+  const [preset, setPreset] = useState('yt-thumb')
+  const [exportGroup, setExportGroup] = useState('all')
   const [format, setFormat] = useState('png')
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState(null)
@@ -420,14 +420,26 @@ export function Editor({ project, onBack }) {
           ? { id: 'original', name: 'Original', w: naturalRef.current.w, h: naturalRef.current.h }
           : EXPORT_PRESETS.find((x) => x.id === preset)
       if (!p || !p.w || !p.h) throw new Error('invalid preset')
-      const dataUrl = await renderExport(imageSrcRef.current, {
+      let dataUrl = await renderExport(imageSrcRef.current, {
         w: p.w,
         h: p.h,
         filterString: cssFilterString(filtersRef.current),
       })
-      downloadDataUrl(dataUrl, `${slug(project.name)}-${p.w}x${p.h}.png`)
+      const ext = format === 'jpg' ? 'jpg' : 'png'
+      if (format === 'jpg') {
+        const img = await loadImageElement(dataUrl)
+        const cv = document.createElement('canvas')
+        cv.width = p.w
+        cv.height = p.h
+        const ctx = cv.getContext('2d')
+        ctx.fillStyle = '#000000'
+        ctx.fillRect(0, 0, p.w, p.h)
+        ctx.drawImage(img, 0, 0)
+        dataUrl = cv.toDataURL('image/jpeg', 0.92)
+      }
+      downloadDataUrl(dataUrl, `${slug(project.name)}-${p.w}x${p.h}.${ext}`)
       setExportOpen(false)
-      showToast(`Exported ${p.w}×${p.h} PNG`, 'download')
+      showToast(`Exported ${p.w}×${p.h} ${ext.toUpperCase()}`, 'download')
     } catch {
       showToast('Export failed', 'close')
     } finally {
@@ -488,7 +500,6 @@ export function Editor({ project, onBack }) {
       {/* ------------------------------- top bar ------------------------------ */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-3 sm:px-4">
         <IconBtn icon="chevronLeft" title="Back to gallery" onClick={onBack} />
-        <Monogram size={22} className="ml-1.5" />
         <div className="ml-2 flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-semibold">{project.name}</span>
           <Chip className="hidden sm:inline-flex">{project.layers} Layers</Chip>
@@ -499,6 +510,14 @@ export function Editor({ project, onBack }) {
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
           <IconBtn icon="redo" title="Redo (⌘⇧Z)" disabled={!canRedo} onClick={redo} />
           <div className="mx-2 h-5 w-px bg-line" />
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="folder"
+            onClick={() => fileRef.current && fileRef.current.click()}
+          >
+            Open
+          </Button>
           <Button variant="secondary" size="sm" icon="export" onClick={() => setExportOpen(true)}>
             Export
           </Button>
@@ -506,6 +525,7 @@ export function Editor({ project, onBack }) {
         <div className="flex items-center gap-0.5 lg:hidden">
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
           <IconBtn icon="redo" title="Redo (⌘⇧Z)" disabled={!canRedo} onClick={redo} />
+          <IconBtn icon="folder" title="Open file" onClick={() => fileRef.current && fileRef.current.click()} />
           <IconBtn icon="export" title="Export (⌘E)" onClick={() => setExportOpen(true)} />
         </div>
       </header>
@@ -700,39 +720,65 @@ export function Editor({ project, onBack }) {
         open={exportOpen}
         onClose={() => setExportOpen(false)}
         title="Export"
-        subtitle="Platform presets — cover-cropped to fit"
-        width="max-w-lg"
+        subtitle="Platform presets — cover-cropped to exact size"
+        width="max-w-2xl"
       >
-        <div className="grid grid-cols-2 gap-3">
-          {EXPORT_PRESETS.map((p) => (
+        <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
+          <button
+            type="button"
+            onClick={() => setExportGroup('all')}
+            className={cn(
+              'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+              exportGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+            )}
+          >
+            All · {EXPORT_PRESETS.length}
+          </button>
+          {EXPORT_GROUPS.map((g) => (
             <button
-              key={p.id}
+              key={g}
               type="button"
-              onClick={() => setPreset(p.id)}
+              onClick={() => setExportGroup(g)}
               className={cn(
-                'flex items-center gap-3 rounded-ink border p-3.5 text-left transition-colors',
-                preset === p.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+                'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                exportGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
               )}
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
-                <Icon name={p.icon} size={16} />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-semibold">{p.name}</span>
-                <span className="mt-0.5 block text-[10px] text-mute">
-                  {p.w}×{p.h} · {p.tag}
-                </span>
-              </span>
-              {preset === p.id && <Icon name="check" size={14} className="ml-auto shrink-0 text-white" />}
+              {g} · {EXPORT_PRESETS.filter((p) => p.platform === g).length}
             </button>
           ))}
+        </div>
+
+        <div className="mt-3">
+          {exportGroup === 'all'
+            ? EXPORT_GROUPS.map((g) => (
+                <div key={g} className="mb-4 last:mb-0">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Icon name={PLATFORM_ICONS[g]} size={13} className="text-mute" />
+                    <span className="label-xs text-dim">{g}</span>
+                    <span className="h-px flex-1 bg-line" />
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {EXPORT_PRESETS.filter((p) => p.platform === g).map((p) => (
+                      <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} />
+                    ))}
+                  </div>
+                </div>
+              ))
+            : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {EXPORT_PRESETS.filter((p) => p.platform === exportGroup).map((p) => (
+                  <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} />
+                ))}
+              </div>
+            )}
         </div>
 
         <button
           type="button"
           onClick={() => setPreset('original')}
           className={cn(
-            'mt-3 flex w-full items-center justify-between rounded-ink border px-3.5 py-2.5 text-left transition-colors',
+            'mt-4 flex w-full items-center justify-between rounded-ink border px-3.5 py-2.5 text-left transition-colors',
             preset === 'original' ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
           )}
         >
@@ -779,6 +825,32 @@ export function Editor({ project, onBack }) {
 
       <Toast toast={toast} onDone={() => setToast(null)} />
     </div>
+  )
+}
+
+/* ------------------------------ export preset ---------------------------- */
+function PresetRow({ p, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={p.use}
+      className={cn(
+        'flex items-center gap-2.5 rounded-ink border px-2.5 py-2 text-left transition-colors',
+        active ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+      )}
+    >
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
+        <Icon name={PLATFORM_ICONS[p.platform]} size={13} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11px] font-semibold">{p.name}</span>
+        <span className="mt-0.5 block text-[9px] text-mute">
+          {p.w}×{p.h} · {p.ratio}
+        </span>
+      </span>
+      {active && <Icon name="check" size={13} className="shrink-0 text-white" />}
+    </button>
   )
 }
 

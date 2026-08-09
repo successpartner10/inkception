@@ -2,11 +2,11 @@
 // Blueprint §3.A: 48px header (ik monogram / INKCEPTION / profile),
 // hero card, 2-col scrollable project grid.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { cn, formatDate } from '../lib/utils'
 import { Icon } from '../components/Icon'
 import { Button, Chip, IconBtn } from '../components/ui'
-import { Logo, Monogram } from '../components/Logo'
+import { Logo } from '../components/Logo'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -14,9 +14,16 @@ const FILTERS = [
   { id: 'archived', label: 'Archived' },
 ]
 
-export function Gallery({ projects, onOpen, onNew, onDelete }) {
+export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia }) {
   const [filter, setFilter] = useState('all')
   const [pendingDelete, setPendingDelete] = useState(null)
+  const fileRef = useRef(null)
+
+  const onFile = (e) => {
+    const f = e.target.files && e.target.files[0]
+    if (f && f.type.startsWith('image/')) onImportMedia(URL.createObjectURL(f))
+    e.target.value = ''
+  }
 
   const now = Date.now()
   const filtered = projects.filter((p) => {
@@ -27,9 +34,9 @@ export function Gallery({ projects, onOpen, onNew, onDelete }) {
 
   return (
     <div className="flex h-full flex-col bg-ink">
-      {/* Header — 48px, brand lockup */}
+      {/* Header — 48px, text-only wordmark */}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4 sm:px-6">
-        <Logo size={26} />
+        <Logo size="sm" />
         <div className="flex-1" />
         <IconBtn icon="user" title="Profile" size={17} />
       </header>
@@ -38,10 +45,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete }) {
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
           {/* Hero */}
           <section className="rounded-ink-lg border border-line bg-surface p-6 sm:p-10">
-            <div className="flex items-center gap-3">
-              <Monogram size={34} />
-              <Chip active>AI-First Design Studio</Chip>
-            </div>
+            <Chip active>AI-First Design Studio</Chip>
             <h1 className="mt-6 text-4xl font-bold leading-[1.06] tracking-tight sm:text-5xl">
               Start
               <br />
@@ -55,10 +59,19 @@ export function Gallery({ projects, onOpen, onNew, onDelete }) {
               <Button variant="primary" size="lg" icon="plus" onClick={onNew}>
                 New Project
               </Button>
+              <Button
+                variant="secondary"
+                size="lg"
+                icon="upload"
+                onClick={() => fileRef.current && fileRef.current.click()}
+              >
+                Open / Add Media
+              </Button>
               <span className="hidden text-[10px] font-semibold uppercase tracking-[0.14em] text-mute sm:block">
                 ⌘N
               </span>
             </div>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
           </section>
 
           {/* Projects */}
