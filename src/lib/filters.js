@@ -61,3 +61,48 @@ export function buildFabricFilters(f) {
   }
   return list
 }
+
+/* ------------------------- Quick actions (§7) ------------------------- */
+// 20 one-click effects across COLOR / ADJUST / FILTER / TRANSFORM.
+
+export const QUICK_DEFAULTS = {
+  invert: false,
+  bw: false,
+  sepia: false,
+  vintage: false,
+  blur: 0, // 0 = off, 0.2 mild, 0.8 heavy
+  sharpen: false,
+  noise: 0,
+  pixelate: 0,
+  flipX: false,
+  flipY: false,
+  angle: 0,
+}
+
+/** Quick-effect fabric filters, appended after the base adjustments. */
+export function buildQuickFilters(fx) {
+  const list = []
+  if (fx.invert) list.push(new F.Invert())
+  if (fx.bw) list.push(new F.Grayscale())
+  if (fx.sepia) list.push(new F.Sepia())
+  if (fx.vintage) {
+    list.push(new F.Sepia())
+    list.push(new F.Brightness({ brightness: -0.06 }))
+    list.push(new F.Contrast({ contrast: -0.08 }))
+  }
+  if (fx.blur > 0) list.push(new F.Blur({ blur: fx.blur }))
+  if (fx.sharpen) list.push(new F.Convolute({ matrix: [0, -1, 0, -1, 5, -1, 0, -1, 0] }))
+  if (fx.noise > 0) list.push(new F.Noise({ noise: fx.noise }))
+  if (fx.pixelate > 0) list.push(new F.Pixelate({ blocksize: fx.pixelate }))
+  return list
+}
+
+/** Quick TRANSFORM values to apply to the image object itself. */
+export function applyQuickTransforms(img, fx) {
+  if (!img) return
+  img.set('flipX', !!fx.flipX)
+  img.set('flipY', !!fx.flipY)
+  img.set('angle', fx.angle || 0)
+  img.setCoords()
+}
+

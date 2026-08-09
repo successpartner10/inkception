@@ -132,7 +132,9 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia }) {
 
       <footer className="flex h-10 shrink-0 items-center justify-between border-t border-line px-4 sm:px-6">
         <span className="label-xs text-mute">Monochrome Studio</span>
-        <span className="label-xs text-mute">© 2026 Inkception</span>
+        <span className="label-xs text-mute">
+          {window.__INKCEPTION_VERSION__ || 'v-dev'} · © 2026 Inkception
+        </span>
       </footer>
     </div>
   )

@@ -4,7 +4,7 @@
 // action grid and AI layer segmentation stack.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Canvas, Image as FabricImage } from 'fabric'
+import { Canvas, Ellipse, IText, Line, PencilBrush, Rect, Image as FabricImage } from 'fabric'
 import { Icon } from '../components/Icon'
 import {
   ActionCard,
@@ -22,7 +22,10 @@ import { VectorizePanel } from '../components/VectorizePanel'
 import {
   AUTO_ENHANCE_FILTERS,
   DEFAULT_FILTERS,
+  QUICK_DEFAULTS,
+  applyQuickTransforms,
   buildFabricFilters,
+  buildQuickFilters,
   cssFilterString,
   isDefaultFilters,
 } from '../lib/filters'
@@ -31,8 +34,23 @@ import { clamp, cn, downloadDataUrl, loadImageElement, slug, useMediaQuery } fro
 
 const TAB_ITEMS = [
   { id: 'adjust', label: 'Adjust', icon: 'sliders' },
+  { id: 'quick', label: 'Quick', icon: 'sparkle' },
   { id: 'ai', label: 'AI', icon: 'sparkle' },
   { id: 'layers', label: 'Layers', icon: 'layers' },
+]
+
+export const TOOLS = [
+  { id: 'select', label: 'Select', key: 'V' },
+  { id: 'rect', label: 'Rectangle', key: 'R' },
+  { id: 'ellipse', label: 'Ellipse', key: 'E' },
+  { id: 'line', label: 'Line', key: 'L' },
+  { id: 'text', label: 'Text', key: 'T' },
+  { id: 'brush', label: 'Brush', key: 'B' },
+]
+
+export const BLEND_MODES = [
+  'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
+  'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion',
 ]
 
 const LAYER_DEFAULTS = [
@@ -58,12 +76,19 @@ export function Editor({ project, onBack }) {
   const busyTimerRef = useRef(null)
   const imageSrcRef = useRef(null)
   const filtersRef = useRef(DEFAULT_FILTERS)
+  const toolRef = useRef('select')
+  const draftRef = useRef(null)
+  const fxRef = useRef(QUICK_DEFAULTS)
 
   /* --------------------------------- state --------------------------------- */
   const [imageSrc, setImageSrc] = useState(null)
   const [fit, setFit] = useState({ w: 0, h: 0 })
   const [zoom, setZoom] = useState(1)
   const [filters, setFilters] = useState({ ...DEFAULT_FILTERS })
+  const [fx, setFx] = useState({ ...QUICK_DEFAULTS })
+  const [tool, setTool] = useState('select')
+  const [layerOpacity, setLayerOpacity] = useState(100)
+  const [blendMode, setBlendMode] = useState('normal')
   const [hist, setHist] = useState([{ ...DEFAULT_FILTERS }])
   const [histPos, setHistPos] = useState(0)
   const [layers, setLayers] = useState(LAYER_DEFAULTS)
@@ -92,6 +117,12 @@ export function Editor({ project, onBack }) {
   useEffect(() => {
     filtersRef.current = filters
   }, [filters])
+  useEffect(() => {
+    fxRef.current = fx
+  }, [fx])
+  useEffect(() => {
+    toolRef.current = tool
+  }, [tool])
   useEffect(() => {
     imageSrcRef.current = imageSrc
   }, [imageSrc])
@@ -131,20 +162,84 @@ export function Editor({ project, onBack }) {
     })
     fabricRef.current = c
 
-    // drag-to-pan
+    // brush
+    const brush = new PencilBrush(c)
+    brush.width = 4
+    brush.color = '#ffffff'
+    c.freeDrawingBrush = brush
+
     let pan = null
+
     c.on('mouse:down', (o) => {
       if (beforeAfterRef.current) return
-      pan = { x: o.e.clientX, y: o.e.clientY, vp: [...c.viewportTransform] }
+      const t = toolRef.current
+      if (t === 'select') {
+        if (!o.target) pan = { x: o.e.clientX, y: o.e.clientY, vp: [...c.viewportTransform] }
+        return
+      }
+      if (t === 'brush') {
+        c.isDrawingMode = true
+        return
+      }
+      const p = c.getPointer(o.e)
+      if (t === 'rect') {
+        const r = new Rect({
+          left: p.x, top: p.y, width: 1, height: 1,
+          fill: 'transparent', stroke: '#ffffff', strokeWidth: 2,
+        })
+        c.add(r)
+        draftRef.current = r
+      } else if (t === 'ellipse') {
+        const el = new Ellipse({
+          left: p.x, top: p.y, rx: 1, ry: 1,
+          fill: 'transparent', stroke: '#ffffff', strokeWidth: 2,
+        })
+        c.add(el)
+        draftRef.current = el
+      } else if (t === 'line') {
+        const ln = new Line([p.x, p.y, p.x, p.y], {
+          stroke: '#ffffff', strokeWidth: 2,
+        })
+        c.add(ln)
+        draftRef.current = ln
+      } else if (t === 'text') {
+        const it = new IText('Text', {
+          left: p.x, top: p.y, fill: '#ffffff', fontSize: 26,
+          fontFamily: "'Plus Jakarta Sans', sans-serif",
+        })
+        c.add(it)
+        c.setActiveObject(it)
+      }
     })
+
     c.on('mouse:move', (o) => {
-      if (!pan) return
-      c.viewportTransform[4] = pan.vp[4] + (o.e.clientX - pan.x)
-      c.viewportTransform[5] = pan.vp[5] + (o.e.clientY - pan.y)
+      if (pan) {
+        c.viewportTransform[4] = pan.vp[4] + (o.e.clientX - pan.x)
+        c.viewportTransform[5] = pan.vp[5] + (o.e.clientY - pan.y)
+        c.requestRenderAll()
+        return
+      }
+      const d = draftRef.current
+      if (!d) return
+      const p = c.getPointer(o.e)
+      if (d.type === 'rect') {
+        d.set({ width: p.x - d.left, height: p.y - d.top })
+      } else if (d.type === 'ellipse') {
+        d.set({ rx: Math.abs((p.x - d.left) / 2), ry: Math.abs((p.y - d.top) / 2) })
+        d.set({ left: (p.x + d.left) / 2, top: (p.y + d.top) / 2 })
+      } else if (d.type === 'line') {
+        d.set({ x2: p.x, y2: p.y })
+      }
       c.requestRenderAll()
     })
+
     const end = () => {
       pan = null
+      c.isDrawingMode = false
+      if (draftRef.current) {
+        draftRef.current.setCoords()
+        draftRef.current = null
+      }
     }
     c.on('mouse:up', end)
     c.on('mouse:out', end)
@@ -155,6 +250,18 @@ export function Editor({ project, onBack }) {
     }
   }, [])
 
+  /* tool change → toggle selection/editing mode */
+  useEffect(() => {
+    const c = fabricRef.current
+    if (!c) return
+    const isSelect = tool === 'select'
+    c.selection = isSelect
+    c.skipTargetFind = !isSelect
+    c.isDrawingMode = tool === 'brush'
+    if (!isSelect) c.discardActiveObject()
+    c.requestRenderAll()
+  }, [tool])
+
   /* ----------------------------- image loading ----------------------------- */
   const loadIntoCanvas = useCallback(
     async (src) => {
@@ -162,6 +269,9 @@ export function Editor({ project, onBack }) {
       setBusy(null)
       setUpscaled(false)
       setAiView('grid')
+      setFx({ ...QUICK_DEFAULTS })
+      setLayerOpacity(100)
+      setBlendMode('normal')
       setImageSrc(src)
       imageSrcRef.current = src
       try {
@@ -221,14 +331,24 @@ export function Editor({ project, onBack }) {
     const t = setTimeout(() => {
       const img = imgObjRef.current
       if (!img) return
-      img.filters = buildFabricFilters(filters)
+      img.filters = [...buildFabricFilters(filters), ...buildQuickFilters(fxRef.current)]
       const p = img.applyFilters()
+      applyQuickTransforms(img, fxRef.current)
       const c = fabricRef.current
       if (p && typeof p.then === 'function') p.then(() => c && c.requestRenderAll())
       else if (c) c.requestRenderAll()
     }, 30)
     return () => clearTimeout(t)
-  }, [filters])
+  }, [filters, fx])
+
+  /* layer opacity + blend mode on the subject image */
+  useEffect(() => {
+    const img = imgObjRef.current
+    if (!img) return
+    img.set('opacity', layerOpacity / 100)
+    img.set('globalCompositeOperation', blendMode === 'normal' ? 'source-over' : blendMode)
+    if (fabricRef.current) fabricRef.current.requestRenderAll()
+  }, [layerOpacity, blendMode])
 
   /* ---------------------------- history / undo ---------------------------- */
   const setLive = (patch) => setFilters((f) => ({ ...f, ...patch }))
@@ -303,19 +423,47 @@ export function Editor({ project, onBack }) {
   useEffect(() => {
     const h = (e) => {
       const mod = e.metaKey || e.ctrlKey
-      if (mod && e.key.toLowerCase() === 'z') {
+      const k = e.key.toLowerCase()
+      if (mod && k === 'z') {
         e.preventDefault()
         if (e.shiftKey) redo()
         else undo()
-      } else if (mod && e.key.toLowerCase() === 'e') {
+      } else if (mod && k === 'e') {
         e.preventDefault()
         setExportOpen(true)
-      } else if (mod && e.key.toLowerCase() === 'b') {
+      } else if (mod && k === 'b') {
         e.preventDefault()
         setBeforeAfter((v) => !v)
-      } else if (mod && e.key.toLowerCase() === 'o') {
+      } else if (mod && k === 'o') {
         e.preventDefault()
         fileRef.current && fileRef.current.click()
+      } else if (mod || e.metaKey || e.ctrlKey || e.altKey) {
+        return
+      } else {
+        // tool shortcuts + object ops (ignore when typing in a text input)
+        const tag = (e.target && e.target.tagName) || ''
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) return
+        if (k === 'v') setTool('select')
+        else if (k === 'r') setTool('rect')
+        else if (k === 'e') setTool('ellipse')
+        else if (k === 'l') setTool('line')
+        else if (k === 't') setTool('text')
+        else if (k === 'b') setTool('brush')
+        else if (e.key === 'Delete' || e.key === 'Backspace') {
+          const c = fabricRef.current
+          const act = c && c.getActiveObject()
+          if (act && act !== imgObjRef.current) {
+            e.preventDefault()
+            c.remove(act)
+            c.requestRenderAll()
+          }
+        } else if (e.key === 'Escape') {
+          const c = fabricRef.current
+          if (c) {
+            c.discardActiveObject()
+            c.requestRenderAll()
+          }
+        }
       }
     }
     window.addEventListener('keydown', h)
@@ -327,6 +475,21 @@ export function Editor({ project, onBack }) {
     setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)))
   const toggleLock = (id) =>
     setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, locked: !l.locked } : l)))
+
+  const duplicateLayer = () => {
+    const img = imgObjRef.current
+    if (!img) return
+    const c = fabricRef.current
+    if (!c) return
+    img.clone()
+      .then((dup) => {
+        dup.set({ left: img.left + 24, top: img.top + 24, evented: false, selectable: false })
+        c.add(dup)
+        c.requestRenderAll()
+        showToast('Layer duplicated', 'copy')
+      })
+      .catch(() => showToast('Could not duplicate layer', 'close'))
+  }
 
   useEffect(() => {
     const img = imgObjRef.current
@@ -466,6 +629,17 @@ export function Editor({ project, onBack }) {
   /* ------------------------------ panel renderer ----------------------------- */
   const renderPanel = () => {
     if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => runAi('enhance'), resetAll, isDefault: isDefaultFilters(filters), busy }} />
+    if (tab === 'quick') {
+      return (
+        <QuickTab
+          fx={fx}
+          setFx={setFx}
+          filters={filters}
+          setLive={setLive}
+          commitFilters={commitFilters}
+        />
+      )
+    }
     if (tab === 'ai') {
       return aiView === 'vectorize' ? (
         <VectorizePanel src={imageSrc} fileName={slug(project.name)} onBack={() => setAiView('grid')} />
@@ -489,6 +663,11 @@ export function Editor({ project, onBack }) {
         onToggleLock={toggleLock}
         imageSrc={imageSrc}
         showToast={showToast}
+        layerOpacity={layerOpacity}
+        setLayerOpacity={setLayerOpacity}
+        blendMode={blendMode}
+        setBlendMode={setBlendMode}
+        onDuplicateLayer={() => duplicateLayer()}
       />
     )
   }
@@ -666,11 +845,12 @@ export function Editor({ project, onBack }) {
 
       {/* ------------------------------ tool ribbon ------------------------------ */}
       <footer className="no-scrollbar flex h-12 shrink-0 items-center gap-0.5 overflow-x-auto border-t border-line px-2 sm:px-3">
-        <IconBtn icon="move" title="Move / Pan" active />
-        <IconBtn icon="crop" title="Crop (stub)" onClick={stub} />
-        <IconBtn icon="text" title="Text (stub)" onClick={stub} />
-        <IconBtn icon="shape" title="Shape (stub)" onClick={stub} />
-        <IconBtn icon="brush" title="Brush (stub)" onClick={stub} />
+        <IconBtn icon="move" title="Select / Move (V)" active={tool === 'select'} onClick={() => setTool('select')} />
+        <IconBtn icon="shape" title="Rectangle (R)" active={tool === 'rect'} onClick={() => setTool('rect')} />
+        <IconBtn icon="circle" title="Ellipse (E)" active={tool === 'ellipse'} onClick={() => setTool('ellipse')} />
+        <IconBtn icon="minus" title="Line (L)" active={tool === 'line'} onClick={() => setTool('line')} />
+        <IconBtn icon="text" title="Text (T)" active={tool === 'text'} onClick={() => setTool('text')} />
+        <IconBtn icon="brush" title="Brush (B)" active={tool === 'brush'} onClick={() => setTool('brush')} />
         <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
         <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
         <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
@@ -854,6 +1034,86 @@ function PresetRow({ p, active, onClick }) {
   )
 }
 
+/* ----------------------------- tab: Quick actions -------------------------- */
+// Spec §7 — 20 one-click effects in 4 groups.
+function QuickTab({ fx, setFx, filters, setLive, commitFilters }) {
+  const clampFilter = (key, delta, min = 40, max = 160) =>
+    commitFilters({ ...filters, [key]: Math.min(max, Math.max(min, filters[key] + delta)) })
+
+  const toggle = (key) => setFx((f) => ({ ...f, [key]: !f[key] }))
+
+  const groups = [
+    {
+      label: 'Color',
+      items: [
+        { label: 'Invert', icon: 'refresh', active: fx.invert, onClick: () => toggle('invert') },
+        { label: 'Black & White', icon: 'image', active: fx.bw, onClick: () => toggle('bw') },
+        { label: 'Sepia', icon: 'clock', active: fx.sepia, onClick: () => toggle('sepia') },
+        { label: 'Vintage', icon: 'archive', active: fx.vintage, onClick: () => toggle('vintage') },
+      ],
+    },
+    {
+      label: 'Adjust',
+      items: [
+        { label: 'Brighten', icon: 'sun', onClick: () => clampFilter('brightness', 12) },
+        { label: 'Darken', icon: 'moon', onClick: () => clampFilter('brightness', -12) },
+        { label: 'Contrast +', icon: 'sliders', onClick: () => clampFilter('contrast', 10) },
+        { label: 'Contrast −', icon: 'sliders', onClick: () => clampFilter('contrast', -10) },
+        { label: 'Saturate', icon: 'droplet', onClick: () => clampFilter('saturation', 15, 0, 200) },
+        { label: 'Desaturate', icon: 'droplet', onClick: () => commitFilters({ ...filters, saturation: 60 }) },
+      ],
+    },
+    {
+      label: 'Filter',
+      items: [
+        { label: 'Blur', icon: 'wind', active: fx.blur > 0, onClick: () => setFx((f) => ({ ...f, blur: f.blur > 0 ? 0 : 0.35 })) },
+        { label: 'Blur More', icon: 'wind', active: fx.blur >= 0.7, onClick: () => setFx((f) => ({ ...f, blur: f.blur >= 0.7 ? 0 : 0.9 })) },
+        { label: 'Sharpen', icon: 'focus', active: fx.sharpen, onClick: () => toggle('sharpen') },
+        { label: 'Noise', icon: 'sparkle', active: fx.noise > 0, onClick: () => setFx((f) => ({ ...f, noise: f.noise > 0 ? 0 : 60 })) },
+        { label: 'Pixelate', icon: 'grid', active: fx.pixelate > 0, onClick: () => setFx((f) => ({ ...f, pixelate: f.pixelate > 0 ? 0 : 8 })) },
+      ],
+    },
+    {
+      label: 'Transform',
+      items: [
+        { label: 'Flip H', icon: 'flipH', active: fx.flipX, onClick: () => toggle('flipX') },
+        { label: 'Flip V', icon: 'flipV', active: fx.flipY, onClick: () => toggle('flipY') },
+        { label: 'Rotate 90°', icon: 'rotateCw', onClick: () => setFx((f) => ({ ...f, angle: (f.angle + 90) % 360 })) },
+        { label: 'Reset All', icon: 'refresh', onClick: () => { setFx({ ...QUICK_DEFAULTS }); commitFilters({ ...DEFAULT_FILTERS }) } },
+      ],
+    },
+  ]
+
+  return (
+    <div className="p-4">
+      {groups.map((g) => (
+        <div key={g.label} className="mb-5 last:mb-0">
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <span className="label-xs text-dim">{g.label}</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {g.items.map((it) => (
+              <button
+                key={it.label}
+                type="button"
+                onClick={it.onClick}
+                className={cn(
+                  'flex flex-col items-center gap-1.5 rounded-ink border px-1 py-2.5 transition-colors',
+                  it.active ? 'border-white bg-surface-2 text-white' : 'border-line text-dim hover:border-line-2 hover:text-fg',
+                )}
+              >
+                <Icon name={it.icon} size={15} />
+                <span className="text-[8.5px] font-semibold uppercase tracking-[0.06em]">{it.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* ------------------------------ tab: Adjust ------------------------------ */
 function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDefault, busy }) {
   const f = filters
@@ -947,7 +1207,10 @@ function AITab({ busy, onRemoveBg, onEnhance, onUpscale, onVectorize, upscaled }
 }
 
 /* ------------------------------- tab: Layers ------------------------------ */
-function LayersTab({ layers, selected, onSelect, onToggleVisibility, onToggleLock, imageSrc, showToast }) {
+function LayersTab({
+  layers, selected, onSelect, onToggleVisibility, onToggleLock, imageSrc, showToast,
+  layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
+}) {
   const previews = {
     text: <span className="text-[10px] font-extrabold tracking-widest text-fg">Tt</span>,
     vignette: (
@@ -959,16 +1222,27 @@ function LayersTab({ layers, selected, onSelect, onToggleVisibility, onToggleLoc
     subject: imageSrc ? <img src={imageSrc} alt="" className="h-full w-full object-cover" /> : null,
     backdrop: <div className="h-full w-full bg-[#242424]" />,
   }
+
+  const selectedLayer = layers.find((l) => l.id === selected)
+
   return (
     <div className="p-4">
       <div className="flex items-center justify-between px-1">
         <span className="label-xs text-mute">Visibility · Lock</span>
-        <IconBtn
-          icon="plus"
-          size={15}
-          title="Add layer (ships with object tools)"
-          onClick={() => showToast('Layer creation ships with object tools', 'info')}
-        />
+        <div className="flex items-center gap-1">
+          <IconBtn
+            icon="copy"
+            size={15}
+            title="Duplicate layer"
+            onClick={onDuplicateLayer}
+          />
+          <IconBtn
+            icon="plus"
+            size={15}
+            title="Add layer (ships with object tools)"
+            onClick={() => showToast('Create shapes with the toolbar tools', 'info')}
+          />
+        </div>
       </div>
       <div className="mt-3 space-y-1.5">
         {layers.map((l) => (
@@ -983,9 +1257,44 @@ function LayersTab({ layers, selected, onSelect, onToggleVisibility, onToggleLoc
           />
         ))}
       </div>
-      <p className="mt-5 px-1 text-[10px] leading-relaxed text-mute">
+
+      {/* selected-layer properties (spec §5) */}
+      {selectedLayer && selectedLayer.type === 'Photo' && (
+        <div className="mt-4 rounded-ink border border-line p-3">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="label-xs text-dim">Layer Properties</span>
+            <span className="label-xs text-mute">{selectedLayer.name}</span>
+          </div>
+          <Slider
+            label="Opacity"
+            value={layerOpacity}
+            min={0}
+            max={100}
+            defaultValue={100}
+            onChange={setLayerOpacity}
+            format={(v) => `${v}%`}
+          />
+          <div className="mt-2">
+            <span className="label-xs text-dim">Blend Mode</span>
+            <select
+              value={blendMode}
+              onChange={(e) => setBlendMode(e.target.value)}
+              className="mt-1.5 w-full rounded-ink border border-line bg-surface-2 px-2 py-1.5 text-xs text-fg focus:border-white focus:outline-none"
+            >
+              {BLEND_MODES.map((b) => (
+                <option key={b} value={b} className="bg-surface text-fg">
+                  {b.charAt(0).toUpperCase() + b.slice(1).replace('-', ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-4 px-1 text-[10px] leading-relaxed text-mute">
         Segmented layers are produced by the AI suite — run Remove Background, then toggle the
-        Backdrop layer off.
+        Backdrop layer off. Draw with the toolbar tools: Rectangle R, Ellipse E, Line L, Text T,
+        Brush B. Delete removes a selected shape.
       </p>
     </div>
   )
