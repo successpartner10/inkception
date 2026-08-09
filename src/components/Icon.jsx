@@ -122,6 +122,13 @@ const ICONS = {
       <path d="M22 6l-10 7L2 6" />
     </>
   ),
+  instagram: (
+    <>
+      <rect x="2" y="2" width="20" height="20" rx="5" />
+      <circle cx="12" cy="12" r="4.5" />
+      <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
   sun: (
     <>
       <circle cx="12" cy="12" r="4" />

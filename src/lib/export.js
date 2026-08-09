@@ -34,6 +34,11 @@ export const EXPORT_PRESETS = [
   { id: 'web-hero', platform: 'Web', name: 'Website Hero Banner', w: 1920, h: 800, ratio: '2.4:1', use: 'Homepage banner' },
   { id: 'web-collection', platform: 'Web', name: 'Website Collection Banner', w: 1600, h: 600, ratio: '2.7:1', use: 'Category headers' },
 
+  // Instagram
+  { id: 'ig-square', platform: 'Instagram', name: 'Feed Square', w: 1080, h: 1080, ratio: '1:1', use: 'Feed posts, product images' },
+  { id: 'ig-portrait', platform: 'Instagram', name: 'Feed Portrait', w: 1080, h: 1350, ratio: '4:5', use: 'Portrait feed posts' },
+  { id: 'ig-story', platform: 'Instagram', name: 'Story / Reel', w: 1080, h: 1920, ratio: '9:16', use: 'Stories, reels, vertical video' },
+
   // WhatsApp
   { id: 'wa-status', platform: 'WhatsApp', name: 'Business Status', w: 1080, h: 1920, ratio: '9:16', use: 'Daily offers, stories, launches' },
   { id: 'wa-catalog', platform: 'WhatsApp', name: 'Catalog Product Image', w: 800, h: 800, ratio: '1:1', use: 'Product listings' },
