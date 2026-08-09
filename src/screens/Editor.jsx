@@ -2321,18 +2321,14 @@ function LayoutPreview({ layoutId, active }) {
 }
 
 /* ----------------------------- collage studio body ------------------------ */
-const COLLAGE_SIZES = [
-  { id: 'sq', label: 'Square', w: 1080, h: 1080 },
-  { id: 'portrait', label: 'Portrait', w: 1080, h: 1350 },
-  { id: 'story', label: 'Story / Reel', w: 1080, h: 1920 },
-  { id: 'wide', label: 'Wide', w: 1920, h: 1080 },
-]
-
+// New-Image sizes mirror the full export matrix, so a collage can be built
+// at any size you can export to.
 function CollageBody({ onBuild }) {
   const [photos, setPhotos] = useState([]) // { url, name }
   const [layout, setLayout] = useState('grid4')
   const [placement, setPlacement] = useState('current') // 'current' | 'new'
-  const [newSize, setNewSize] = useState('sq')
+  const [collagePreset, setCollagePreset] = useState('ig-square')
+  const [collageGroup, setCollageGroup] = useState('all')
   const [append, setAppend] = useState(false)
   const inputRef = useRef(null)
 
@@ -2346,7 +2342,8 @@ function CollageBody({ onBuild }) {
 
   const current = COLLAGE_LAYOUTS.find((l) => l.id === layout)
   const fits = photos.length >= (current?.min ?? 99) && photos.length <= (current?.max ?? 0)
-  const size = COLLAGE_SIZES.find((s) => s.id === newSize)
+  const size = EXPORT_PRESETS.find((p) => p.id === collagePreset) || EXPORT_PRESETS[0]
+  const sizePresets = EXPORT_PRESETS.filter((p) => collageGroup === 'all' || p.platform === collageGroup)
 
   const build = () => {
     onBuild(layout, photos.map((p) => p.url), {
@@ -2426,24 +2423,55 @@ function CollageBody({ onBuild }) {
       </div>
 
       {placement === 'new' && (
-        <div className="mt-2 grid grid-cols-4 gap-1.5">
-          {COLLAGE_SIZES.map((s) => (
+        <>
+          <div className="no-scrollbar mt-2 flex gap-1.5 overflow-x-auto pb-1">
             <button
-              key={s.id}
               type="button"
-              onClick={() => setNewSize(s.id)}
+              onClick={() => setCollageGroup('all')}
               className={cn(
-                'rounded-ink border px-1 py-2 text-center transition-colors',
-                newSize === s.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+                'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+                collageGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
               )}
             >
-              <span className="block text-[9px] font-bold uppercase tracking-[0.04em] text-fg">{s.label}</span>
-              <span className="mt-0.5 block text-[8px] text-mute">
-                {s.w}×{s.h}
-              </span>
+              All · {EXPORT_PRESETS.length}
             </button>
-          ))}
-        </div>
+            {EXPORT_GROUPS.map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setCollageGroup(g)}
+                className={cn(
+                  'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+                  collageGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+                )}
+              >
+                {g} · {EXPORT_PRESETS.filter((p) => p.platform === g).length}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 grid max-h-48 grid-cols-2 gap-1.5 overflow-y-auto pr-1 scrollbar-thin">
+            {sizePresets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setCollagePreset(p.id)}
+                className={cn(
+                  'flex items-center gap-2 rounded-ink border px-2 py-1.5 text-left transition-colors',
+                  collagePreset === p.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+                )}
+              >
+                <Icon name={PLATFORM_ICONS[p.platform]} size={11} className="shrink-0 text-mute" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[9.5px] font-semibold text-fg">{p.name}</span>
+                  <span className="block text-[8px] text-mute">
+                    {p.w}×{p.h} · {p.ratio}
+                  </span>
+                </span>
+                {collagePreset === p.id && <Icon name="check" size={11} className="shrink-0 text-white" />}
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {placement === 'current' && (

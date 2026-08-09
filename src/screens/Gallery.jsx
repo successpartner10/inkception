@@ -100,54 +100,84 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
 
           {/* Projects */}
           <section className="mt-12">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <h2 className="label-sm text-fg">Projects</h2>
-                <Chip>{projects.length}</Chip>
-              </div>
-              <div className="flex gap-1">
-                {FILTERS.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => setFilter(f.id)}
-                    className={cn(
-                      'h-7 rounded-ink px-2.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
-                      filter === f.id ? 'bg-white text-black' : 'text-mute hover:bg-surface-2 hover:text-dim',
-                    )}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {projects.length > 0 ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <h2 className="label-sm text-fg">Projects</h2>
+                    <Chip>{projects.length}</Chip>
+                  </div>
+                  <div className="flex gap-1">
+                    {FILTERS.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setFilter(f.id)}
+                        className={cn(
+                          'h-7 rounded-ink px-2.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                          filter === f.id ? 'bg-white text-black' : 'text-mute hover:bg-surface-2 hover:text-dim',
+                        )}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            {filtered.length === 0 ? (
-              <div className="mt-6 flex flex-col items-center gap-3 rounded-ink-lg border border-dashed border-line-2 py-20 text-center">
-                <span className="flex h-10 w-10 items-center justify-center rounded-ink border border-line text-mute">
-                  <Icon name="image" size={18} />
-                </span>
-                <p className="text-sm text-dim">Nothing here yet.</p>
-                <Button variant="secondary" size="sm" icon="plus" onClick={onNew}>
-                  New Project
-                </Button>
-              </div>
+                {filtered.length === 0 ? (
+                  <div className="mt-6 flex flex-col items-center gap-3 rounded-ink-lg border border-dashed border-line-2 py-20 text-center">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-ink border border-line text-mute">
+                      <Icon name="image" size={18} />
+                    </span>
+                    <p className="text-sm text-dim">Nothing here yet.</p>
+                    <Button variant="secondary" size="sm" icon="plus" onClick={onNew}>
+                      New Project
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mt-6 grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-3">
+                    {filtered.map((p) => (
+                      <ProjectCard
+                        key={p.id}
+                        project={p}
+                        onOpen={() => onOpen(p.id)}
+                        confirmDelete={pendingDelete === p.id}
+                        onAskDelete={() => setPendingDelete(pendingDelete === p.id ? null : p.id)}
+                        onCancelDelete={() => setPendingDelete(null)}
+                        onDelete={() => {
+                          onDelete(p.id)
+                          setPendingDelete(null)
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             ) : (
-              <div className="mt-6 grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-3">
-                {filtered.map((p) => (
-                  <ProjectCard
-                    key={p.id}
-                    project={p}
-                    onOpen={() => onOpen(p.id)}
-                    confirmDelete={pendingDelete === p.id}
-                    onAskDelete={() => setPendingDelete(pendingDelete === p.id ? null : p.id)}
-                    onCancelDelete={() => setPendingDelete(null)}
-                    onDelete={() => {
-                      onDelete(p.id)
-                      setPendingDelete(null)
-                    }}
-                  />
-                ))}
+              <div className="flex flex-col items-center gap-3 rounded-ink-lg border border-dashed border-line-2 py-20 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-ink border border-line text-mute">
+                  <Icon name="image" size={20} />
+                </span>
+                <p className="text-sm font-semibold text-fg">No projects yet</p>
+                <p className="max-w-xs text-xs leading-relaxed text-mute">
+                  Start with a new project, open an image, or pick a template.
+                </p>
+                <div className="mt-1 flex flex-wrap justify-center gap-3">
+                  <Button variant="primary" size="sm" icon="plus" onClick={onNew}>
+                    New Project
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon="upload"
+                    onClick={() => fileRef.current && fileRef.current.click()}
+                  >
+                    Open / Add Media
+                  </Button>
+                  <Button variant="ghost" size="sm" icon="grid" onClick={() => setTemplateOpen(true)}>
+                    Templates
+                  </Button>
+                </div>
               </div>
             )}
           </section>

@@ -8,30 +8,9 @@ const STORAGE_KEY = 'inkception.projects.v1'
 const base = import.meta.env.BASE_URL // './' in production, '/' in dev
 const asset = (p) => `${base}${p}`
 
-const SEED_PROJECTS = [
-  {
-    id: 'p-aurora',
-    name: 'Aurora Study',
-    layers: 4,
-    date: '2026-08-06T12:00:00',
-    img: asset('samples/mountain.jpg'),
-    status: 'edited',
-  },
-  {
-    id: 'p-arch',
-    name: 'Architectural Proof',
-    layers: 6,
-    date: '2026-08-02T12:00:00',
-    img: asset('samples/bw.jpg'),
-  },
-  {
-    id: 'p-vessel',
-    name: 'Kintsugi Vessel',
-    layers: 3,
-    date: '2026-07-28T12:00:00',
-    img: asset('samples/vase.jpg'),
-  },
-]
+// Sample projects previously seeded on first run — now removed so the home
+// page starts clean. Existing saved copies are filtered out below.
+const SEED_IDS = ['p-aurora', 'p-arch', 'p-vessel']
 
 function loadProjects() {
   try {
@@ -39,19 +18,21 @@ function loadProjects() {
     if (raw) {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed) && parsed.length) {
-        // blob: URLs die after a page reload — replace them so the project
-        // still opens (user re-imports the image via Open).
-        return parsed.map((p) =>
-          typeof p.img === 'string' && p.img.startsWith('blob:')
-            ? { ...p, img: asset('samples/bw.jpg') }
-            : p,
-        )
+        // drop the old sample projects; blob: URLs die on reload — replace
+        // them so real projects still open (user re-imports via Open).
+        return parsed
+          .filter((p) => !SEED_IDS.includes(p.id))
+          .map((p) =>
+            typeof p.img === 'string' && p.img.startsWith('blob:')
+              ? { ...p, img: asset('samples/bw.jpg') }
+              : p,
+          )
       }
     }
   } catch {
-    /* fall through to seeds */
+    /* ignore */
   }
-  return SEED_PROJECTS
+  return []
 }
 
 let untitledCounter = 1
