@@ -30,6 +30,8 @@ import {
   isDefaultFilters,
 } from '../lib/filters'
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../lib/export'
+import { compositeOnBackground, getSegmenter, makeCutout } from '../lib/segment'
+import { PROMPT_SUGGESTIONS, matchPrompt } from '../lib/prompts'
 import { clamp, cn, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
 
 const TAB_ITEMS = [
@@ -101,6 +103,7 @@ export function Editor({ project, onBack }) {
   const [exportOpen, setExportOpen] = useState(false)
   const [preset, setPreset] = useState('yt-thumb')
   const [exportGroup, setExportGroup] = useState('all')
+  const [replaceOpen, setReplaceOpen] = useState(false)
   const [format, setFormat] = useState('png')
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState(null)
@@ -500,6 +503,60 @@ export function Editor({ project, onBack }) {
   }, [layers])
 
   /* ------------------------------ AI pipeline ------------------------------ */
+  /* REAL subject matting — replaces the old deterministic trick (audit #1). */
+  const runRemoveBg = async () => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    const setStep = (progress, step) =>
+      setBusy({ kind: 'real', title: 'Remove Background', step, progress })
+    try {
+      setStep(12, 'Loading segmentation model…')
+      await getSegmenter()
+      setStep(45, 'Segmenting subject…')
+      const { dataUrl, coverage } = await makeCutout(src)
+      if (coverage < 0.005) {
+        setBusy(null)
+        showToast('No clear subject detected — try another image', 'info')
+        return
+      }
+      setStep(82, 'Applying alpha matte…')
+      await loadIntoCanvas(dataUrl)
+      setLayers((ls) => ls.map((l) => (l.id === 'backdrop' ? { ...l, visible: false } : l)))
+      setBusy(null)
+      showToast('Background removed — real subject matting', 'scissors')
+    } catch {
+      setBusy(null)
+      showToast('Segmentation failed — check connection and retry', 'close')
+    }
+  }
+
+  /* Real background replace (audit #4) — unlocked by the matte above. */
+  const runReplaceBg = async (mode) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    const setStep = (progress, step) =>
+      setBusy({ kind: 'real', title: 'Replace Background', step, progress })
+    try {
+      setStep(12, 'Loading segmentation model…')
+      await getSegmenter()
+      setStep(45, 'Segmenting subject…')
+      const { dataUrl, width, height, coverage } = await makeCutout(src)
+      if (coverage < 0.005) {
+        setBusy(null)
+        showToast('No clear subject detected — try another image', 'info')
+        return
+      }
+      setStep(75, 'Compositing new background…')
+      const flat = await compositeOnBackground(dataUrl, { w: width, h: height, mode })
+      await loadIntoCanvas(flat)
+      setBusy(null)
+      showToast('Background replaced', 'image')
+    } catch {
+      setBusy(null)
+      showToast('Background replace failed — retry', 'close')
+    }
+  }
+
   const AI_PIPELINES = {
     enhance: {
       title: 'Auto Enhance',
@@ -507,15 +564,6 @@ export function Editor({ project, onBack }) {
       finalize: () => {
         commitFilters({ ...AUTO_ENHANCE_FILTERS })
         showToast('Auto enhance applied')
-      },
-    },
-    removebg: {
-      title: 'Remove Background',
-      steps: ['Detecting subject', 'Computing alpha mask', 'Feathering edges', 'Isolating subject'],
-      finalize: () => {
-        setLayers((ls) => ls.map((l) => (l.id === 'backdrop' ? { ...l, visible: false } : l)))
-        commitFilters({ ...filtersRef.current, contrast: clamp(filtersRef.current.contrast + 6, 0, 200) })
-        showToast('Background removed — check Layers', 'scissors')
       },
     },
     upscale: {
@@ -573,6 +621,25 @@ export function Editor({ project, onBack }) {
     clearInterval(busyTimerRef.current)
     setBusy(null)
   }
+
+  /* ------------------------- prompt command bar (#2) ------------------------ */
+  const onPromptAction = useCallback(
+    (action, payload) => {
+      if (action === 'removebg') return runRemoveBg()
+      if (action === 'replacebg') return setReplaceOpen(true)
+      if (action === 'enhance') return runAi('enhance')
+      if (action === 'upscale') return runAi('upscale')
+      if (action === 'vectorize') return runAi('vectorize')
+      if (action === 'fx') return setFx((f) => ({ ...f, ...payload }))
+      if (action === 'filters') return commitFilters({ ...filtersRef.current, ...payload })
+      if (action === 'reset') return resetAll()
+      if (action === 'undo') return undo()
+      if (action === 'redo') return redo()
+      showToast('Try: "remove background", "make it warmer", "upscale 4×"', 'info')
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [commitFilters, resetAll, undo, redo],
+  )
 
   /* --------------------------------- export -------------------------------- */
   const doExport = async () => {
@@ -646,11 +713,13 @@ export function Editor({ project, onBack }) {
       ) : (
         <AITab
           busy={busy}
-          onRemoveBg={() => runAi('removebg')}
+          onRemoveBg={() => runRemoveBg()}
+          onReplaceBg={() => setReplaceOpen(true)}
           onEnhance={() => runAi('enhance')}
           onUpscale={() => runAi('upscale')}
           onVectorize={() => runAi('vectorize')}
           upscaled={upscaled}
+          onPromptAction={onPromptAction}
         />
       )
     }
@@ -894,6 +963,42 @@ export function Editor({ project, onBack }) {
           )}
         </>
       )}
+
+      {/* --------------------------- replace background modal ---------------------- */}
+      <Modal
+        open={replaceOpen}
+        onClose={() => setReplaceOpen(false)}
+        title="Replace Background"
+        subtitle="Real subject matting — pick a new backdrop"
+        width="max-w-sm"
+      >
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { id: 'black', label: 'Solid Black', swatch: 'bg-black border border-line' },
+            { id: 'white', label: 'Solid White', swatch: 'bg-white' },
+            { id: 'gradient', label: 'Gradient', swatch: 'bg-gradient-to-br from-[#101010] to-[#3d3d3d]' },
+            { id: 'transparent', label: 'Transparent', swatch: 'checkerboard' },
+          ].map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => {
+                setReplaceOpen(false)
+                runReplaceBg(o.id)
+              }}
+              className="flex flex-col items-center gap-2 rounded-ink border border-line p-4 transition-colors hover:border-white"
+            >
+              <span className={cn('h-12 w-full rounded-ink border border-line-2', o.swatch)} />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg">
+                {o.label}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+          Runs on-device via MediaPipe segmentation — the subject keeps its true alpha matte.
+        </p>
+      </Modal>
 
       {/* -------------------------------- export modal ----------------------------- */}
       <Modal
@@ -1159,21 +1264,74 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
 }
 
 /* -------------------------------- tab: AI --------------------------------- */
-function AITab({ busy, onRemoveBg, onEnhance, onUpscale, onVectorize, upscaled }) {
+function AITab({ busy, onRemoveBg, onReplaceBg, onEnhance, onUpscale, onVectorize, upscaled, onPromptAction }) {
+  const [phrase, setPhrase] = useState('')
+
+  const submit = (e) => {
+    e.preventDefault()
+    const m = matchPrompt(phrase)
+    if (!m) return
+    setPhrase('')
+    onPromptAction(m.action, m.payload)
+  }
+
   return (
-    <div className="p-5">
-      <p className="text-xs leading-relaxed text-dim">
-        One-tap generative corrections run locally in your browser. Preview-grade pipeline — swap in
-        your model endpoint to ship.
+    <div className="p-4">
+      {/* Command bar — "design with words" (audit #2) */}
+      <form
+        onSubmit={submit}
+        className="rounded-ink border border-line p-3 transition-colors focus-within:border-white"
+      >
+        <div className="flex items-center gap-2">
+          <Icon name="sparkle" size={14} className="shrink-0 text-dim" />
+          <input
+            value={phrase}
+            onChange={(e) => setPhrase(e.target.value)}
+            placeholder='Describe the edit — "remove background"…'
+            className="min-w-0 flex-1 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!phrase.trim()}
+            className="shrink-0 rounded-ink bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-black disabled:opacity-40"
+          >
+            Go
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {PROMPT_SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onPromptAction(matchPrompt(s).action, matchPrompt(s).payload)}
+              className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-white"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </form>
+
+      <p className="mt-4 text-xs leading-relaxed text-dim">
+        Real AI runs on-device: MediaPipe subject matting produces a true alpha cutout — no image
+        leaves your device. Deterministic tools (enhance, upscale, vectorize) are labeled as such.
       </p>
-      <div className="mt-5 grid grid-cols-2 gap-3">
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
         <ActionCard
           icon="scissors"
           title="Remove Background"
-          desc="AI isolation of the subject."
+          desc="Real subject matting (MediaPipe, on-device)."
           onClick={onRemoveBg}
-          busy={busy?.kind === 'removebg'}
-          progress={busy?.kind === 'removebg' ? busy.progress : null}
+          busy={busy?.kind === 'real'}
+          progress={busy?.kind === 'real' ? busy.progress : null}
+          tag="On-device"
+        />
+        <ActionCard
+          icon="image"
+          title="Replace Background"
+          desc="Swap in black, white, gradient or transparent."
+          onClick={onReplaceBg}
         />
         <ActionCard
           icon="sparkle"
