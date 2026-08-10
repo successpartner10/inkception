@@ -236,7 +236,7 @@ export async function colorGrade(src, refSrc, strength = 100) {
 /* ------------------------------------------------------------------ */
 /* #7 / #3 — Inpaint: diffusion fill of a masked region (eraser/fill)  */
 /* ------------------------------------------------------------------ */
-export async function inpaint(src, mask, processMax = 900) {
+export async function inpaint(src, mask, processMax = 640, mwOpt, mhOpt) {
   const L = await loadData(src, processMax)
   const d = L.data.data
   const w = L.w, h = L.h
@@ -245,8 +245,8 @@ export async function inpaint(src, mask, processMax = 900) {
   if (mask.length === w * h) m = new Uint8ClampedArray(mask)
   else {
     m = new Uint8ClampedArray(w * h)
-    const mw = Math.sqrt(mask.length) | 0
-    const mh = mw
+    const mw = mwOpt || (Math.sqrt(mask.length) | 0)
+    const mh = mhOpt || mw
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         m[y * w + x] = mask[Math.min(mh - 1, Math.round((y / h) * mh)) * mw + Math.min(mw - 1, Math.round((x / w) * mw))] > 128 ? 1 : 0
@@ -254,9 +254,9 @@ export async function inpaint(src, mask, processMax = 900) {
     }
   }
   // multi-pass diffusion from the region border
-  const passes = 90
+  const passes = 60
   let cur = new Uint8ClampedArray(d)
-  const next = new Uint8ClampedArray(d.length)
+  let next = new Uint8ClampedArray(d.length)
   for (let p = 0; p < passes; p++) {
     next.set(cur)
     let changed = 0

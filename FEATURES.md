@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.11
+> **Version**: v0.15.14
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.11)
+> **Updated**: 2026-08-10 (v0.15.14)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -220,3 +220,16 @@ layers, quick actions, AI suite, collage, versioning all present.
 - Tapping a rail tab opens the panel as an **overlay** (canvas width
   unchanged); any action (Quick tap, AI job, tool pick, modal) auto-collapses
   it back to the rail. Stage padding reduced on small screens.
+
+
+### v0.15.12–14 — fixes
+- AI/Layers tab buttons now expand the collapsed panel (fixed blank page)
+- ProjectCard gallerySearch scope bug fixed (blank page with saved projects)
+- **Magic Eraser / Generative Fill fixed** — inpaint had a `const` being
+  reassigned in the buffer swap ("Assignment to constant variable") that
+  broke every inpaint; now uses `let` + correct mask dims + faster 640px
+  pipeline → object removal works
+- **Undo/redo rebuilt**: snapshot-based history (image + filters + quick fx)
+  covering image replacements, crops, filters, quick actions; ⌘Z/⌘⇧Z work
+- Command bar: unknown phrases now open the "How do I…?" assistant instead
+  of a dead end

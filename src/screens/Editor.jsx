@@ -166,8 +166,6 @@ export function Editor({ project, onBack }) {
   const [tool, setTool] = useState('select')
   const [layerOpacity, setLayerOpacity] = useState(100)
   const [blendMode, setBlendMode] = useState('normal')
-  const [hist, setHist] = useState([{ ...DEFAULT_FILTERS }])
-  const [histPos, setHistPos] = useState(0)
   const [layers, setLayers] = useState(LAYER_DEFAULTS)
   const [selectedLayer, setSelectedLayer] = useState('subject')
   const [beforeAfter, setBeforeAfter] = useState(false)
@@ -543,6 +541,7 @@ export function Editor({ project, onBack }) {
       setLayerOpacity(100)
       setBlendMode('normal')
       setIsTemplate(false)
+      pushHistory()
       setImageSrc(src)
       imageSrcRef.current = src
       try {
@@ -641,38 +640,80 @@ export function Editor({ project, onBack }) {
 
   /* ---------------------------- history / undo ---------------------------- */
   const setLive = (patch) => setFilters((f) => ({ ...f, ...patch }))
-  const commitFilters = useCallback(
-    (next) => {
-      const last = hist[histPos]
-      if (last && JSON.stringify(last) === JSON.stringify(next)) return
-      const nh = [...hist.slice(0, histPos + 1), next]
-      setHist(nh)
-      setHistPos(nh.length - 1)
+  // Snapshot-based undo/redo — covers image replacements, filters AND quick fx.
+  const histRef = useRef([]) // [{imageSrc, filters, fx}]
+  const histPosRef = useRef(-1)
+  const skipHistRef = useRef(false)
+  const [histVer, setHistVer] = useState(0)
+
+  const snapshot = () => ({
+    imageSrc: imageSrcRef.current,
+    filters: { ...filtersRef.current },
+    fx: { ...fxRef.current },
+  })
+
+  const pushHistory = useCallback(() => {
+    if (skipHistRef.current) return
+    if (histRef.current.length === 0) return // baseline not established yet
+    const arr = histRef.current.slice(0, histPosRef.current + 1)
+    arr.push(snapshot())
+    if (arr.length > 60) arr.shift()
+    histRef.current = arr
+    histPosRef.current = arr.length - 1
+    setHistVer((v) => v + 1)
+  }, [])
+
+  // establish the baseline snapshot once the first image is loaded
+  useEffect(() => {
+    if (histRef.current.length === 0 && imageSrc) {
+      histRef.current = [snapshot()]
+      histPosRef.current = 0
+      setHistVer((v) => v + 1)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageSrc])
+
+  const restoreSnap = useCallback(
+    (s) => {
+      skipHistRef.current = true
+      setFilters(s.filters)
+      setFx(s.fx)
+      setImageSrc(s.imageSrc)
+      imageSrcRef.current = s.imageSrc
+      skipHistRef.current = false
+      setHistVer((v) => v + 1)
     },
-    [hist, histPos],
+    [],
   )
 
   const undo = useCallback(() => {
-    if (histPos <= 0) return
-    const p = histPos - 1
-    setHistPos(p)
-    setFilters({ ...hist[p] })
-  }, [hist, histPos])
+    if (histPosRef.current <= 0) return
+    histPosRef.current -= 1
+    restoreSnap(histRef.current[histPosRef.current])
+    showToast('Undo', 'undo')
+  }, [restoreSnap, showToast])
 
   const redo = useCallback(() => {
-    if (histPos >= hist.length - 1) return
-    const p = histPos + 1
-    setHistPos(p)
-    setFilters({ ...hist[p] })
-  }, [hist, histPos])
+    if (histPosRef.current >= histRef.current.length - 1) return
+    histPosRef.current += 1
+    restoreSnap(histRef.current[histPosRef.current])
+    showToast('Redo', 'redo')
+  }, [restoreSnap, showToast])
+
+  const commitFilters = useCallback(
+    (next) => {
+      pushHistory()
+      setFilters(next)
+    },
+    [pushHistory],
+  )
 
   const resetAll = () => {
-    // set the live values AND push to history so Reset actually applies
+    pushHistory()
     setFilters({ ...DEFAULT_FILTERS })
-    commitFilters({ ...DEFAULT_FILTERS })
   }
-  const canUndo = histPos > 0
-  const canRedo = histPos < hist.length - 1
+  const canUndo = histPosRef.current > 0
+  const canRedo = histPosRef.current < histRef.current.length - 1
 
   /* ------------------------------ zoom / pan ------------------------------ */
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false)
@@ -746,6 +787,7 @@ export function Editor({ project, onBack }) {
   const deleteWholeImage = useCallback(() => {
     const c = fabricRef.current
     if (!c) return
+    pushHistory()
     decompRef.current.forEach((d) => c.remove(d.img))
     decompRef.current = []
     setExtraLayers([])
@@ -1301,15 +1343,6 @@ export function Editor({ project, onBack }) {
     if (!isDesktop) setPanelCollapsed(true)
     setEraseMode(mode)
     maskCvRef.current = null
-    const pc = paintCanvasRef.current
-    if (pc) {
-      const dpr = window.devicePixelRatio || 1
-      pc.width = paintRectRef.current.w * dpr
-      pc.height = paintRectRef.current.h * dpr
-      const ctx = pc.getContext('2d')
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, paintRectRef.current.w, paintRectRef.current.h)
-    }
     const msgs = {
       erase: 'Paint over the object to remove it (AI fill)',
       fill: 'Paint the region to re-fill',
@@ -1351,6 +1384,21 @@ export function Editor({ project, onBack }) {
     ctx.fill()
   }
 
+  // Size the paint overlay canvas once it's mounted (eraseMode renders it).
+  useEffect(() => {
+    if (!eraseMode) return
+    const rect = paintRectRef.current
+    const pc = paintCanvasRef.current
+    if (pc && rect.w) {
+      const dpr = window.devicePixelRatio || 1
+      pc.width = rect.w * dpr
+      pc.height = rect.h * dpr
+      const ctx = pc.getContext('2d')
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, rect.w, rect.h)
+    }
+  }, [eraseMode])
+
   const clearMask = () => {
     maskCvRef.current = null
     const pc = paintCanvasRef.current
@@ -1368,7 +1416,7 @@ export function Editor({ project, onBack }) {
     let painted = 0
     const mdata = mc.getContext('2d').getImageData(0, 0, mc.width, mc.height).data
     for (let i = 3; i < mdata.length; i += 4) if (mdata[i] > 128) painted++
-    if (painted < 12) { showToast('Paint a region first', 'info'); return }
+    if (painted < 12) { setEraseMode(null); showToast('Paint a region first — try again', 'info'); return }
     setEraseMode(null)
     const labels = {
       erase: 'Texture Fill', fill: 'Texture Fill', blur: 'Blur Brush', alpha: 'Erase Brush',
@@ -1438,7 +1486,7 @@ export function Editor({ project, onBack }) {
         const md = new Uint8ClampedArray(mdata.length / 4)
         for (let i = 0; i < md.length; i++) md[i] = mdata[i * 4 + 3]
         setBusy({ kind: 'real', title: labels[mode], step: 'Filling region from surroundings…', progress: 45 })
-        out = await inpaint(src, md)
+        out = await inpaint(src, md, 640, mc.width, mc.height)
       }
       await loadIntoCanvas(out)
       setBusy(null)
@@ -1643,7 +1691,8 @@ export function Editor({ project, onBack }) {
       if (action === 'collage') return openModal(setCollageOpen)
       if (action === 'undo') return undo()
       if (action === 'redo') return redo()
-      showToast('Try: "remove background", "make it warmer", "upscale 4×"', 'info')
+      // unknown phrase → let the "How do I…?" assistant try to help
+      setHowtoOpen(true)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [commitFilters, resetAll, undo, redo],
@@ -2144,7 +2193,7 @@ export function Editor({ project, onBack }) {
       return (
         <QuickTab
           fx={fx}
-          setFx={setFx}
+          setFx={(u) => { pushHistory(); setFx(u) }}
           filters={filters}
           setLive={setLive}
           commitFilters={commitFilters}
