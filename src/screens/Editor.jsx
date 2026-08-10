@@ -32,7 +32,8 @@ import {
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../lib/export'
 import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectBBox } from '../lib/segment'
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
-import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas, psdFromLayers } from '../lib/encode'
+import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas } from '../lib/encode'
+import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
 import { PROMPT_SUGGESTIONS, matchPrompt } from '../lib/prompts'
@@ -1236,7 +1237,9 @@ export function Editor({ project, onBack }) {
         if (objs.length) {
           const mul = Math.max(1, W / Math.max(1, c.getWidth()))
           const saved = objs.map((o) => ({ o, visible: o.visible, opacity: o.opacity, gco: o.globalCompositeOperation }))
-          const layers = []
+          const vpSaved = [...c.viewportTransform]
+          c.setViewportTransform([1, 0, 0, 1, 0, 0])
+          const layerEntries = []
           for (let oi = 0; oi < objs.length; oi++) {
             const o = objs[oi]
             try {
@@ -1247,16 +1250,22 @@ export function Editor({ project, onBack }) {
               c.requestRenderAll()
               const url = c.toDataURL({ format: 'png', multiplier: mul })
               const meta = saved[oi]
-              let name = layerNameFor(o, imgObjRef.current, decompRef.current)
-              if (!name) name = `Layer ${oi + 1}`
-              layers.push({
-                name,
-                opacity: meta.opacity,
-                visible: meta.visible,
-                blend: meta.gco || 'source-over',
-                dataUrl: url,
-                top: 0,
+              const cv = document.createElement('canvas')
+              cv.width = W
+              cv.height = H
+              const ictx = cv.getContext('2d')
+              const im = await loadImageElement(url)
+              ictx.drawImage(im, 0, 0, W, H)
+              layerEntries.push({
+                name: layerNameFor(o, imgObjRef.current, decompRef.current) || `Layer ${oi + 1}`,
                 left: 0,
+                top: 0,
+                right: W,
+                bottom: H,
+                opacity: meta.opacity ?? 1,
+                hidden: meta.visible === false,
+                blend: meta.gco || 'source-over',
+                canvas: cv,
               })
             } catch {
               /* skip unrenderable object */
@@ -1267,9 +1276,22 @@ export function Editor({ project, onBack }) {
             s.o.opacity = s.opacity
             s.o.globalCompositeOperation = s.gco
           }
+          c.setViewportTransform(vpSaved)
           c.requestRenderAll()
+          // composite for preview/thumbnail
           const compUrl = c.toDataURL({ format: 'png', multiplier: mul })
-          const blob = await psdFromLayers(W, H, layers, compUrl)
+          const compCv = document.createElement('canvas')
+          compCv.width = W
+          compCv.height = H
+          const cc = compCv.getContext('2d')
+          const cim = await loadImageElement(compUrl)
+          cc.drawImage(cim, 0, 0, W, H)
+          const blob = buildLayeredPsdBlob({
+            width: W,
+            height: H,
+            layers: layerEntries,
+            compositeCanvas: compCv,
+          })
           downloadBlob(blob, `${base}-${W}x${H}.psd`)
         } else if (imageSrcRef.current) {
           // no fabric objects → flattened single-layer PSD
