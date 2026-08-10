@@ -96,6 +96,27 @@ export function matchPrompt(raw) {
   if (has('make') && has('pop')) return { action: 'propose', payload: { label: 'Auto Enhance', tab: 'ai', icon: 'sparkle', fnKey: 'enhance' } }
   if ((has('improve') || has('fix')) && has('light')) return { action: 'propose', payload: { label: 'Brightness', tab: 'adjust', icon: 'sliders', fnKey: 'brighten' } }
 
+  // ---- vague goals → navigate + highlight + confirm ----
+  const GOALS = [
+    // [keys, label, tab, icon, fnKey]
+    [[['light', 'lighting', 'exposure', 'brightness', 'darkness'], 'Exposure & light', 'adjust', 'sliders', 'exposure']],
+    [[['contrast', 'punch', 'crispness'], 'Contrast', 'adjust', 'sliders', 'contrast']],
+    [[['color', 'colors', 'colour', 'saturation', 'vibrancy'], 'Saturation & color', 'adjust', 'sliders', 'saturation']],
+    [[['sharp', 'sharpen', 'crisp', 'focused'], 'Sharpen', 'quick', 'focus', 'sharpen']],
+    [[['red eye', 'redeye', 'red eyes'], 'Red Eye', 'more', 'eye', 'redeye']],
+    [[['blur', 'blurry', 'background blur'], 'Blur Brush', 'quick', 'wind', 'blur']],
+    [[['skin', 'portrait', 'face', 'blemish', 'smooth'], 'Retouch', 'ai', 'droplet', 'retouch']],
+    [[['background', 'backdrop', 'behind'], 'Background tools', 'ai', 'image', 'bg']],
+  ]
+  for (const [cfg] of GOALS) {
+    const [keys, label, tab, icon, fnKey] = cfg
+    if (keys.some((k) => has(k))) return { action: 'propose', payload: { label, tab, icon, fnKey } }
+  }
+
+  // explicit "let me adjust X" → navigate to that menu
+  if (has('let me adjust') || has('i want to adjust') || has('adjust the'))
+    return { action: 'propose', payload: { label: 'Adjust panel', tab: 'adjust', icon: 'sliders', fnKey: 'exposure' } }
+
   // ---- More-tab filters ----
   for (const [name, keys] of Object.entries(MORE_FILTERS)) {
     if (keys.some((k) => t.includes(k))) return { action: 'filter', payload: { name } }

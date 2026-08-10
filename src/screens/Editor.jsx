@@ -251,6 +251,15 @@ export function Editor({ project, onBack }) {
   const proposedRef = useRef(null)
   const [confirmBar, setConfirmBar] = useState(null) // {label}
   const [highlightTarget, setHighlightTarget] = useState(null)
+  // "Just do it" mode: ON = run immediately (no navigate/confirm); OFF = guided
+  const [justDoIt, setJustDoIt] = useState(() => {
+    try { return localStorage.getItem('inkception.justdoit') === '1' } catch { return false }
+  })
+  const justDoItRef = useRef(justDoIt)
+  useEffect(() => {
+    justDoItRef.current = justDoIt
+    try { localStorage.setItem('inkception.justdoit', justDoIt ? '1' : '0') } catch { /* ignore */ }
+  }, [justDoIt])
   const [moreOpenGroup, setMoreOpenGroup] = useState(null)
   const [levelsOpen, setLevelsOpen] = useState(false)
   const [menubar, setMenubar] = useState(null) // which menu is open
@@ -1762,6 +1771,13 @@ export function Editor({ project, onBack }) {
       const map = {
         enhance: () => runAi('enhance'),
         brighten: () => commitFilters({ ...filtersRef.current, brightness: 112 }),
+        exposure: () => { setTab('adjust'); setHighlightTarget('Brightness') },
+        contrast: () => { setTab('adjust'); setHighlightTarget('Contrast') },
+        saturation: () => { setTab('adjust'); setHighlightTarget('Saturation') },
+        sharpen: () => { setTab('quick'); setHighlightTarget('Sharpen') },
+        blur: () => startErase('blur'),
+        redeye: () => startPaintTool('redeye'),
+        bg: () => openModal(setReplaceOpen),
         cropSquare: () => runSmartCrop('1:1'),
         cropPortrait: () => runSmartCrop('4:5'),
         removebg: () => runRemoveBg(),
@@ -1781,15 +1797,28 @@ export function Editor({ project, onBack }) {
     [],
   )
 
-  const proposeAction = useCallback((label, tab, icon, fnKey) => {
-    const proposal = { label, tab, icon, fnKey }
-    proposedRef.current = proposal
-    setProposed(proposal)
-    setTab(tab)
-    setPanelCollapsed(false)
-    setHighlightTarget(label)
-    showToast(`Showing ${label} in ${tab} — confirm to run`, 'info')
-  }, [showToast])
+  const proposeAction = useCallback(
+    (label, tab, icon, fnKey) => {
+      if (justDoItRef.current) {
+        // just-do-it: run immediately (still push history so it's undoable)
+        pushHistory()
+        commandStackRef.current.push({ phrase: label, before: snapshot() })
+        setCommandCount(commandStackRef.current.length)
+        const fn = resolveFn(fnKey)
+        if (fn) fn()
+        setConfirmBar({ label })
+        return
+      }
+      const proposal = { label, tab, icon, fnKey }
+      proposedRef.current = proposal
+      setProposed(proposal)
+      setTab(tab)
+      setPanelCollapsed(false)
+      setHighlightTarget(label)
+      showToast(`Showing ${label} in ${tab} — confirm to run`, 'info')
+    },
+    [pushHistory, resolveFn, showToast],
+  )
 
   const cancelProposed = useCallback(() => {
     proposedRef.current = null
@@ -2384,7 +2413,7 @@ export function Editor({ project, onBack }) {
 
   /* ------------------------------ panel renderer ----------------------------- */
   const renderPanel = () => {
-    if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => runAi('enhance'), resetAll, isDefault: isDefaultFilters(filters), busy }} />
+    if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => runAi('enhance'), resetAll, isDefault: isDefaultFilters(filters), busy, highlightTarget }} />
     if (tab === 'quick') {
       return (
         <QuickTab
@@ -2436,6 +2465,8 @@ export function Editor({ project, onBack }) {
           highlightTarget={highlightTarget}
           onPropose={proposeAction}
           onRunHowTo={runHowToAction}
+          justDoIt={justDoIt}
+          setJustDoIt={setJustDoIt}
         />
       )
     }
@@ -3773,7 +3804,7 @@ function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToas
 }
 
 /* ------------------------------ tab: Adjust ------------------------------ */
-function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDefault, busy }) {
+function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDefault, busy, highlightTarget = null }) {
   const f = filters
   const commit = () => commitFilters({ ...f })
   const bind = (key, min, max, format) => ({
@@ -3801,12 +3832,18 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
       </Button>
 
       <div className="mt-6 space-y-4">
-        <Slider label="Brightness" {...bind('brightness', 40, 160, (v) => `${v >= 100 ? '+' : ''}${v - 100}`)} />
-        <Slider label="Contrast" {...bind('contrast', 40, 160, (v) => `${v >= 100 ? '+' : ''}${v - 100}`)} />
-        <Slider label="Saturation" {...bind('saturation', 0, 200, (v) => `${v >= 100 ? '+' : ''}${v - 100}`)} />
-        <Slider label="Exposure" {...bind('exposure', -100, 100, (v) => `${v >= 0 ? '+' : ''}${v}`)} />
-        <Slider label="Temperature" {...bind('temperature', -100, 100, (v) => (v === 0 ? '0' : v > 0 ? `Warm ${v}` : `Cool ${-v}`))} />
-        <Slider label="Tint" {...bind('tint', -100, 100, (v) => `${v >= 0 ? '+' : ''}${v}`)} />
+        {[
+          ['Brightness', <Slider key="b" label="Brightness" {...bind('brightness', 40, 160, (v) => `${v >= 100 ? '+' : ''}${v - 100}`)} />],
+          ['Contrast', <Slider key="c" label="Contrast" {...bind('contrast', 40, 160, (v) => `${v >= 100 ? '+' : ''}${v - 100}`)} />],
+          ['Saturation', <Slider key="s" label="Saturation" {...bind('saturation', 0, 200, (v) => `${v >= 100 ? '+' : ''}${v - 100}`)} />],
+          ['Exposure', <Slider key="e" label="Exposure" {...bind('exposure', -100, 100, (v) => `${v >= 0 ? '+' : ''}${v}`)} />],
+          ['Temperature', <Slider key="t" label="Temperature" {...bind('temperature', -100, 100, (v) => (v === 0 ? '0' : v > 0 ? `Warm ${v}` : `Cool ${-v}`))} />],
+          ['Tint', <Slider key="ti" label="Tint" {...bind('tint', -100, 100, (v) => `${v >= 0 ? '+' : ''}${v}`)} />],
+        ].map(([label, el]) => (
+          <div key={label} className={cn('rounded-ink p-1', highlightTarget === label && 'ring-2 ring-white/40 animate-pulse')}>
+            {el}
+          </div>
+        ))}
       </div>
 
       <p className="mt-6 text-[10px] leading-relaxed text-mute">
@@ -3823,7 +3860,7 @@ function AITab({
   onCollage, onUpscale, onPalette, onAutoTextColor, suggestion, onSuggestion, upscaled, onPromptAction,
   search = '', onRunChain, commandCount = 0, onUndoLast,
   commandStack = [], onRevertTo, highlightTarget, onPropose,
-  onRunHowTo,
+  onRunHowTo, justDoIt, setJustDoIt,
 }) {
   const [phrase, setPhrase] = useState('')
   const [howtoResult, setHowtoResult] = useState(null) // matched how-to shown inline
@@ -3897,6 +3934,33 @@ function AITab({
   return (
     <div className="p-4">
       {/* Command bar — "design with words" (audit #2) */}
+      <div className="mb-2 flex items-center justify-between rounded-ink border border-line bg-surface-2 px-2.5 py-1.5">
+        <span className="label-xs text-dim">AI Assistant mode</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setJustDoIt(false)}
+            className={cn(
+              'rounded-ink px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+              !justDoIt ? 'bg-white text-black' : 'text-dim hover:text-white',
+            )}
+            title="Navigate to the menu, highlight, ask to confirm — so you learn where it is"
+          >
+            Guided
+          </button>
+          <button
+            type="button"
+            onClick={() => setJustDoIt(true)}
+            className={cn(
+              'rounded-ink px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+              justDoIt ? 'bg-white text-black' : 'text-dim hover:text-white',
+            )}
+            title="Run commands immediately — faster, no navigation"
+          >
+            ⚡ Just do it
+          </button>
+        </div>
+      </div>
       <form
         onSubmit={submit}
         className="rounded-ink border border-line p-3 transition-colors focus-within:border-white"

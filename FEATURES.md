@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.18
+> **Version**: v0.15.19
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.18)
+> **Updated**: 2026-08-10 (v0.15.19)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -282,3 +282,12 @@ layers, quick actions, AI suite, collage, versioning all present.
   warp…), it auto-opens the More tab, **auto-expands the right group**, and
   runs the tool
 - Global search still reveals items across collapsed groups
+
+
+### v0.15.19 — AI Assistant mode toggle (Guided / Just do it)
+- **Guided** (default): commands navigate to the menu, highlight the
+  target, ask "Run …?" — so you learn where each tool lives
+- **⚡ Just do it**: commands execute immediately — no navigation, no
+  dialogs (still pushes history + shows ✓ OK/Undo bar). Persisted.
+- Vague goals work in both: "improve colors", "let me adjust the light",
+  "fix red eye", "make it sharper", "smooth my skin" → right tool
