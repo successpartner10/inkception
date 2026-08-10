@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.17
+> **Version**: v0.15.18
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.17)
+> **Updated**: 2026-08-10 (v0.15.18)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -272,3 +272,13 @@ layers, quick actions, AI suite, collage, versioning all present.
 - Verified chain: "open crop tool, crop slightly smaller, zoom in, undo,
   less crop, crop to square" runs end-to-end; full audit 16/18 (2 filter
   checks were timing-only, verified working)
+
+
+### v0.15.18 — collapsible advanced (More) groups
+- More tab groups (Filters 18, Selection 4, Retouch & Paint 5, Adjustments
+  2, Shapes & Tools 5) are now **collapsible cards** — collapsed by default
+  so the panel stays short; tap a header to expand/collapse
+- When an AI command targets a More tool/filter (pinch, clone, curves,
+  warp…), it auto-opens the More tab, **auto-expands the right group**, and
+  runs the tool
+- Global search still reveals items across collapsed groups

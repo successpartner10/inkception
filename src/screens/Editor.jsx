@@ -251,6 +251,7 @@ export function Editor({ project, onBack }) {
   const proposedRef = useRef(null)
   const [confirmBar, setConfirmBar] = useState(null) // {label}
   const [highlightTarget, setHighlightTarget] = useState(null)
+  const [moreOpenGroup, setMoreOpenGroup] = useState(null)
   const [levelsOpen, setLevelsOpen] = useState(false)
   const [menubar, setMenubar] = useState(null) // which menu is open
 
@@ -1846,9 +1847,9 @@ export function Editor({ project, onBack }) {
           text: 'text', brush: 'brush', crop: 'crop', dropper: 'dropper',
         }
         if (map[payload.tool]) setTool(map[payload.tool])
-        else if (payload.tool === 'wand') startSelectionTool('wand')
-        else if (payload.tool === 'lasso') startSelectionTool('lasso')
-        else if (payload.tool === 'marquee') startSelectionTool('marquee-rect')
+        else if (payload.tool === 'wand') { setTab('more'); setMoreOpenGroup('Selection'); startSelectionTool('wand') }
+        else if (payload.tool === 'lasso') { setTab('more'); setMoreOpenGroup('Selection'); startSelectionTool('lasso') }
+        else if (payload.tool === 'marquee') { setTab('more'); setMoreOpenGroup('Selection'); startSelectionTool('marquee-rect') }
         return
       }
       if (action === 'zoom' && payload) {
@@ -1858,8 +1859,11 @@ export function Editor({ project, onBack }) {
         return
       }
       if (action === 'cropamt' && payload) { runCropAmount(payload.amt); return }
-      if (action === 'filter' && payload) { runFilter(payload.name); return }
+      if (action === 'filter' && payload) { setTab('more'); setMoreOpenGroup('Filters'); runFilter(payload.name); return }
       if (action === 'moretool' && payload) {
+        setTab('more')
+        const gmap = { clone: 'Retouch & Paint', heal: 'Retouch & Paint', redeye: 'Retouch & Paint', bucket: 'Retouch & Paint', gradient: 'Retouch & Paint', curves: 'Adjustments', levels: 'Adjustments', polygon: 'Shapes & Tools', triangle: 'Shapes & Tools', star: 'Shapes & Tools', warp: 'Shapes & Tools' }
+        setMoreOpenGroup(gmap[payload.key] || 'Shapes & Tools')
         const map = {
           clone: () => startPaintTool('clone'), heal: () => startPaintTool('heal'),
           redeye: () => startPaintTool('redeye'), bucket: () => startPaintTool('bucket'),
@@ -2470,8 +2474,9 @@ export function Editor({ project, onBack }) {
           onRedEye={() => startPaintTool('redeye')}
           onBucket={() => startPaintTool('bucket')}
           onGradient={() => startPaintTool('gradient')}
-          onCurves={() => setCurvesOpen(true)}
-          onLevels={() => setLevelsOpen(true)}
+          onCurves={() => { setCurvesOpen(true); setMoreOpenGroup('Adjustments') }}
+          onLevels={() => { setLevelsOpen(true); setMoreOpenGroup('Adjustments') }}
+          openGroups={moreOpenGroup ? [moreOpenGroup] : []}
           onShape={(s2) => setShapeTool(s2)}
           onWarp={() => openModal(setWarpOpen)}
         />
@@ -3389,9 +3394,15 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
 /* ------------------------------ tab: More (advanced tools) -------------------- */
 // Everything advanced lives here so the main one-click tabs stay clean.
 // The global search also finds these.
-function MoreTab({ search = '', onAsk, onFilter, onSelection, onClone, onHeal, onRedEye, onBucket, onGradient, onCurves, onLevels, onShape, onWarp }) {
+function MoreTab({ search = '', onAsk, onFilter, onSelection, onClone, onHeal, onRedEye, onBucket, onGradient, onCurves, onLevels, onShape, onWarp, openGroups = [] }) {
   const q = String(search || '').trim().toLowerCase()
   const match = (...words) => !q || words.some((w) => w.toLowerCase().includes(q))
+  const [openSet, setOpenSet] = useState(() => new Set(openGroups))
+  // auto-open groups that a command targets
+  useEffect(() => {
+    if (openGroups.length) setOpenSet((prev) => new Set([...prev, ...openGroups]))
+  }, [openGroups.join(',')])
+  const toggleGroup = (g) => setOpenSet((prev) => { const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n })
 
   const groups = [
     {
@@ -3480,13 +3491,22 @@ function MoreTab({ search = '', onAsk, onFilter, onSelection, onClone, onHeal, o
         findable via the search bar.
       </p>
       {q && visible.length === 0 && <p className="py-6 text-center text-xs text-mute">No advanced tools match “{search}”</p>}
-      {visible.map((g) => (
-        <div key={g.label} className="mb-5 last:mb-0">
-          <div className="mb-2 flex items-center gap-2 px-0.5">
+      {visible.map((g) => {
+        const isOpen = q ? true : openSet.has(g.label)
+        return (
+        <div key={g.label} className="mb-2 last:mb-0 rounded-ink border border-line">
+          <button
+            type="button"
+            onClick={() => toggleGroup(g.label)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left"
+          >
             <span className="label-xs text-dim">{g.label}</span>
+            <span className="label-xs text-mute">({g.items.length})</span>
             <span className="h-px flex-1 bg-line" />
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
+            <Icon name={isOpen ? 'chevronUp' : 'chevronDown'} size={12} className="text-mute" />
+          </button>
+          {isOpen && (
+          <div className="grid grid-cols-2 gap-1.5 p-2">
             {g.items.map((it) => (
               <button
                 key={it.t}
@@ -3504,8 +3524,10 @@ function MoreTab({ search = '', onAsk, onFilter, onSelection, onClone, onHeal, o
               </button>
             ))}
           </div>
+          )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
