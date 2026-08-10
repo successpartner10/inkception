@@ -70,6 +70,32 @@ function fontStack(family) {
 
 const isTextObject = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text')
 
+/* friendly "…now" phrasing for the busy overlay */
+function busyNowPhrase(title) {
+  const t = String(title || '')
+  const map = {
+    'Remove Background': 'Removing background now…',
+    'Replace Background': 'Replacing background now…',
+    'Auto Enhance': 'Enhancing photo now…',
+    'Upscale 4×': 'Upscaling now…',
+    'Portrait Retouch': 'Retouching portrait now…',
+    Denoise: 'Reducing noise now…',
+    'Color Grade': 'Applying color grade now…',
+    'Smart Crop': 'Cropping now…',
+    'Decompose to Layers': 'Decomposing to layers now…',
+    'Batch AI': 'Processing batch now…',
+    'Texture Fill': 'Filling region now…',
+    'Collage Studio': 'Building collage now…',
+    'Export GIF': 'Rendering GIF now…',
+    'Export MP4': 'Rendering video now…',
+    Crop: 'Cropping now…',
+  }
+  if (map[t]) return map[t]
+  if (t.startsWith('Export')) return `${t.replace('Export ', 'Exporting ').toLowerCase()} now…`
+  if (t.startsWith('Upscale')) return 'Upscaling now…'
+  return `${t} — working now…`
+}
+
 /* friendly layer name for PSD export */
 function layerNameFor(obj, baseImg, decomp) {
   if (obj === baseImg) return 'Image'
@@ -176,6 +202,10 @@ export function Editor({ project, onBack }) {
   }, [beforeAfter])
   useEffect(() => {
     busyRef.current = !!busy
+    // Auto-collapse the mobile sheet when a background job starts so the
+    // canvas preview (and the progress overlay) stay visible — no manual
+    // menu closing needed.
+    if (busy) setSheetOpen(false)
   }, [busy])
   useEffect(() => {
     filtersRef.current = filters
@@ -725,6 +755,9 @@ export function Editor({ project, onBack }) {
             // cascade new photos slightly so nothing is hidden exactly underneath
             img.set({ left: img.left + (i % 5) * 22, top: img.top + (i % 5) * 22 })
           }
+          // remember the grid slot so the photo can auto fit/fill it later
+          img.set('slotRect', px)
+          img.set('fitMode', 'cover')
           c.add(img)
           decompRef.current.push({ id: `col-${Date.now()}-${i}`, img, name: `Photo ${i + 1}`, type: 'Collage', dataUrl: used[i], visible: true })
         }
@@ -1066,6 +1099,7 @@ export function Editor({ project, onBack }) {
   const startErase = (mode) => {
     computeDisplayRect()
     setEraseMode(mode)
+    setSheetOpen(false) // show the canvas so the user can paint
     maskCvRef.current = null
     const pc = paintCanvasRef.current
     if (pc) {
@@ -1170,6 +1204,7 @@ export function Editor({ project, onBack }) {
   const startCrop = () => {
     setTool('crop')
     setCropSel(null)
+    setSheetOpen(false) // show the full canvas for cropping
     showToast('Drag on the image to select a crop area', 'crop')
   }
 
@@ -1244,6 +1279,31 @@ export function Editor({ project, onBack }) {
     setCropSel(null)
     cropRef.current = null
   }
+
+  /* -------------------- collage photo fit / fill (grid resize) -------------- */
+  // Each collage photo remembers its grid slot; Fit shrinks it inside the
+  // slot, Fill expands it to cover the slot (the photo auto expands/shrinks
+  // into that size — no manual scaling needed).
+  const fitCollagePhoto = useCallback(
+    (id, mode) => {
+      const d = decompRef.current.find((x) => x.id === id)
+      const img = d && d.img
+      const slot = img && img.slotRect
+      const c = fabricRef.current
+      if (!img || !slot || !c) return
+      const s = mode === 'cover' ? Math.max(slot.w / img.width, slot.h / img.height) : Math.min(slot.w / img.width, slot.h / img.height)
+      img.set({
+        left: slot.x + (slot.w - img.width * s) / 2,
+        top: slot.y + (slot.h - img.height * s) / 2,
+        scaleX: s,
+        scaleY: s,
+      })
+      img.set('fitMode', mode)
+      c.requestRenderAll()
+      showToast(mode === 'cover' ? 'Photo expanded to fill its slot' : 'Photo fit inside its slot', 'fit')
+    },
+    [showToast],
+  )
 
   /* ------------------------- text font / size controls ---------------------- */
   useEffect(() => {
@@ -1567,6 +1627,7 @@ export function Editor({ project, onBack }) {
         onToggleVisibility={toggleLayer}
         onToggleLock={toggleLock}
         onDeleteLayer={deleteLayer}
+        onFitPhoto={fitCollagePhoto}
         imageSrc={imageSrc}
         showToast={showToast}
         layerOpacity={layerOpacity}
@@ -1806,7 +1867,7 @@ export function Editor({ project, onBack }) {
               <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/70">
                 <span className="h-8 w-8 animate-spin rounded-full border border-white/25 border-t-white" />
                 <div className="text-center">
-                  <div className="text-sm font-semibold">{busy.title}</div>
+                  <div className="text-sm font-semibold text-white">{busyNowPhrase(busy.title)}</div>
                   <div className="mt-1 text-xs text-dim">{busy.step}</div>
                 </div>
                 <div className="h-[2px] w-40 overflow-hidden bg-line-2">
@@ -2552,7 +2613,7 @@ function AITab({
 /* ------------------------------- tab: Layers ------------------------------ */
 function LayersTab({
   layers, extraLayers = [], selected, onSelect, onToggleVisibility, onToggleLock, onDeleteLayer,
-  imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
+  onFitPhoto, imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
 }) {
   const previews = {
     text: <span className="text-[10px] font-extrabold tracking-widest text-fg">Tt</span>,
@@ -2606,16 +2667,37 @@ function LayersTab({
               <span className="h-px flex-1 bg-line" />
             </div>
             {extraLayers.map((l) => (
-              <LayerRow
-                key={l.id}
-                layer={{ name: l.name, type: l.type, visible: l.visible, locked: false }}
-                preview={<img src={l.dataUrl} alt="" className="h-full w-full object-contain" />}
-                selected={false}
-                onSelect={() => {}}
-                onToggleVisibility={() => onToggleVisibility(l.id)}
-                onToggleLock={() => showToast('AI layers are read-only', 'lock')}
-                onDelete={() => onDeleteLayer(l.id)}
-              />
+              <div key={l.id} className="space-y-1">
+                <LayerRow
+                  layer={{ name: l.name, type: l.type, visible: l.visible, locked: false }}
+                  preview={<img src={l.dataUrl} alt="" className="h-full w-full object-contain" />}
+                  selected={false}
+                  onSelect={() => {}}
+                  onToggleVisibility={() => onToggleVisibility(l.id)}
+                  onToggleLock={() => showToast('AI layers are read-only', 'lock')}
+                  onDelete={() => onDeleteLayer(l.id)}
+                />
+                {l.type === 'Collage' && onFitPhoto && (
+                  <div className="flex items-center gap-1 pl-12">
+                    <span className="label-xs text-mute">Grid size:</span>
+                    <button
+                      type="button"
+                      onClick={() => onFitPhoto(l.id, 'contain')}
+                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                    >
+                      Fit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onFitPhoto(l.id, 'cover')}
+                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                    >
+                      Fill
+                    </button>
+                    <span className="ml-1 text-[9px] text-mute">auto expand / shrink into slot</span>
+                  </div>
+                )}
+              </div>
             ))}
           </>
         )}
