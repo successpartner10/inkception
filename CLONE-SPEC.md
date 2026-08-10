@@ -445,3 +445,99 @@ embedded-font CSS, write single HTML.
 *This spec matches the deployed v0.15.9 build. To ship an exact clone: implement
 §2 design tokens, §3 layout, §4 features, §6 architecture (or equivalent),
 §8 deploy, §9 offline artifacts.*
+
+---
+
+## 12. Full Source Tree (clone from code, not just spec)
+
+The exact tracked file set (49 files) with sizes. To clone **from source**:
+clone the repo, `npm install`, `npm run dev`. Everything below is code, not
+generated assets.
+
+### Root
+```
+package.json            520 B   deps: react 19, fabric 6, ag-psd, mediapipe
+vite.config.js         1.3 KB   plugins (react, tailwind, version-inject), base './'
+index.html             1.3 KB   fonts link, favicon, root div
+.gitignore               36 B   node_modules, dist
+```
+
+### Build / deploy
+```
+.github/workflows/deploy.yml   957 B   Pages build+deploy on push to main
+```
+
+### Docs
+```
+CLONE-SPEC.md          21.7 KB   this file
+FEATURES.md             9.2 KB   shipped features (v0.15.9)
+ADVANCED-REFERENCE.md   2.4 KB   generic advanced-tools catalog
+README.md               3.0 KB
+cloudflare-access/allowlist.json  472 B   4 emails
+cloudflare-access/SETUP.md       3.6 KB   OTP path
+cloudflare-access/GUIDE.html     8.1 KB   printable step-by-step
+```
+
+### Public assets (served as-is)
+```
+public/favicon.svg          265 B
+public/brand/logo.svg       307 B
+public/samples/*.jpg        3 images (bw, mountain, vase)
+public/mediapipe/*          12 MB  self-hosted MediaPipe model
+  (selfie_segmentation.tflite, _landscape.tflite, .binarypb,
+   _solution_simd_wasm_bin.js/.wasm, _solution_wasm_bin.js/.wasm)
+```
+
+### App source
+```
+src/main.jsx                 276 B   mount + version global
+src/App.jsx                 3.4 KB   screen switch, project CRUD, localStorage
+src/index.css               4.2 KB   design tokens (@theme), base, utilities
+
+src/screens/Editor.jsx     188 KB   THE editor (all panels, tools, AI, export)
+src/screens/Gallery.jsx     18 KB   home: hero, recents, projects, templates
+
+src/components/Icon.jsx     8.9 KB   ~70 inline SVG icons
+src/components/ui.jsx       13 KB    Button, IconBtn, Chip, Segmented, Modal,
+                                     Toast, Slider, ActionCard, LayerRow, Highlight
+src/components/Logo.jsx      642 B   wordmark
+src/components/BeforeAfter.jsx 2.3 KB  compare divider
+src/components/VectorizePanel.jsx 3.9 KB  trace UI
+
+src/lib/utils.js            2.9 KB   helpers, fileToDataUrl, downloads
+src/lib/filters.js          3.6 KB   adjustment→fabric/CSS filters, quick-fx
+src/lib/export.js           4.9 KB   27 presets, groups, icons, renderExport
+src/lib/encode.js           16 KB     GIF(LZW), PDF, PSD-flat, palette
+src/lib/psd.js              1.8 KB   layered PSD via ag-psd
+src/lib/motioncapture.js    3.7 KB   motion frames + MediaRecorder
+src/lib/trace.js            3.3 KB   edge-trace → SVG
+src/lib/segment.js          5.6 KB   MediaPipe wrapper (cutout, mask, bbox)
+src/lib/vision.js           16 KB    denoise, retouch, colorGrade, inpaint,
+                                     smartCrop, decompose
+src/lib/pxengine.js         16 KB    filters, remap, convolve, sobel, noise,
+                                     clouds, sketch, tilt-shift, cylinderWrap,
+                                     selection ops
+src/lib/collage.js          3.0 KB   12 layouts + slots
+src/lib/fonts.js            2.5 KB   15 fonts + Google Fonts URL
+src/lib/howto.js            11 KB    22 guides + matcher + YouTube search
+src/lib/prompts.js          3.5 KB   command-bar parser
+```
+
+### To build an exact clone from source
+```bash
+git clone https://github.com/successpartner10/inkception.git
+cd inkception
+npm install
+npm run dev        # dev server
+npm run build      # → dist/ (GitHub-Pages-ready)
+node /home/user/inline.mjs   # (optional) offline single-file artifact
+```
+
+### Source-accuracy notes
+- `Editor.jsx` is intentionally monolithic (single file holds the whole
+  editor) — ~5,500 lines. Cloning: you may split it; the behavior is what
+  matters.
+- The `pxengine`, `vision`, `encode`, `segment`, `howto`, `collage`, `export`
+  libs are self-contained and portable — copy them verbatim.
+- MediaPipe files must be re-fetched from `@mediapipe/selfie_segmentation`
+  (`node_modules/.../wasm` + tflite) and placed under `public/mediapipe/`.
