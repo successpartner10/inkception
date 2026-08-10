@@ -10,6 +10,7 @@ import {
   ActionCard,
   Button,
   Chip,
+  Highlight,
   IconBtn,
   Modal,
   Segmented,
@@ -46,6 +47,7 @@ const TAB_ITEMS = [
   { id: 'quick', label: 'Quick', icon: 'sparkle' },
   { id: 'ai', label: 'AI', icon: 'sparkle' },
   { id: 'layers', label: 'Layers', icon: 'layers' },
+  { id: 'text', label: 'Text', icon: 'text' },
 ]
 
 export const TOOLS = [
@@ -115,7 +117,6 @@ function layerNameFor(obj, baseImg, decomp) {
 }
 
 const LAYER_DEFAULTS = [
-  { id: 'text', name: 'Editorial Text', type: 'Type', visible: true, locked: false },
   { id: 'vignette', name: 'Vignette', type: 'Effect', visible: true, locked: false },
   { id: 'subject', name: 'Subject', type: 'Photo', visible: true, locked: false },
   { id: 'backdrop', name: 'Backdrop', type: 'Fill', visible: true, locked: false },
@@ -146,6 +147,12 @@ export function Editor({ project, onBack }) {
   const paintRectRef = useRef({ x: 0, y: 0, w: 0, h: 0 })
   const textFontRef = useRef(DEFAULT_FONT)
   const textSizeRef = useRef(DEFAULT_FONT_SIZE)
+  const textBoldRef = useRef(false)
+  const textItalicRef = useRef(false)
+  const textAlignRef = useRef('left')
+  const textTrackRef = useRef(0) // charSpacing (100 = ~1px)
+  const textLeadingRef = useRef(1.2) // lineHeight multiplier
+  const textColorRef = useRef('#ffffff')
 
   /* --------------------------------- state --------------------------------- */
   const [imageSrc, setImageSrc] = useState(null)
@@ -181,7 +188,8 @@ export function Editor({ project, onBack }) {
   const [upscaleOpen, setUpscaleOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [paletteColors, setPaletteColors] = useState([])
-  const [eraseMode, setEraseMode] = useState(null) // null | 'erase' | 'fill'
+  const [eraseMode, setEraseMode] = useState(null) // null | 'erase'(inpaint) | 'fill' | 'blur' | 'alpha'(transparent)
+  const [currentColor, setCurrentColor] = useState('#ffffff') // eyedropper / brush color
   const [motion, setMotion] = useState({ mode: 'off', speed: 1 })
   const [extraLayers, setExtraLayers] = useState([])
   const [batchResult, setBatchResult] = useState(null)
@@ -194,11 +202,18 @@ export function Editor({ project, onBack }) {
   const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [textFont, setTextFont] = useState(DEFAULT_FONT)
   const [textSize, setTextSize] = useState(DEFAULT_FONT_SIZE)
+  const [textBold, setTextBold] = useState(false)
+  const [textItalic, setTextItalic] = useState(false)
+  const [textAlign, setTextAlign] = useState('left') // left|center|right|justify
+  const [textTrack, setTextTrack] = useState(0) // letter spacing
+  const [textLeading, setTextLeading] = useState(1.2) // line height
+  const [textColor, setTextColor] = useState('#ffffff')
   const [activeText, setActiveText] = useState(false)
   const [cropSel, setCropSel] = useState(null) // {x,y,w,h} in display px
   const cropRef = useRef(null) // drag start point
   const cropOverlayRect = useRef(null)
   const dragTimerRef = useRef(null)
+  const colorRef = useRef('#ffffff')
 
   useEffect(() => {
     beforeAfterRef.current = beforeAfter
@@ -232,6 +247,11 @@ export function Editor({ project, onBack }) {
   useEffect(() => {
     imageSrcRef.current = imageSrc
   }, [imageSrc])
+  useEffect(() => {
+    colorRef.current = currentColor
+    const c = fabricRef.current
+    if (c && c.freeDrawingBrush) c.freeDrawingBrush.color = currentColor
+  }, [currentColor])
 
   const showToast = useCallback((msg, icon) => setToast({ msg, icon }), [])
 
@@ -284,6 +304,47 @@ export function Editor({ project, onBack }) {
     }
   }, [computeFit])
 
+  /* ------------------------------ eyedropper ------------------------------ */
+  // Reads the pixel under the cursor from the source image and sets it as
+  // the active color (brush / new text / shapes).
+  const sampleColorAt = (e) => {
+    const c = fabricRef.current
+    const img = imgObjRef.current
+    if (!c || !img) return
+    const p = c.getPointer(e)
+    // map scene coords → natural image pixels (account for scale + placement)
+    const sx = (p.x - img.left) / img.scaleX
+    const sy = (p.y - img.top) / img.scaleY
+    if (sx < 0 || sy < 0 || sx >= img.width || sy >= img.height) {
+      showToast('Click on the image to pick a color', 'info')
+      return
+    }
+    // draw the source into a temp canvas at natural size and read the pixel
+    const src = imageSrcRef.current
+    if (!src) return
+    const im = new Image()
+    im.onload = () => {
+      const cv = document.createElement('canvas')
+      cv.width = im.naturalWidth
+      cv.height = im.naturalHeight
+      const ctx = cv.getContext('2d')
+      ctx.drawImage(im, 0, 0)
+      const d = ctx.getImageData(Math.round(sx), Math.round(sy), 1, 1).data
+      const hex = '#' + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, '0')).join('')
+      setCurrentColor(hex)
+      colorRef.current = hex
+      // apply to a selected text object if there is one
+      const act = c.getActiveObject()
+      if (isTextObject(act)) {
+        act.set('fill', hex)
+        c.requestRenderAll()
+        setTextColor(hex)
+      }
+      showToast(`Color picked ${hex}`, 'dropper')
+    }
+    im.src = src
+  }
+
   /* ------------------------------ fabric init ------------------------------ */
   useEffect(() => {
     const c = new Canvas(canvasElRef.current, {
@@ -296,7 +357,7 @@ export function Editor({ project, onBack }) {
     // brush
     const brush = new PencilBrush(c)
     brush.width = 4
-    brush.color = '#ffffff'
+    brush.color = colorRef.current
     c.freeDrawingBrush = brush
 
     let pan = null
@@ -305,7 +366,16 @@ export function Editor({ project, onBack }) {
       if (beforeAfterRef.current) return
       const t = toolRef.current
       if (t === 'select') {
-        if (!o.target) pan = { x: o.e.clientX, y: o.e.clientY, vp: [...c.viewportTransform] }
+        if (!o.target) {
+          // Photoshop-style: clicking empty canvas deselects; dragging pans
+          c.discardActiveObject()
+          c.requestRenderAll()
+          pan = { x: o.e.clientX, y: o.e.clientY, vp: [...c.viewportTransform] }
+        }
+        return
+      }
+      if (t === 'dropper') {
+        sampleColorAt(o.e)
         return
       }
       if (t === 'brush') {
@@ -335,9 +405,15 @@ export function Editor({ project, onBack }) {
         draftRef.current = ln
       } else if (t === 'text') {
         const it = new IText('Text', {
-          left: p.x, top: p.y, fill: '#ffffff',
+          left: p.x, top: p.y,
+          fill: textColorRef.current,
           fontSize: textSizeRef.current,
           fontFamily: fontStack(textFontRef.current),
+          fontWeight: textBoldRef.current ? 'bold' : 'normal',
+          fontStyle: textItalicRef.current ? 'italic' : 'normal',
+          charSpacing: textTrackRef.current,
+          lineHeight: textLeadingRef.current,
+          textAlign: textAlignRef.current,
         })
         c.add(it)
         c.setActiveObject(it)
@@ -384,6 +460,12 @@ export function Editor({ project, onBack }) {
         setActiveText(true)
         setTextFont(o.fontFamily ? o.fontFamily.replace(/'/g, '') : DEFAULT_FONT)
         setTextSize(Math.round(o.fontSize || DEFAULT_FONT_SIZE))
+        setTextBold(String(o.fontWeight || 'normal').toLowerCase().includes('bold') || Number(o.fontWeight) >= 600)
+        setTextItalic(String(o.fontStyle || 'normal').toLowerCase().includes('italic'))
+        setTextAlign(o.textAlign || 'left')
+        setTextTrack(o.charSpacing || 0)
+        setTextLeading(o.lineHeight || 1.2)
+        setTextColor(o.fill && typeof o.fill === 'string' ? o.fill : '#ffffff')
       } else {
         setActiveText(false)
       }
@@ -1146,7 +1228,13 @@ export function Editor({ project, onBack }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, paintRectRef.current.w, paintRectRef.current.h)
     }
-    showToast(mode === 'erase' ? 'Paint over the object to remove it' : 'Paint the region to re-fill', 'brush')
+    const msgs = {
+      erase: 'Paint over the object to remove it (AI fill)',
+      fill: 'Paint the region to re-fill',
+      blur: 'Paint where you want to blur',
+      alpha: 'Paint where you want to erase to transparent',
+    }
+    showToast(msgs[mode] || 'Paint on the image', 'brush')
   }
 
   const paintMask = (e) => {
@@ -1190,24 +1278,93 @@ export function Editor({ project, onBack }) {
     }
   }
 
-  const applyInpaint = async () => {
+  const applyBrush = async () => {
     const mc = maskCvRef.current
     const src = imageSrcRef.current
-    if (!mc || !src || busyRef.current) return
+    const mode = eraseMode
+    if (!mc || !src || busyRef.current || !mode) return
     let painted = 0
-    const md = mc.getContext('2d').getImageData(0, 0, mc.width, mc.height).data
-    for (let i = 3; i < md.length; i += 4) if (md[i] > 128) painted++
+    const mdata = mc.getContext('2d').getImageData(0, 0, mc.width, mc.height).data
+    for (let i = 3; i < mdata.length; i += 4) if (mdata[i] > 128) painted++
     if (painted < 12) { showToast('Paint a region first', 'info'); return }
     setEraseMode(null)
-    setBusy(busyJob('Texture Fill'))
+    const labels = {
+      erase: 'Texture Fill', fill: 'Texture Fill', blur: 'Blur Brush', alpha: 'Erase Brush',
+    }
+    setBusy(busyJob(labels[mode]))
     try {
-      setBusy({ kind: 'real', title: 'Texture Fill', step: 'Filling region from surroundings…', progress: 45 })
-      const out = await inpaint(src, md)
+      let out
+      if (mode === 'blur') {
+        // blur masked pixels toward a blurred copy
+        setBusy({ kind: 'real', title: 'Blur Brush', step: 'Blurring painted area…', progress: 50 })
+        const img = await loadImageElement(src)
+        const s2 = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(2, Math.round(img.naturalWidth * s2))
+        const h = Math.max(2, Math.round(img.naturalHeight * s2))
+        const base = document.createElement('canvas')
+        base.width = w; base.height = h
+        const bctx = base.getContext('2d')
+        bctx.drawImage(img, 0, 0, w, h)
+        const blurred = document.createElement('canvas')
+        blurred.width = w; blurred.height = h
+        const bctx2 = blurred.getContext('2d')
+        bctx2.filter = 'blur(8px)'
+        bctx2.drawImage(base, 0, 0)
+        const bd = bctx.getImageData(0, 0, w, h)
+        const bld = bctx2.getImageData(0, 0, w, h)
+        const mw = mc.width, mh = mc.height
+        for (let y = 0; y < h; y++) {
+          const my = Math.min(mh - 1, Math.round((y / h) * mh))
+          for (let x = 0; x < w; x++) {
+            const mx = Math.min(mw - 1, Math.round((x / w) * mw))
+            const a = mdata[(my * mw + mx) * 4 + 3] / 255
+            if (a <= 0.02) continue
+            const i = (y * w + x) * 4
+            bd.data[i] = bd.data[i] * (1 - a) + bld.data[i] * a
+            bd.data[i + 1] = bd.data[i + 1] * (1 - a) + bld.data[i + 1] * a
+            bd.data[i + 2] = bd.data[i + 2] * (1 - a) + bld.data[i + 2] * a
+          }
+        }
+        bctx.putImageData(bd, 0, 0)
+        out = base.toDataURL('image/png')
+      } else if (mode === 'alpha') {
+        // erase to transparency
+        setBusy({ kind: 'real', title: 'Erase Brush', step: 'Erasing painted area…', progress: 50 })
+        const img = await loadImageElement(src)
+        const s2 = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(2, Math.round(img.naturalWidth * s2))
+        const h = Math.max(2, Math.round(img.naturalHeight * s2))
+        const cv = document.createElement('canvas')
+        cv.width = w; cv.height = h
+        const ctx = cv.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
+        const d = ctx.getImageData(0, 0, w, h)
+        const mw = mc.width, mh = mc.height
+        for (let y = 0; y < h; y++) {
+          const my = Math.min(mh - 1, Math.round((y / h) * mh))
+          for (let x = 0; x < w; x++) {
+            const mx = Math.min(mw - 1, Math.round((x / w) * mw))
+            const a = mdata[(my * mw + mx) * 4 + 3] / 255
+            if (a <= 0.02) continue
+            d.data[(y * w + x) * 4 + 3] = Math.round(d.data[(y * w + x) * 4 + 3] * (1 - a))
+          }
+        }
+        ctx.putImageData(d, 0, 0)
+        out = cv.toDataURL('image/png')
+      } else {
+        // erase (AI inpaint) / fill
+        const md = new Uint8ClampedArray(mdata.length / 4)
+        for (let i = 0; i < md.length; i++) md[i] = mdata[i * 4 + 3]
+        setBusy({ kind: 'real', title: labels[mode], step: 'Filling region from surroundings…', progress: 45 })
+        out = await inpaint(src, md)
+      }
       await loadIntoCanvas(out)
       setBusy(null)
-      showToast('Region filled from surrounding texture', 'brush')
-    } catch { setBusy(null); showToast('Fill failed', 'close') }
+      const done = { erase: 'Object removed (AI fill)', fill: 'Region re-filled', blur: 'Area blurred', alpha: 'Erased to transparent' }
+      showToast(done[mode], 'check')
+    } catch { setBusy(null); showToast('Brush failed', 'close') }
   }
+  const applyInpaint = applyBrush
 
   /* #8 — Motion (animated preview) */
   const applyMotion = (mode, speed) => {
@@ -1470,13 +1627,15 @@ export function Editor({ project, onBack }) {
     [showToast],
   )
 
-  /* ------------------------- text font / size controls ---------------------- */
-  useEffect(() => {
-    textFontRef.current = textFont
-  }, [textFont])
-  useEffect(() => {
-    textSizeRef.current = textSize
-  }, [textSize])
+  /* --------------------- text character / paragraph controls ---------------- */
+  useEffect(() => { textFontRef.current = textFont }, [textFont])
+  useEffect(() => { textSizeRef.current = textSize }, [textSize])
+  useEffect(() => { textBoldRef.current = textBold }, [textBold])
+  useEffect(() => { textItalicRef.current = textItalic }, [textItalic])
+  useEffect(() => { textAlignRef.current = textAlign }, [textAlign])
+  useEffect(() => { textTrackRef.current = textTrack }, [textTrack])
+  useEffect(() => { textLeadingRef.current = textLeading }, [textLeading])
+  useEffect(() => { textColorRef.current = textColor }, [textColor])
 
   const applyTextFont = (family) => {
     setTextFont(family)
@@ -1500,6 +1659,26 @@ export function Editor({ project, onBack }) {
       c.requestRenderAll()
     }
   }
+
+  // generic apply: set state+ref, then apply to the active text object
+  const setTextProp = (key, value, ref, setter, normalize) => {
+    const v = normalize ? normalize(value) : value
+    setter(v)
+    ref.current = v
+    const c = fabricRef.current
+    const o = c && c.getActiveObject()
+    if (isTextObject(o)) {
+      o.set(key, v)
+      c.requestRenderAll()
+    }
+  }
+
+  const applyTextBold = (b) => setTextProp('fontWeight', b ? 'bold' : 'normal', textBoldRef, setTextBold)
+  const applyTextItalic = (i) => setTextProp('fontStyle', i ? 'italic' : 'normal', textItalicRef, setTextItalic)
+  const applyTextAlign = (a) => setTextProp('textAlign', a, textAlignRef, setTextAlign)
+  const applyTextTrack = (v) => setTextProp('charSpacing', Math.round(v), textTrackRef, setTextTrack)
+  const applyTextLeading = (v) => setTextProp('lineHeight', Math.max(0.6, Math.min(3, v)), textLeadingRef, setTextLeading)
+  const applyTextColor = (col) => setTextProp('fill', col, textColorRef, setTextColor)
 
   /* --------------------------------- export -------------------------------- */
   const exportQuery = globalSearch.trim().toLowerCase()
@@ -1549,6 +1728,13 @@ export function Editor({ project, onBack }) {
           : EXPORT_PRESETS.find((x) => x.id === preset)
       if (!p || !p.w || !p.h) throw new Error('invalid preset')
       const base = slug(project.name)
+      const ts = new Date()
+        .toISOString()
+        .replace(/[-:T]/g, '')
+        .slice(0, 14) // yyyymmddhhmmss
+      const platformSlug = p && p.platform ? slug(p.platform) : 'original'
+      // facebook-1080x1080-name-timestamp.png
+      const fname = (ext) => `${platformSlug}-${W}x${H}-${base}-${ts}.${ext}`
       const W = p.w
       const H = p.h
 
@@ -1574,13 +1760,13 @@ export function Editor({ project, onBack }) {
         })
         if (format === 'gif') {
           const blob = gifEncode(frames, Math.round(1000 / fps))
-          downloadBlob(blob, `${base}-${W}x${H}.gif`)
+          downloadBlob(blob, fname('gif'))
         } else {
           const mime = pickVideoMime()
           if (!mime) throw new Error('video unsupported')
           const blob = await recordFrames(frames, { fps, mimeType: mime })
           const ext = mime.includes('mp4') ? 'mp4' : 'webm'
-          downloadBlob(blob, `${base}-${W}x${H}.${ext}`)
+          downloadBlob(blob, fname(ext))
         }
         setBusy(null)
         setExportOpen(false)
@@ -1604,7 +1790,7 @@ export function Editor({ project, onBack }) {
           const r = await traceImage(imageSrcRef.current, { detail: 50, smoothing: 40 })
           svg = r.svg
         }
-        downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${base}-${W}x${H}.svg`)
+        downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), fname('svg'))
       } else if (format === 'pdf') {
         const jpg = await new Promise((res) => {
           const im = new Image()
@@ -1619,7 +1805,7 @@ export function Editor({ project, onBack }) {
           im.src = dataUrl
         })
         const blob = pdfFromJpeg(jpg, W, H)
-        downloadBlob(blob, `${base}-${W}x${H}.pdf`)
+        downloadBlob(blob, fname('pdf'))
       } else if (format === 'psd') {
         const c = fabricRef.current
         const objs = c && c.getObjects().length ? [...c.getObjects()].reverse() : []
@@ -1681,7 +1867,7 @@ export function Editor({ project, onBack }) {
             layers: layerEntries,
             compositeCanvas: compCv,
           })
-          downloadBlob(blob, `${base}-${W}x${H}.psd`)
+          downloadBlob(blob, fname('psd'))
         } else if (imageSrcRef.current) {
           // no fabric objects → flattened single-layer PSD
           const im = await loadImageElement(dataUrl)
@@ -1693,7 +1879,7 @@ export function Editor({ project, onBack }) {
           ctx.fillRect(0, 0, W, H)
           ctx.drawImage(im, 0, 0, W, H)
           const blob = psdFromCanvas(cv)
-          downloadBlob(blob, `${base}-${W}x${H}.psd`)
+          downloadBlob(blob, fname('psd'))
         } else {
           throw new Error('nothing to export')
         }
@@ -1719,7 +1905,7 @@ export function Editor({ project, onBack }) {
           ctx.drawImage(im, 0, 0, W, H)
           dataUrl = cv.toDataURL('image/webp', 0.92)
         }
-        downloadDataUrl(dataUrl, `${base}-${W}x${H}.${ext}`)
+        downloadDataUrl(dataUrl, fname(ext))
       }
       setBusy(null)
       setExportOpen(false)
@@ -1791,6 +1977,29 @@ export function Editor({ project, onBack }) {
           upscaled={upscaled}
           onPromptAction={onPromptAction}
           search={globalSearch}
+        />
+      )
+    }
+    if (tab === 'text') {
+      return (
+        <TextTab
+          activeText={activeText}
+          textFont={textFont}
+          textSize={textSize}
+          textBold={textBold}
+          textItalic={textItalic}
+          textAlign={textAlign}
+          textTrack={textTrack}
+          textLeading={textLeading}
+          textColor={textColor}
+          applyTextFont={applyTextFont}
+          applyTextSize={applyTextSize}
+          applyTextBold={applyTextBold}
+          applyTextItalic={applyTextItalic}
+          applyTextAlign={applyTextAlign}
+          applyTextTrack={applyTextTrack}
+          applyTextLeading={applyTextLeading}
+          applyTextColor={applyTextColor}
         />
       )
     }
@@ -1985,17 +2194,6 @@ export function Editor({ project, onBack }) {
                 }}
               />
             )}
-            {layers.find((l) => l.id === 'text')?.visible && (
-              <div className="pointer-events-none absolute inset-x-4 bottom-4 flex items-center justify-between">
-                <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-white/90">
-                  Inkception — Est. 2026
-                </span>
-                <span className="hidden text-[9px] font-bold uppercase tracking-[0.3em] text-white/60 sm:block">
-                  Proof 04
-                </span>
-              </div>
-            )}
-
             {eraseMode && displayRect && (
               <div
                 className="absolute z-20 cursor-crosshair touch-none"
@@ -2058,7 +2256,7 @@ export function Editor({ project, onBack }) {
               <div className="absolute inset-x-0 bottom-3 z-30 flex justify-center">
                 <div className="flex items-center gap-2 rounded-ink border border-line bg-surface px-3 py-2">
                   <span className="label-xs text-dim">
-                    {eraseMode === 'erase' ? 'Paint the object to remove' : 'Paint region to re-fill'}
+                    {eraseMode === 'erase' ? 'Paint the object to remove (AI fill)' : eraseMode === 'fill' ? 'Paint the region to re-fill' : eraseMode === 'blur' ? 'Paint where to blur' : 'Paint where to erase (transparent)'}
                   </span>
                   <Button variant="ghost" size="sm" onClick={clearMask}>Clear</Button>
                   <Button variant="ghost" size="sm" onClick={() => setEraseMode(null)}>Cancel</Button>
@@ -2182,8 +2380,23 @@ export function Editor({ project, onBack }) {
           <IconBtn icon="minus" title="Line (L)" active={tool === 'line'} onClick={() => setTool('line')} />
           <IconBtn icon="text" title="Text (T)" active={tool === 'text'} onClick={() => setTool('text')} />
           <IconBtn icon="brush" title="Brush (B)" active={tool === 'brush'} onClick={() => setTool('brush')} />
+          <button
+            type="button"
+            title="Brush color (pick with dropper)"
+            onClick={() => setTool('dropper')}
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-ink border transition-colors',
+              tool === 'dropper' ? 'border-white bg-surface-2' : 'border-line',
+            )}
+          >
+            <span className="h-4 w-4 rounded-full border border-white/40" style={{ background: currentColor }} />
+          </button>
           <div className="mx-1.5 h-5 w-px bg-line" />
+          <IconBtn icon="dropper" title="Eyedropper — pick color from image" active={tool === 'dropper'} onClick={() => setTool('dropper')} />
           <IconBtn icon="crop" title="Crop (drag to select)" active={tool === 'crop'} onClick={startCrop} />
+          <IconBtn icon="wind" title="Blur brush — paint to blur" active={eraseMode === 'blur'} onClick={() => startErase('blur')} />
+          <IconBtn icon="eraser" title="Erase brush — paint to transparent" active={eraseMode === 'alpha'} onClick={() => startErase('alpha')} />
+          <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
           <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => openModal(setCropOpen)} />
           <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
         </div>
@@ -2348,7 +2561,7 @@ export function Editor({ project, onBack }) {
         subtitle="2–12 photos · 12 AI layouts"
         width="max-w-xl"
       >
-        <CollageBody onBuild={buildCollage} showToast={showToast} />
+        <CollageBody onBuild={buildCollage} showToast={showToast} search={globalSearch} />
       </Modal>
 
       {/* ----------------------------- upscale modal ------------------------------ */}
@@ -2462,7 +2675,7 @@ export function Editor({ project, onBack }) {
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {EXPORT_PRESETS.filter((p) => p.platform === g && matchesExport(p)).map((p) => (
-                      <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} />
+                      <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} query={globalSearch} />
                     ))}
                   </div>
                 </div>
@@ -2470,7 +2683,7 @@ export function Editor({ project, onBack }) {
             : (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {EXPORT_PRESETS.filter((p) => p.platform === exportGroup && matchesExport(p)).map((p) => (
-                  <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} />
+                  <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} query={globalSearch} />
                 ))}
               </div>
             )}
@@ -2546,7 +2759,7 @@ export function Editor({ project, onBack }) {
 }
 
 /* ------------------------------ export preset ---------------------------- */
-function PresetRow({ p, active, onClick }) {
+function PresetRow({ p, active, onClick, query = '' }) {
   return (
     <button
       type="button"
@@ -2561,7 +2774,7 @@ function PresetRow({ p, active, onClick }) {
         <Icon name={PLATFORM_ICONS[p.platform]} size={13} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11px] font-semibold">{p.name}</span>
+        <span className="block truncate text-[11px] font-semibold"><Highlight text={p.name} query={query} /></span>
         <span className="mt-0.5 block text-[9px] text-mute">
           {p.w}×{p.h} · {p.ratio}
         </span>
@@ -2573,6 +2786,153 @@ function PresetRow({ p, active, onClick }) {
 
 /* ----------------------------- tab: Quick actions -------------------------- */
 // Spec §7 — 20 one-click effects in 4 groups.
+/* ------------------------------ tab: Text (Photoshop-style) ------------------ */
+// Character (font, style, size, tracking, leading, color) + Paragraph
+// (alignment). Multi-line text lets you lay out lines of different widths
+// aligned left / center / right / justified — like Photoshop's text engine.
+function TextTab({
+  activeText, textFont, textSize, textBold, textItalic, textAlign,
+  textTrack, textLeading, textColor,
+  applyTextFont, applyTextSize, applyTextBold, applyTextItalic, applyTextAlign,
+  applyTextTrack, applyTextLeading, applyTextColor,
+}) {
+  const alignOptions = [
+    { id: 'left', label: 'Left', icon: 'alignLeft' },
+    { id: 'center', label: 'Center', icon: 'alignCenter' },
+    { id: 'right', label: 'Right', icon: 'alignRight' },
+    { id: 'justify', label: 'Justify', icon: 'alignJustify' },
+  ]
+  return (
+    <div className="p-4">
+      {!activeText && (
+        <p className="mb-4 rounded-ink border border-line bg-surface-2 px-3 py-2.5 text-[11px] leading-relaxed text-dim">
+          Select a text object on the canvas (or use the <b className="text-fg">Text (T)</b> tool) to
+          edit character & paragraph settings. Press <b className="text-fg">Enter</b> inside text to
+          start a new line — then align lines left / right / center or spread them.
+        </p>
+      )}
+
+      {/* Character */}
+      <div className="mb-2 flex items-center gap-2 px-0.5">
+        <span className="label-xs text-dim">Character</span>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+      <label className="label-xs mb-1 block text-mute">Font</label>
+      <select
+        value={textFont}
+        onChange={(e) => applyTextFont(e.target.value)}
+        className="w-full rounded-ink border border-line bg-surface-2 px-2 py-1.5 text-xs text-fg focus:border-white focus:outline-none"
+        style={{ fontFamily: fontStack(textFont) }}
+      >
+        {FONTS.map((f) => (
+          <option key={f.id} value={f.family} style={{ fontFamily: f.stack }} className="bg-surface text-fg">
+            {f.family}
+          </option>
+        ))}
+      </select>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <div>
+          <label className="label-xs mb-1 block text-mute">Size</label>
+          <input
+            type="number"
+            value={textSize}
+            min={6}
+            max={300}
+            onChange={(e) => applyTextSize(Number(e.target.value))}
+            onBlur={(e) => applyTextSize(Number(e.target.value) || DEFAULT_FONT_SIZE)}
+            className="w-full rounded-ink border border-line bg-surface-2 px-2 py-1.5 text-center text-xs tabular-nums text-fg focus:border-white focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="label-xs mb-1 block text-mute">Color</label>
+          <input
+            type="color"
+            value={textColor}
+            onChange={(e) => applyTextColor(e.target.value)}
+            className="h-8 w-full cursor-pointer rounded-ink border border-line bg-surface-2"
+            title="Text color"
+          />
+        </div>
+      </div>
+
+      {/* style toggles */}
+      <div className="mt-3 flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => applyTextBold(!textBold)}
+          className={cn(
+            'h-9 flex-1 rounded-ink border text-xs font-extrabold transition-colors',
+            textBold ? 'border-white bg-white text-black' : 'border-line text-dim hover:border-white hover:text-white',
+          )}
+          title="Bold (⌘B)"
+        >
+          B
+        </button>
+        <button
+          type="button"
+          onClick={() => applyTextItalic(!textItalic)}
+          className={cn(
+            'h-9 flex-1 rounded-ink border text-xs italic transition-colors',
+            textItalic ? 'border-white bg-white text-black' : 'border-line text-dim hover:border-white hover:text-white',
+          )}
+          title="Italic (⌘I)"
+        >
+          I
+        </button>
+      </div>
+
+      {/* spacing */}
+      <div className="mt-4">
+        <Slider
+          label="Letter Spacing"
+          value={textTrack}
+          min={-200}
+          max={400}
+          defaultValue={0}
+          onChange={applyTextTrack}
+          format={(v) => (v === 0 ? '0' : `${v > 0 ? '+' : ''}${Math.round(v / 100)}px`)}
+        />
+        <Slider
+          label="Line Height"
+          value={Math.round(textLeading * 100)}
+          min={60}
+          max={300}
+          defaultValue={120}
+          onChange={(v) => applyTextLeading(v / 100)}
+          format={(v) => `${(v / 100).toFixed(2)}×`}
+        />
+      </div>
+
+      {/* Paragraph */}
+      <div className="mb-2 mt-5 flex items-center gap-2 px-0.5">
+        <span className="label-xs text-dim">Paragraph</span>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {alignOptions.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            onClick={() => applyTextAlign(a.id)}
+            className={cn(
+              'flex h-9 items-center justify-center rounded-ink border transition-colors',
+              textAlign === a.id ? 'border-white bg-white text-black' : 'border-line text-dim hover:border-white hover:text-white',
+            )}
+            title={a.label}
+          >
+            <Icon name={a.icon} size={15} />
+          </button>
+        ))}
+      </div>
+      <p className="mt-3 text-[10px] leading-relaxed text-mute">
+        Multi-line: press Enter for a new line. Each line keeps its own width — alignment (left /
+        center / right / justify) arranges how they sit relative to the text box, like Photoshop.
+      </p>
+    </div>
+  )
+}
+
 function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToast, search = '' }) {
   const act = (msg) => { onDone && onDone(); showToast && showToast(msg, 'check') }
   const clampFilter = (key, delta, label, min = 40, max = 160) => {
@@ -2655,7 +3015,7 @@ function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToas
                 )}
               >
                 <Icon name={it.icon} size={15} />
-                <span className="text-[8.5px] font-semibold uppercase tracking-[0.06em]">{it.label}</span>
+                <span className="text-[8.5px] font-semibold uppercase tracking-[0.06em]"><Highlight text={it.label} query={search} /></span>
               </button>
             ))}
           </div>
@@ -2855,8 +3215,8 @@ function AITab({
                     <Icon name={it.icon} size={15} />
                   )}
                 </span>
-                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg">{it.title}</span>
-                <span className="text-[9.5px] leading-relaxed text-mute">{it.desc}</span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg"><Highlight text={it.title} query={search} /></span>
+                <span className="text-[9.5px] leading-relaxed text-mute"><Highlight text={it.desc} query={search} /></span>
                 {it.tag && (
                   <span className="absolute right-2 top-2">
                     <Chip active>{it.tag}</Chip>
@@ -2878,7 +3238,6 @@ function LayersTab({
   search = '',
 }) {
   const previews = {
-    text: <span className="text-[10px] font-extrabold tracking-widest text-fg">Tt</span>,
     vignette: (
       <div
         className="h-full w-full"
@@ -3246,7 +3605,8 @@ function LayoutPreview({ layoutId, active }) {
 /* ----------------------------- collage studio body ------------------------ */
 // New-Image sizes mirror the full export matrix, so a collage can be built
 // at any size you can export to.
-function CollageBody({ onBuild, showToast }) {
+function CollageBody({ onBuild, showToast, search = '' }) {
+  const q = String(search || '').trim().toLowerCase()
   const [photos, setPhotos] = useState([]) // { url, name }
   const [layout, setLayout] = useState('grid4')
   const [placement, setPlacement] = useState('current') // 'current' | 'new'
@@ -3415,7 +3775,7 @@ function CollageBody({ onBuild, showToast }) {
         <span className="h-px flex-1 bg-line" />
       </div>
       <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {COLLAGE_LAYOUTS.map((l) => {
+        {COLLAGE_LAYOUTS.filter((l) => !q || l.name.toLowerCase().includes(q)).map((l) => {
           const ok = photos.length >= l.min && photos.length <= l.max
           return (
             <button
@@ -3448,12 +3808,15 @@ function CollageBody({ onBuild, showToast }) {
                   layout === l.id && ok ? 'text-white' : 'text-dim',
                 )}
               >
-                {l.name}
+                <Highlight text={l.name} query={search} />
               </span>
             </button>
           )
         })}
       </div>
+      {q && COLLAGE_LAYOUTS.filter((l) => l.name.toLowerCase().includes(q)).length === 0 && (
+        <p className="py-3 text-center text-xs text-mute">No collage template matches “{search}”</p>
+      )}
       <p className="mt-2 text-[10px] text-mute">
         {photos.length} photo{photos.length === 1 ? '' : 's'} selected · {current ? `${current.min}–${current.max} for ${current.name}` : 'pick a template'}
         {photos.length > 0 && current && photos.length < current.min ? ` · add ${current.min - photos.length} more` : ''}

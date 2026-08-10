@@ -169,6 +169,24 @@ export function Toast({ toast, onDone }) {
   )
 }
 
+/* ---------------------------------- Highlight -------------------------------- */
+// Highlights the substring `query` inside `text` (case-insensitive).
+// Used by search results so the matched part stands out.
+export function Highlight({ text, query, className }) {
+  const q = String(query || '').trim().toLowerCase()
+  if (!q) return <>{text}</>
+  const lower = String(text)
+  const idx = lower.toLowerCase().indexOf(q)
+  if (idx === -1) return <>{text}</>
+  return (
+    <>
+      {lower.slice(0, idx)}
+      <mark className="rounded-[2px] bg-white/25 px-0.5 font-semibold text-white">{lower.slice(idx, idx + q.length)}</mark>
+      {lower.slice(idx + q.length)}
+    </>
+  )
+}
+
 /* ---------------------------------- Slider ---------------------------------- */
 // Minimalist 1px track; white fill for the active segment; white circle thumb.
 

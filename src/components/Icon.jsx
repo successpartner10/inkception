@@ -245,6 +245,23 @@ const ICONS = {
       <path d="M8.12 8.12L12 12" />
     </>
   ),
+  dropper: (
+    <>
+      <path d="M12 3l9 9-4 4-9-9 4-4z" />
+      <path d="M8.5 6.5L3 12v4l5-5" />
+      <path d="M3 16l-1 5 5-1" />
+    </>
+  ),
+  eraser: (
+    <>
+      <path d="M20 20H8.5L3.7 15.2a2 2 0 0 1 0-2.8L12.4 3.7a2 2 0 0 1 2.8 0l5.1 5.1a2 2 0 0 1 0 2.8L12 20" />
+      <path d="M14.5 7.5l3 3" />
+    </>
+  ),
+  alignLeft: <path d="M4 6h16M4 12h10M4 18h16" />,
+  alignCenter: <path d="M4 6h16M7 12h10M4 18h16" />,
+  alignRight: <path d="M4 6h16M10 12h10M4 18h16" />,
+  alignJustify: <path d="M4 6h16M4 12h16M4 18h16" />,
   search: (
     <>
       <circle cx="11" cy="11" r="8" />

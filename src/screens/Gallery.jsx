@@ -6,7 +6,7 @@ import { useRef, useState } from 'react'
 import { cn, fileToDataUrl, formatDate } from '../lib/utils'
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS } from '../lib/export'
 import { Icon } from '../components/Icon'
-import { Button, Chip, IconBtn, Modal } from '../components/ui'
+import { Button, Chip, Highlight, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
 
 const FILTERS = [
@@ -21,12 +21,20 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
   const [templateOpen, setTemplateOpen] = useState(false)
   const [templateGroup, setTemplateGroup] = useState('all')
   const [importing, setImporting] = useState(false)
+  const [gallerySearch, setGallerySearch] = useState('')
+
+  const gq = gallerySearch.trim().toLowerCase()
+  const matchProject = (p) => !gq || p.name.toLowerCase().includes(gq)
+  const matchPreset = (p) =>
+    !gq ||
+    [p.name, p.platform, p.ratio, p.use, `${p.w} x ${p.h}`, `${p.w}×${p.h}`].join(' ').toLowerCase().includes(gq)
   const fileRef = useRef(null)
 
   const recent = [...projects]
+    .filter(matchProject)
     .sort((a, b) => new Date(b.opened || b.date || 0) - new Date(a.opened || a.date || 0))
     .slice(0, 5)
-  const templatePresets = EXPORT_PRESETS.filter((p) => templateGroup === 'all' || p.platform === templateGroup)
+  const templatePresets = EXPORT_PRESETS.filter((p) => (templateGroup === 'all' || p.platform === templateGroup) && matchPreset(p))
 
   const onFile = async (e) => {
     const f = e.target.files && e.target.files[0]
@@ -46,6 +54,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
 
   const now = Date.now()
   const filtered = projects.filter((p) => {
+    if (!matchProject(p)) return false
     if (filter === 'recent') return now - new Date(p.date).getTime() < 14 * 86400000
     if (filter === 'archived') return now - new Date(p.date).getTime() >= 14 * 86400000
     return true
@@ -53,10 +62,23 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
 
   return (
     <div className="flex h-full flex-col bg-ink">
-      {/* Header — 48px, text-only wordmark */}
+      {/* Header — 48px, text-only wordmark + same search bar as the editor */}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4 sm:px-6">
         <Logo size="sm" />
-        <div className="flex-1" />
+        <div className="mx-2 flex min-w-0 max-w-xs flex-1 items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white">
+          <Icon name="search" size={13} className="shrink-0 text-mute" />
+          <input
+            value={gallerySearch}
+            onChange={(e) => setGallerySearch(e.target.value)}
+            placeholder="Filter projects, templates…"
+            className="h-8 w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+          />
+          {gallerySearch && (
+            <button type="button" onClick={() => setGallerySearch('')} className="shrink-0 text-mute hover:text-white" title="Clear">
+              <Icon name="close" size={12} />
+            </button>
+          )}
+        </div>
         <IconBtn icon="user" title="Profile" size={17} />
       </header>
 
@@ -122,7 +144,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-semibold text-fg">{p.name}</div>
+                      <div className="truncate text-xs font-semibold text-fg"><Highlight text={p.name} query={gallerySearch} /></div>
                       <div className="mt-0.5 text-[10px] text-mute">
                         {p.template ? `${p.template.w}×${p.template.h}` : `${p.layers} Layers`} ·{' '}
                         {formatDate(p.opened || p.date)}
@@ -285,7 +307,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                           <Icon name={PLATFORM_ICONS[t.platform]} size={13} />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[11px] font-semibold text-fg">{t.name}</span>
+                          <span className="block truncate text-[11px] font-semibold text-fg"><Highlight text={t.name} query={gallerySearch} /></span>
                           <span className="block text-[9px] text-mute">{t.w}×{t.h} · {t.ratio}</span>
                         </span>
                       </button>
@@ -360,7 +382,7 @@ function ProjectCard({ project, onOpen, confirmDelete, onAskDelete, onCancelDele
       </div>
       <div className="mt-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold">{project.name}</div>
+          <div className="truncate text-sm font-semibold"><Highlight text={project.name} query={gallerySearch} /></div>
           <div className="mt-0.5 text-[11px] text-mute">
             {project.layers} Layers · {formatDate(project.date)}
           </div>
