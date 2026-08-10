@@ -441,3 +441,49 @@ export function applyMaskOp(d, mask, w, h, op, color) {
   }
   return out
 }
+
+/* ------------------------------ body/chin warps ---------------------------- */
+// Slim body: feather a horizontal squeeze over the mid band (keeps head/feet).
+export function slimBody(d, w, h, amt = 0.5) {
+  const cx = (w - 1) / 2
+  const y0 = h * 0.12, y1 = h * 0.88
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    const fy = Math.min(1, Math.max(0, (y - y0) / (y1 - y0)))
+    const feather = Math.min(1, Math.min(fy, 1 - fy) * 5) // 0 at edges, 1 mid
+    const s = 1 - 0.16 * amt * feather // squeeze factor
+    for (let x = 0; x < w; x++) {
+      const sx = cx + (x - cx) / s
+      const [r, g, b] = bilinear(d, w, h, sx, y)
+      const i = (y * w + x) * 4
+      out[i] = r; out[i + 1] = g; out[i + 2] = b; out[i + 3] = 255
+    }
+  }
+  return out
+}
+
+// Chin lift: localized upward+inward pinch in the lower-center band.
+export function chinLift(d, w, h, amt = 0.5) {
+  const cx = (w - 1) / 2
+  const cy = h * 0.8
+  const rx = w * 0.22, ry = h * 0.14
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const nx = (x - cx) / rx, ny = (y - cy) / ry
+      const dist = Math.hypot(nx, ny)
+      if (dist >= 1) {
+        const i = (y * w + x) * 4
+        out[i] = d[i]; out[i + 1] = d[i + 1]; out[i + 2] = d[i + 2]; out[i + 3] = 255
+        continue
+      }
+      const t = (1 - dist) // 1 at center → 0 at edge
+      const up = amt * 0.05 * h * t
+      const inw = (x - cx) * 0.06 * amt * t
+      const [r, g, b] = bilinear(d, w, h, x + inw, y + up)
+      const i = (y * w + x) * 4
+      out[i] = r; out[i + 1] = g; out[i + 2] = b; out[i + 3] = 255
+    }
+  }
+  return out
+}

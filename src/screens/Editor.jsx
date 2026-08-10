@@ -329,6 +329,46 @@ export function Editor({ project, onBack }) {
     setter(true)
   }
 
+  /* ------------------------------- autosave -------------------------------- */
+  // Persist the live session (image + filters + fx + visible layers) every 15s;
+  // restore it when the same project is reopened (unless user cleared it).
+  const autosaveKey = `inkception.session.${project.id}`
+  const saveSession = useCallback(() => {
+    try {
+      localStorage.setItem(autosaveKey, JSON.stringify({
+        imageSrc: imageSrcRef.current,
+        filters: filtersRef.current,
+        fx: fxRef.current,
+        ts: Date.now(),
+      }))
+    } catch { /* storage full — skip */ }
+  }, [autosaveKey])
+
+  useEffect(() => {
+    if (!imageSrc) return
+    const iv = setInterval(saveSession, 15000)
+    const onUnload = () => saveSession()
+    window.addEventListener('beforeunload', onUnload)
+    return () => { clearInterval(iv); window.removeEventListener('beforeunload', onUnload) }
+  }, [imageSrc, saveSession])
+
+  // restore a saved session for this project (only if it has an image)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(autosaveKey)
+      if (!raw) return
+      const s = JSON.parse(raw)
+      if (s && s.imageSrc) {
+        setImageSrc(s.imageSrc)
+        imageSrcRef.current = s.imageSrc
+        if (s.filters) setFilters(s.filters)
+        if (s.fx) setFx(s.fx)
+        showToast('Restored autosaved session', 'refresh')
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   /* ------------------------------ fit / sizing ----------------------------- */
   const calcFitFor = useCallback((w, h) => {
     const stage = stageWrapRef.current
@@ -925,17 +965,38 @@ export function Editor({ project, onBack }) {
 
   const duplicateLayer = () => {
     const img = imgObjRef.current
-    if (!img) return
     const c = fabricRef.current
-    if (!c) return
+    if (!img || !c) return
+    pushHistory()
     img.clone()
       .then((dup) => {
-        dup.set({ left: img.left + 24, top: img.top + 24, evented: false, selectable: false })
+        dup.set({ left: img.left + 24, top: img.top + 24, selectable: true, evented: true })
         c.add(dup)
         c.requestRenderAll()
-        showToast('Layer duplicated', 'copy')
+        const id = 'dup-' + Date.now()
+        const dataUrl = c.toDataURL({ format: 'png', multiplier: 1 })
+        decompRef.current.push({ id, img: dup, name: 'Safety Copy', type: 'Layer', dataUrl, visible: true })
+        setExtraLayers(decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })))
+        showToast('Safety copy created — original is safe (toggle in Layers)', 'copy')
       })
       .catch(() => showToast('Could not duplicate layer', 'close'))
+  }
+
+  /* Reorder the base image among canvas objects: "move behind text", etc. */
+  const reorderImage = (dir) => {
+    const img = imgObjRef.current
+    const c = fabricRef.current
+    if (!img || !c) return
+    const objs = c.getObjects()
+    const i = objs.indexOf(img)
+    if (i < 0) return
+    pushHistory()
+    if (dir === 'front') { c.bringObjectToFront(img) }
+    else if (dir === 'back') { c.sendObjectToBack(img) }
+    else if (dir === 'backward' && i > 0) { c.sendBackwards(img) }
+    else if (dir === 'forward' && i < objs.length - 1) { c.bringForward(img) }
+    c.requestRenderAll()
+    showToast(`Image moved ${dir === 'front' ? 'to front' : dir === 'back' ? 'to back' : dir}`, 'layers')
   }
 
   useEffect(() => {
@@ -1622,6 +1683,22 @@ export function Editor({ project, onBack }) {
     } catch { setBusy(null); showToast('Crop failed', 'close') }
   }
 
+  /* Body slim / chin lift — real local warps (free, on-device). */
+  const runBodyWarp = async (kind) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    const title = kind === 'slim' ? 'Slim Body' : 'Chin Lift'
+    setBusy({ kind: 'real', title, step: `Applying ${title.toLowerCase()}…`, progress: 40 })
+    try {
+      const L = await PX.loadPixels(src, 900)
+      const out = kind === 'slim' ? PX.slimBody(L.data.data, L.w, L.h, 0.5) : PX.chinLift(L.data.data, L.w, L.h, 0.55)
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      await loadIntoCanvas(L.toDataUrl())
+      setBusy(null)
+      showToast(`${title} applied — Undo (⌘Z) to revert`, 'check')
+    } catch { setBusy(null); showToast(`${title} failed`, 'close') }
+  }
+
   /* ------------------ More tab: filters / selection / paint / shapes ---------- */
   // Apply a pxengine filter to the current image (real pixel pipeline).
   const runFilter = async (name, opts) => {
@@ -1905,6 +1982,15 @@ export function Editor({ project, onBack }) {
         return
       }
       if (action === 'export') { openModal(setExportOpen); return }
+      if (action === 'reorder' && payload) { reorderImage(payload.dir); return }
+      if (action === 'duplicate') { duplicateLayer(); return }
+      if (action === 'slim') { runBodyWarp('slim'); return }
+      if (action === 'chinlift') { runBodyWarp('chin'); return }
+      if (action === 'genonly' && payload) {
+        setHowtoOpen(true)
+        showToast('That edit needs generative AI — see the honest how-to', 'info')
+        return
+      }
       if (action === 'removebg') return runRemoveBg()
       if (action === 'replacebg') return openModal(setReplaceOpen)
       if (action === 'enhance') return runAi('enhance')

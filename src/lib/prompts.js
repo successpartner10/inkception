@@ -90,6 +90,21 @@ export function matchPrompt(raw) {
   if (has('crop') && has('less')) return { action: 'cropamt', payload: { amt: -15 } }
   if (has('crop')) return { action: 'opentool', payload: { tool: 'crop' } }
 
+  // ---- body warps (free, local) — before vague goals ----
+  if ((has('slim') || has('slimmer') || has('thinner') || has('slim down')) && (has('body') || has('me') || has('down') || has('slightly') || has('a bit')))
+    return { action: 'slim' }
+  if (has('double chin') || has('chin')) return { action: 'chinlift' }
+
+  // ---- layer reorder / safety — before vague goals (behind/back) ----
+  if (has('behind') || has('below') || has('back') || has('front') || has('forward') || has('backward')) {
+    if (has('behind') || has('below') || (has('back') && !has('background'))) return { action: 'reorder', payload: { dir: 'back' } }
+    if (has('front')) return { action: 'reorder', payload: { dir: 'front' } }
+    if (has('backward')) return { action: 'reorder', payload: { dir: 'backward' } }
+    if (has('forward')) return { action: 'reorder', payload: { dir: 'forward' } }
+  }
+  if ((has('duplicate') || has('copy')) && (has('layer') || has('safety'))) return { action: 'duplicate' }
+  if (has('safety') && has('copy')) return { action: 'duplicate' }
+
   // ---- propose ----
   if ((has('improve') || has('better') || has('boost') || has('fix')) && has('color'))
     return { action: 'propose', payload: { label: 'Auto Enhance', tab: 'ai', icon: 'sparkle', fnKey: 'enhance' } }
@@ -166,6 +181,28 @@ export function matchPrompt(raw) {
   if (has('contrast')) return { action: 'filters', payload: { contrast: 115 } }
   if (has('saturate') || has('vivid')) return { action: 'filters', payload: { saturation: 120 } }
   if (has('desaturate') || has('muted')) return { action: 'filters', payload: { saturation: 60 } }
+
+  // ---- body warps (free, local) ----
+  if ((has('slim') || has('slimmer') || has('thinner')) && (has('body') || has('down') || has('me')))
+    return { action: 'slim' }
+  if (has('reduce') && has('double chin')) return { action: 'chinlift' }
+  if (has('double chin') || has('chin lift') || has('fix my chin')) return { action: 'chinlift' }
+  if ((has('slim') || has('slimmer')) && has('face')) return { action: 'chinlift' }
+
+  // ---- generative-only (honest: not available free) ----
+  if (has('sunglasses') || (has('take') && has('glasses')) || has('remove') && has('glasses'))
+    return { action: 'genonly', payload: { phrase: 'remove sunglasses' } }
+  if (has('blue eyes') || (has('eyes') && has('color')) || (has('change') && has('eye')))
+    return { action: 'genonly', payload: { phrase: 'change eye color' } }
+
+  // ---- layer reorder / safety ----
+  if ((has('move') || has('put')) && has('front')) return { action: 'reorder', payload: { dir: 'front' } }
+  if ((has('move') || has('put')) && (has('back') || has('behind'))) return { action: 'reorder', payload: { dir: 'back' } }
+  if ((has('move') || has('send')) && has('backward')) return { action: 'reorder', payload: { dir: 'backward' } }
+  if ((has('move') || has('bring')) && has('forward')) return { action: 'reorder', payload: { dir: 'forward' } }
+  if ((has('behind') || has('below')) && has('text')) return { action: 'reorder', payload: { dir: 'back' } }
+  if (has('duplicate') && (has('layer') || has('copy'))) return { action: 'duplicate' }
+  if (has('make') && has('safety')) return { action: 'duplicate' }
 
   // ---- command history control ----
   if (has('undo') && (has('last') || has('command') || has('that') || has('step'))) return { action: 'undocmd' }

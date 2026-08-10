@@ -299,6 +299,34 @@ export const HOWTOS = [
     action: 'flip',
     yt: 'how to flip rotate photo editor',
   },
+  {
+    id: 'sunglasses',
+    keys: ['sunglasses', 'take glasses off', 'remove glasses', 'take off sunglasses'],
+    q: 'How do I remove sunglasses?',
+    steps: [
+      'Honest note: removing sunglasses requires generative AI to invent the eyes behind them — that needs a paid model, not available free.',
+      'Free workaround: if the frames are small/thin, use AI → Magic Eraser and paint over the frame — the diffusion fill blends the surroundings.',
+      'For a convincing result you need a generative editor (paid) or a new photo.',
+    ],
+    tool: 'Magic Eraser',
+    tab: 'ai',
+    action: 'eraser',
+    yt: 'how to remove sunglasses in photo editor',
+  },
+  {
+    id: 'eye-color',
+    keys: ['blue eyes', 'eye color', 'change eye color', 'eyes blue'],
+    q: 'How do I change eye color (e.g. blue eyes)?',
+    steps: [
+      'Honest note: truly changing eye color means recoloring the iris — we can approximate it free, not perfect it.',
+      'Free way: use Quick tab → Color Grade with a reference image of the eye color you want for the closest match.',
+      'A paid generative editor can do this properly; free editors can only approximate.',
+    ],
+    tool: 'Color Grade',
+    tab: 'ai',
+    action: 'lut',
+    yt: 'how to change eye color in photo editor',
+  },
 ]
 
 /** Match a question to a how-to. Returns the entry or null. */

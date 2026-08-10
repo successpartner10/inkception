@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.19
+> **Version**: v0.15.20
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.19)
+> **Updated**: 2026-08-10 (v0.15.20)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -291,3 +291,18 @@ layers, quick actions, AI suite, collage, versioning all present.
   dialogs (still pushes history + shows ✓ OK/Undo bar). Persisted.
 - Vague goals work in both: "improve colors", "let me adjust the light",
   "fix red eye", "make it sharper", "smooth my skin" → right tool
+
+
+### v0.15.20 — non-destructive safety + body warps + autosave
+- **Safety copy**: "make a safety copy" duplicates the current image as a
+  tracked layer (toggle in Layers) so the original is always recoverable
+- **Layer reorder**: "move behind text" / "move to front" / "send
+  backward" — reorders the image among canvas objects
+- **Body warps (free, local)**: "slim the body slightly" (feathered
+  horizontal squeeze) and "reduce double chin" (localized chin lift) —
+  real pixel warps, undoable
+- **Honest generative handling**: "take sunglasses off" / "show blue
+  eyes" explain that true generative editing needs a paid model (no fake
+  results), with free-workaround steps
+- **Autosave**: session (image + filters + fx) saved to localStorage every
+  15s + on unload; restored when reopening the project
