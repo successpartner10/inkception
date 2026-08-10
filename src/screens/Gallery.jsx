@@ -199,6 +199,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                       <ProjectCard
                         key={p.id}
                         project={p}
+                        query={gallerySearch}
                         onOpen={() => onOpen(p.id)}
                         confirmDelete={pendingDelete === p.id}
                         onAskDelete={() => setPendingDelete(pendingDelete === p.id ? null : p.id)}
@@ -348,7 +349,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
   )
 }
 
-function ProjectCard({ project, onOpen, confirmDelete, onAskDelete, onCancelDelete, onDelete }) {
+function ProjectCard({ project, onOpen, confirmDelete, onAskDelete, onCancelDelete, onDelete, query = '' }) {
   return (
     <div className="group cursor-pointer" onClick={onOpen}>
       <div className="relative aspect-[4/3] overflow-hidden rounded-ink-lg border border-line bg-surface-2 transition-colors duration-150 group-hover:border-white">
@@ -382,7 +383,7 @@ function ProjectCard({ project, onOpen, confirmDelete, onAskDelete, onCancelDele
       </div>
       <div className="mt-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold"><Highlight text={project.name} query={gallerySearch} /></div>
+          <div className="truncate text-sm font-semibold"><Highlight text={project.name} query={query} /></div>
           <div className="mt-0.5 text-[11px] text-mute">
             {project.layers} Layers · {formatDate(project.date)}
           </div>
