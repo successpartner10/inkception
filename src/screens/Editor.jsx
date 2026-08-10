@@ -4,7 +4,7 @@
 // action grid and AI layer segmentation stack.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Canvas, Ellipse, IText, Line, PencilBrush, Rect, Image as FabricImage } from 'fabric'
+import { Canvas, Ellipse, IText, Line, PencilBrush, Polygon, Rect, Triangle, Image as FabricImage } from 'fabric'
 import { Icon } from '../components/Icon'
 import {
   ActionCard,
@@ -34,6 +34,7 @@ import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../
 import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectBBox } from '../lib/segment'
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
 import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas } from '../lib/encode'
+import * as PX from '../lib/pxengine'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
@@ -214,6 +215,24 @@ export function Editor({ project, onBack }) {
   const cropOverlayRect = useRef(null)
   const dragTimerRef = useRef(null)
   const colorRef = useRef('#ffffff')
+  // selection engine
+  const [selMask, setSelMask] = useState(null) // {w,h,data:Uint8Array} natural res
+  const selRef = useRef(null)
+  const selToolRef = useRef('marquee-rect') // marquee-rect|marquee-ellipse|lasso|wand
+  const selDraftRef = useRef(null) // {x0,y0,pts[]} display coords
+  const selOverlayRef = useRef(null)
+  const [selActive, setSelActive] = useState(false)
+  const [brushSize, setBrushSize] = useState(24)
+  const brushSizeRef = useRef(24)
+  const [brushOpacity, setBrushOpacity] = useState(100)
+  const brushOpacityRef = useRef(100)
+  // paint working buffer
+  const paintWorkRef = useRef(null) // {cv, ctx, w, h, scale}
+  const cloneSrcRef = useRef(null) // {x,y} natural coords sample point
+  // curves / levels
+  const [curvesOpen, setCurvesOpen] = useState(false)
+  const [levelsOpen, setLevelsOpen] = useState(false)
+  const [menubar, setMenubar] = useState(null) // which menu is open
 
   useEffect(() => {
     beforeAfterRef.current = beforeAfter
