@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.15
+> **Version**: v0.15.16
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.15)
+> **Updated**: 2026-08-10 (v0.15.16)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -243,3 +243,16 @@ layers, quick actions, AI suite, collage, versioning all present.
   steps are stacked, with an "Undo last" button
 - New phrases: crop to square (1:1), crop to portrait (4:5)
 - Fixed fabric Temperature filter (Tint class not exported → ColorMatrix)
+
+
+### v0.15.16 — guided commands + history mini-map
+- "open quick menu" / "open ai menu" / "open layers" / "open text" /
+  "open more" / "open export" — navigate to that panel (and expand it)
+- "how do I improve colors" (and similar) → opens the right menu,
+  **highlights** the matching card, shows a **confirm dialog** ("Run
+  Auto Enhance?" → Run/Cancel)
+- After running: **✓ applied — [OK] [Undo]** bar; Undo reverts just that
+  step
+- **History mini-map** under the command bar: numbered chips of every
+  executed step — tap any chip to **undo up to that step** (reverts and
+  truncates after)

@@ -27,6 +27,22 @@ export function matchPrompt(raw) {
   if (!t) return null
   const has = (...ks) => ks.some((k) => t.includes(k))
 
+  // navigation — "open quick menu", "open ai menu", etc. (check early)
+  if (has('open') && (has('quick') || has('quick menu'))) return { action: 'nav', payload: { tab: 'quick' } }
+  if (has('open') && (has('ai menu') || has('ai tools') || has('ai panel'))) return { action: 'nav', payload: { tab: 'ai' } }
+  if (has('open') && (has('adjust') || has('adjustments'))) return { action: 'nav', payload: { tab: 'adjust' } }
+  if (has('open') && has('layer')) return { action: 'nav', payload: { tab: 'layers' } }
+  if (has('open') && has('text')) return { action: 'nav', payload: { tab: 'text' } }
+  if (has('open') && (has('more') || has('advanced'))) return { action: 'nav', payload: { tab: 'more' } }
+  if (has('open') && (has('export') || has('export menu'))) return { action: 'nav', payload: { tab: 'export' } }
+
+  // propose — "how do I improve colors" → show menu + highlight + confirm
+  if ((has('improve') || has('better') || has('enhance') || has('boost') || has('fix')) && has('color'))
+    return { action: 'propose', payload: { label: 'Auto Enhance', tab: 'ai', icon: 'sparkle', fnKey: 'enhance' } }
+  if (has('make') && has('pop')) return { action: 'propose', payload: { label: 'Auto Enhance', tab: 'ai', icon: 'sparkle', fnKey: 'enhance' } }
+  if ((has('improve') || has('fix') || has('brighten') || has('darken')) && has('light'))
+    return { action: 'propose', payload: { label: 'Brightness', tab: 'adjust', icon: 'sliders', fnKey: 'brighten' } }
+
   // background ops (check "remove" before "replace")
   if (has('remove') && has('background')) return { action: 'removebg' }
   if (has('removebg') || has('cut out') || has('cutout') || has('isolate')) return { action: 'removebg' }

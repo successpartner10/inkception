@@ -246,6 +246,11 @@ export function Editor({ project, onBack }) {
   const [curvesOpen, setCurvesOpen] = useState(false)
   const [warpOpen, setWarpOpen] = useState(false)
   const [howtoOpen, setHowtoOpen] = useState(false)
+  // guided propose → confirm → run → OK/Undo flow
+  const [proposed, setProposed] = useState(null) // {label,tab,icon,fnKey}
+  const proposedRef = useRef(null)
+  const [confirmBar, setConfirmBar] = useState(null) // {label}
+  const [highlightTarget, setHighlightTarget] = useState(null)
   const [levelsOpen, setLevelsOpen] = useState(false)
   const [menubar, setMenubar] = useState(null) // which menu is open
 
@@ -1698,6 +1703,11 @@ export function Editor({ project, onBack }) {
           continue
         }
         commandStackRef.current.push({ phrase: step, before: snapshot() })
+        if (m.action === 'propose' && m.payload) {
+          const fn = resolveFn(m.payload.fnKey)
+          if (fn) fn()
+          continue
+        }
         setCommandCount(commandStackRef.current.length)
         onPromptAction(m.action, m.payload)
         done.push(step)
@@ -1724,8 +1734,91 @@ export function Editor({ project, onBack }) {
     showToast('Redo last command — use ⌘⇧Z (or re-type it)', 'redo')
   }, [showToast])
 
+  /* ------------------- guided propose / confirm / undo flow ----------------- */
+  const resolveFn = useCallback(
+    (fnKey) => {
+      const map = {
+        enhance: () => runAi('enhance'),
+        brighten: () => commitFilters({ ...filtersRef.current, brightness: 112 }),
+        cropSquare: () => runSmartCrop('1:1'),
+        cropPortrait: () => runSmartCrop('4:5'),
+        removebg: () => runRemoveBg(),
+        replacebg: () => openModal(setReplaceOpen),
+        retouch: () => openModal(setRetouchOpen),
+        denoise: () => openModal(setDenoiseOpen),
+        upscale: () => openModal(setUpscaleOpen),
+        warp: () => openModal(setWarpOpen),
+        collage: () => openModal(setCollageOpen),
+        textcolor: () => runAutoTextColor(),
+        vectorize: () => { setTab('ai'); runAi('vectorize') },
+        decompose: () => { setTab('ai'); runDecompose() },
+      }
+      return map[fnKey]
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+
+  const proposeAction = useCallback((label, tab, icon, fnKey) => {
+    const proposal = { label, tab, icon, fnKey }
+    proposedRef.current = proposal
+    setProposed(proposal)
+    setTab(tab)
+    setPanelCollapsed(false)
+    setHighlightTarget(label)
+    showToast(`Showing ${label} in ${tab} — confirm to run`, 'info')
+  }, [showToast])
+
+  const cancelProposed = useCallback(() => {
+    proposedRef.current = null
+    setProposed(null)
+    setHighlightTarget(null)
+  }, [])
+
+  const confirmProposed = useCallback(() => {
+    const p = proposedRef.current
+    if (!p) return
+    pushHistory() // snapshot BEFORE running → undo can revert
+    commandStackRef.current.push({ phrase: p.label, before: snapshot() })
+    setCommandCount(commandStackRef.current.length)
+    const fn = resolveFn(p.fnKey)
+    proposedRef.current = null
+    setProposed(null)
+    setHighlightTarget(null)
+    if (fn) fn()
+    setConfirmBar({ label: p.label })
+  }, [pushHistory, resolveFn])
+
+  const dismissConfirm = useCallback(() => setConfirmBar(null), [])
+  const undoConfirm = useCallback(() => {
+    setConfirmBar(null)
+    undo()
+  }, [undo])
+
+  // history mini-map: revert to the state BEFORE step k (drop k..end)
+  const revertToStep = useCallback(
+    (k) => {
+      const stack = commandStackRef.current
+      if (k < 0 || k >= stack.length) return
+      restoreSnap(stack[k].before)
+      commandStackRef.current = stack.slice(0, k)
+      setCommandCount(commandStackRef.current.length)
+      showToast(`Reverted to before step ${k + 1}`, 'undo')
+    },
+    [restoreSnap, showToast],
+  )
+
   const onPromptAction = useCallback(
     (action, payload) => {
+      if (action === 'nav') {
+        if (payload && payload.tab === 'export') return openModal(setExportOpen)
+        if (payload && payload.tab) { setTab(payload.tab); setPanelCollapsed(false) }
+        return
+      }
+      if (action === 'propose' && payload) {
+        proposeAction(payload.label, payload.tab, payload.icon, payload.fnKey)
+        return
+      }
       if (action === 'removebg') return runRemoveBg()
       if (action === 'replacebg') return openModal(setReplaceOpen)
       if (action === 'enhance') return runAi('enhance')
@@ -2246,6 +2339,7 @@ export function Editor({ project, onBack }) {
           showToast={showToast}
           search={globalSearch}
           onDone={() => !isDesktop && setPanelCollapsed(true)}
+          highlightTarget={highlightTarget}
         />
       )
     }
@@ -2280,6 +2374,10 @@ export function Editor({ project, onBack }) {
           onRunChain={runCommandChain}
           commandCount={commandCount}
           onUndoLast={undoLastCommand}
+          commandStack={commandStackRef.current}
+          onRevertTo={revertToStep}
+          highlightTarget={highlightTarget}
+          onPropose={proposeAction}
         />
       )
     }
@@ -3155,6 +3253,35 @@ export function Editor({ project, onBack }) {
         </div>
       </Modal>
 
+      {/* guided confirm modal */}
+      <Modal open={!!proposed} onClose={cancelProposed} title={proposed ? `Run “${proposed.label}”?` : ''} width="max-w-xs">
+        {proposed && (
+          <div>
+            <p className="text-xs leading-relaxed text-dim">
+              Showing <b className="text-fg">{proposed.label}</b> in the{' '}
+              <b className="text-fg">{proposed.tab}</b> menu — it's highlighted. Run it now?
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <Button variant="ghost" onClick={cancelProposed}>Cancel</Button>
+              <Button variant="primary" icon="check" onClick={confirmProposed}>Run</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* done → OK / Undo bar */}
+      {confirmBar && (
+        <div className="fixed bottom-16 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-3 rounded-ink bg-white px-4 py-2 text-xs font-semibold text-black shadow-2xl">
+          <span>✓ {confirmBar.label} applied</span>
+          <button type="button" onClick={dismissConfirm} className="rounded-ink px-2 py-0.5 font-bold uppercase tracking-[0.08em] text-black/60 hover:bg-black/10">
+            OK
+          </button>
+          <button type="button" onClick={undoConfirm} className="rounded-ink border border-black/30 px-2 py-0.5 font-bold uppercase tracking-[0.08em] hover:bg-black/10">
+            Undo
+          </button>
+        </div>
+      )}
+
       <Toast toast={toast} onDone={() => setToast(null)} />
     </div>
   )
@@ -3476,7 +3603,7 @@ function TextTab({
   )
 }
 
-function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToast, search = '' }) {
+function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToast, search = '', highlightTarget = null }) {
   const act = (msg) => { onDone && onDone(); showToast && showToast(msg, 'check') }
   const clampFilter = (key, delta, label, min = 40, max = 160) => {
     commitFilters({ ...filters, [key]: Math.min(max, Math.max(min, filters[key] + delta)) })
@@ -3555,6 +3682,7 @@ function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToas
                 className={cn(
                   'flex flex-col items-center gap-1.5 rounded-ink border px-1 py-2.5 transition-colors',
                   it.active ? 'border-white bg-surface-2 text-white' : 'border-line text-dim hover:border-line-2 hover:text-fg',
+                  highlightTarget === it.label && 'border-white ring-2 ring-white/40 animate-pulse',
                 )}
               >
                 <Icon name={it.icon} size={15} />
@@ -3618,6 +3746,7 @@ function AITab({
   onRetouch, onDenoise, onLut, onCrop, onMotion, onBatch, onDecompose, onEraser,
   onCollage, onUpscale, onPalette, onAutoTextColor, suggestion, onSuggestion, upscaled, onPromptAction,
   search = '', onRunChain, commandCount = 0, onUndoLast,
+  commandStack = [], onRevertTo, highlightTarget, onPropose,
 }) {
   const [phrase, setPhrase] = useState('')
 
@@ -3711,16 +3840,35 @@ function AITab({
           ))}
         </div>
         {commandCount > 0 && (
-          <div className="mt-2 flex items-center justify-between rounded-ink border border-line px-2 py-1.5">
-            <span className="label-xs text-mute">Commands · {commandCount}</span>
-            <button
-              type="button"
-              onClick={onUndoLast}
-              className="flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:text-white"
-            >
-              <Icon name="undo" size={11} /> Undo last
-            </button>
-          </div>
+          <>
+            <div className="mt-2 flex items-center justify-between rounded-ink border border-line px-2 py-1.5">
+              <span className="label-xs text-mute">History · {commandCount}</span>
+              <button
+                type="button"
+                onClick={onUndoLast}
+                className="flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:text-white"
+              >
+                <Icon name="undo" size={11} /> Undo last
+              </button>
+            </div>
+            {/* history mini-map: tap a step to revert to before it */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              {commandStack.map((c, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  title={`Revert to before step ${i + 1} (${c.phrase})`}
+                  onClick={() => onRevertTo(i)}
+                  className="group flex items-center gap-1 rounded-ink border border-line bg-surface-2 px-1.5 py-1 text-[9px] text-dim transition-colors hover:border-white hover:text-white"
+                >
+                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-white">{i + 1}</span>
+                  <span className="max-w-[80px] truncate">{c.phrase}</span>
+                  <Icon name="undo" size={9} className="opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              ))}
+              <span className="text-[8px] text-mute">· tap a step to undo up to there</span>
+            </div>
+          </>
         )}
         <p className="mt-2 text-[9px] leading-relaxed text-mute">
           Tip: chain steps with commas — "auto enhance, now crop to square, then black & white".
@@ -3770,6 +3918,7 @@ function AITab({
                 className={cn(
                   'group relative flex flex-col items-start gap-2 overflow-hidden rounded-ink border p-3 text-left transition-colors',
                   it.disabled ? 'cursor-not-allowed opacity-40' : 'border-line hover:border-white',
+                  highlightTarget === it.title && 'border-white ring-2 ring-white/40 animate-pulse',
                 )}
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-ink border border-line text-fg">
