@@ -64,7 +64,9 @@ export default function App() {
         : `Untitled ${String(untitledCounter++).padStart(2, '0')}`,
       layers: 4,
       date: new Date().toISOString(),
-      img: img || asset('samples/bw.jpg'),
+      // img may arrive as a click event when wired straight to onClick —
+      // only accept a real string source (data URL / http / relative path).
+      img: typeof img === 'string' ? img : asset('samples/bw.jpg'),
       ...(template ? { template: { w: template.w, h: template.h } } : {}),
     }
     setProjects((ps) => [p, ...ps])

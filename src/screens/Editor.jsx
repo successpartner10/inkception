@@ -38,6 +38,7 @@ import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motionca
 import { traceImage } from '../lib/trace'
 import { PROMPT_SUGGESTIONS, matchPrompt } from '../lib/prompts'
 import { COLLAGE_LAYOUTS, computeSlots } from '../lib/collage'
+import { DEFAULT_FONT, DEFAULT_FONT_SIZE, FONTS } from '../lib/fonts'
 import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
 
 const TAB_ITEMS = [
@@ -60,6 +61,14 @@ export const BLEND_MODES = [
   'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
   'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion',
 ]
+
+/* font helper — full CSS font-family stack for a family name */
+function fontStack(family) {
+  const f = FONTS.find((x) => x.family === family)
+  return f ? f.stack : `'${family}', sans-serif`
+}
+
+const isTextObject = (o) => o && (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text')
 
 /* friendly layer name for PSD export */
 function layerNameFor(obj, baseImg, decomp) {
@@ -109,6 +118,8 @@ export function Editor({ project, onBack }) {
   const paintCanvasRef = useRef(null)
   const maskCvRef = useRef(null)
   const paintRectRef = useRef({ x: 0, y: 0, w: 0, h: 0 })
+  const textFontRef = useRef(DEFAULT_FONT)
+  const textSizeRef = useRef(DEFAULT_FONT_SIZE)
 
   /* --------------------------------- state --------------------------------- */
   const [imageSrc, setImageSrc] = useState(null)
@@ -153,6 +164,9 @@ export function Editor({ project, onBack }) {
   const [dragOver, setDragOver] = useState(false)
   const [upscaled, setUpscaled] = useState(false)
   const [isTemplate, setIsTemplate] = useState(false)
+  const [textFont, setTextFont] = useState(DEFAULT_FONT)
+  const [textSize, setTextSize] = useState(DEFAULT_FONT_SIZE)
+  const [activeText, setActiveText] = useState(false)
 
   useEffect(() => {
     beforeAfterRef.current = beforeAfter
@@ -255,11 +269,13 @@ export function Editor({ project, onBack }) {
         draftRef.current = ln
       } else if (t === 'text') {
         const it = new IText('Text', {
-          left: p.x, top: p.y, fill: '#ffffff', fontSize: 26,
-          fontFamily: "'Plus Jakarta Sans', sans-serif",
+          left: p.x, top: p.y, fill: '#ffffff',
+          fontSize: textSizeRef.current,
+          fontFamily: fontStack(textFontRef.current),
         })
         c.add(it)
         c.setActiveObject(it)
+        setActiveText(true)
       }
     })
 
@@ -294,6 +310,21 @@ export function Editor({ project, onBack }) {
     }
     c.on('mouse:up', end)
     c.on('mouse:out', end)
+
+    // sync font controls with the selected text object
+    const syncTextSelection = () => {
+      const o = c.getActiveObject()
+      if (isTextObject(o)) {
+        setActiveText(true)
+        setTextFont(o.fontFamily ? o.fontFamily.replace(/'/g, '') : DEFAULT_FONT)
+        setTextSize(Math.round(o.fontSize || DEFAULT_FONT_SIZE))
+      } else {
+        setActiveText(false)
+      }
+    }
+    c.on('selection:created', syncTextSelection)
+    c.on('selection:updated', syncTextSelection)
+    c.on('selection:cleared', () => setActiveText(false))
 
     return () => {
       c.dispose()
@@ -366,7 +397,10 @@ export function Editor({ project, onBack }) {
     if (!c) return
     ;(async () => {
       try {
-        const img = await FabricImage.fromURL(imageSrc, { crossOrigin: 'anonymous' })
+        // crossOrigin 'anonymous' breaks file:// (local/offline) loads — only
+        // request it when served over http(s), where CORS applies.
+        const isFile = typeof location !== 'undefined' && location.protocol === 'file:'
+        const img = await FabricImage.fromURL(imageSrc, isFile ? {} : { crossOrigin: 'anonymous' })
         if (!alive) return
         const scale = Math.min(fit.w / img.width, fit.h / img.height)
         img.set({
@@ -486,6 +520,57 @@ export function Editor({ project, onBack }) {
     return () => el.removeEventListener('wheel', handler)
   }, [])
 
+  /* --------------------------- delete / on-screen --------------------------- */
+  // Declared BEFORE the keyboard effect (which references deleteActive) to
+  // avoid a TDZ ReferenceError that crashed the editor on mount.
+  const deleteWholeImage = useCallback(() => {
+    const c = fabricRef.current
+    if (!c) return
+    decompRef.current.forEach((d) => c.remove(d.img))
+    decompRef.current = []
+    setExtraLayers([])
+    if (imgObjRef.current) c.remove(imgObjRef.current)
+    imgObjRef.current = null
+    setImageSrc(null)
+    imageSrcRef.current = null
+    naturalRef.current = { w: 0, h: 0 }
+    setUpscaled(false)
+    setEraseMode(null)
+    setBeforeAfter(false)
+    setFx({ ...QUICK_DEFAULTS })
+    c.requestRenderAll()
+    showToast('Image deleted', 'trash')
+  }, [showToast])
+
+  const deleteActive = useCallback(() => {
+    const c = fabricRef.current
+    if (!c) return
+    const act = c.getActiveObject()
+    if (act) {
+      if (act === imgObjRef.current) return deleteWholeImage()
+      c.remove(act)
+      c.requestRenderAll()
+      return
+    }
+    if (imgObjRef.current) return deleteWholeImage()
+    showToast('Nothing to delete', 'info')
+  }, [deleteWholeImage, showToast])
+
+  const deleteLayer = useCallback(
+    (id) => {
+      const c = fabricRef.current
+      const d = decompRef.current.find((x) => x.id === id)
+      if (d && c) c.remove(d.img)
+      decompRef.current = decompRef.current.filter((x) => x.id !== id)
+      setExtraLayers(
+        decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })),
+      )
+      if (c) c.requestRenderAll()
+      showToast('Layer deleted', 'trash')
+    },
+    [showToast],
+  )
+
   /* ------------------------------ keyboard -------------------------------- */
   useEffect(() => {
     const h = (e) => {
@@ -567,55 +652,6 @@ export function Editor({ project, onBack }) {
     img.visible = sub ? sub.visible : true
     if (fabricRef.current) fabricRef.current.requestRenderAll()
   }, [layers])
-
-  /* --------------------------- delete / on-screen --------------------------- */
-  const deleteWholeImage = useCallback(() => {
-    const c = fabricRef.current
-    if (!c) return
-    decompRef.current.forEach((d) => c.remove(d.img))
-    decompRef.current = []
-    setExtraLayers([])
-    if (imgObjRef.current) c.remove(imgObjRef.current)
-    imgObjRef.current = null
-    setImageSrc(null)
-    imageSrcRef.current = null
-    naturalRef.current = { w: 0, h: 0 }
-    setUpscaled(false)
-    setEraseMode(null)
-    setBeforeAfter(false)
-    setFx({ ...QUICK_DEFAULTS })
-    c.requestRenderAll()
-    showToast('Image deleted', 'trash')
-  }, [showToast])
-
-  const deleteActive = useCallback(() => {
-    const c = fabricRef.current
-    if (!c) return
-    const act = c.getActiveObject()
-    if (act) {
-      if (act === imgObjRef.current) return deleteWholeImage()
-      c.remove(act)
-      c.requestRenderAll()
-      return
-    }
-    if (imgObjRef.current) return deleteWholeImage()
-    showToast('Nothing to delete', 'info')
-  }, [deleteWholeImage, showToast])
-
-  const deleteLayer = useCallback(
-    (id) => {
-      const c = fabricRef.current
-      const d = decompRef.current.find((x) => x.id === id)
-      if (d && c) c.remove(d.img)
-      decompRef.current = decompRef.current.filter((x) => x.id !== id)
-      setExtraLayers(
-        decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })),
-      )
-      if (c) c.requestRenderAll()
-      showToast('Layer deleted', 'trash')
-    },
-    [showToast],
-  )
 
   /* --------------------------- collage studio (#9) -------------------------- */
   const buildCollage = useCallback(
@@ -731,7 +767,13 @@ export function Editor({ project, onBack }) {
       showToast('Background removed — real subject matting', 'scissors')
     } catch {
       setBusy(null)
-      showToast('Segmentation failed — check connection and retry', 'close')
+      const isFile = typeof location !== 'undefined' && location.protocol === 'file:'
+      showToast(
+        isFile
+          ? 'AI segmentation needs the online version (or a local server)'
+          : 'Segmentation failed — check connection and retry',
+        'close',
+      )
     }
   }
 
@@ -1117,6 +1159,37 @@ export function Editor({ project, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [commitFilters, resetAll, undo, redo],
   )
+
+  /* ------------------------- text font / size controls ---------------------- */
+  useEffect(() => {
+    textFontRef.current = textFont
+  }, [textFont])
+  useEffect(() => {
+    textSizeRef.current = textSize
+  }, [textSize])
+
+  const applyTextFont = (family) => {
+    setTextFont(family)
+    textFontRef.current = family
+    const c = fabricRef.current
+    const o = c && c.getActiveObject()
+    if (isTextObject(o)) {
+      o.set('fontFamily', fontStack(family))
+      c.requestRenderAll()
+    }
+  }
+
+  const applyTextSize = (n) => {
+    const v = Math.max(6, Math.min(300, Math.round(n) || DEFAULT_FONT_SIZE))
+    setTextSize(v)
+    textSizeRef.current = v
+    const c = fabricRef.current
+    const o = c && c.getActiveObject()
+    if (isTextObject(o)) {
+      o.set('fontSize', v)
+      c.requestRenderAll()
+    }
+  }
 
   /* --------------------------------- export -------------------------------- */
   const EXPORT_FORMATS = [
@@ -1686,6 +1759,34 @@ export function Editor({ project, onBack }) {
         <IconBtn icon="minus" title="Line (L)" active={tool === 'line'} onClick={() => setTool('line')} />
         <IconBtn icon="text" title="Text (T)" active={tool === 'text'} onClick={() => setTool('text')} />
         <IconBtn icon="brush" title="Brush (B)" active={tool === 'brush'} onClick={() => setTool('brush')} />
+        {(tool === 'text' || activeText) && (
+          <>
+            <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
+            <select
+              value={textFont}
+              onChange={(e) => applyTextFont(e.target.value)}
+              title="Font family"
+              className="h-8 shrink-0 rounded-ink border border-line bg-surface px-2 text-[11px] font-semibold text-fg focus:border-white focus:outline-none"
+              style={{ fontFamily: fontStack(textFont) }}
+            >
+              {FONTS.map((f) => (
+                <option key={f.id} value={f.family} style={{ fontFamily: f.stack }} className="bg-surface text-fg">
+                  {f.family} — {f.kind}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              value={textSize}
+              min={6}
+              max={300}
+              onChange={(e) => applyTextSize(Number(e.target.value))}
+              onBlur={(e) => applyTextSize(Number(e.target.value) || DEFAULT_FONT_SIZE)}
+              title="Font size"
+              className="h-8 w-14 shrink-0 rounded-ink border border-line bg-surface px-2 text-center text-[11px] tabular-nums text-fg focus:border-white focus:outline-none"
+            />
+          </>
+        )}
         <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
         <IconBtn icon="crop" title="Smart Crop (subject-aware)" onClick={() => setCropOpen(true)} />
         <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />

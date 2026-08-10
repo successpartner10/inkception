@@ -75,7 +75,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
               focus.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-4">
-              <Button variant="primary" size="lg" icon="plus" onClick={onNew}>
+              <Button variant="primary" size="lg" icon="plus" onClick={() => onNew()}>
                 New Project
               </Button>
               <Button
@@ -167,7 +167,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                       <Icon name="image" size={18} />
                     </span>
                     <p className="text-sm text-dim">Nothing here yet.</p>
-                    <Button variant="secondary" size="sm" icon="plus" onClick={onNew}>
+                    <Button variant="secondary" size="sm" icon="plus" onClick={() => onNew()}>
                       New Project
                     </Button>
                   </div>
@@ -200,7 +200,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                   Start with a new project, open an image, or pick a template.
                 </p>
                 <div className="mt-1 flex flex-wrap justify-center gap-3">
-                  <Button variant="primary" size="sm" icon="plus" onClick={onNew}>
+                  <Button variant="primary" size="sm" icon="plus" onClick={() => onNew()}>
                     New Project
                   </Button>
                   <Button
