@@ -145,4 +145,10 @@
     letter-spacing: 0.16em;
     text-transform: uppercase;
   }
+
+  /* embedded font family utilities (available for text/editorial use) */
+  .font-montserrat { font-family: "Montserrat", "Plus Jakarta Sans", sans-serif; }
+  .font-inter { font-family: "Inter", "Plus Jakarta Sans", sans-serif; }
+  .font-lora { font-family: "Lora", Georgia, serif; }
+  .font-playfair { font-family: "Playfair Display", Georgia, serif; }
 }
