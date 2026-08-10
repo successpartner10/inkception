@@ -214,7 +214,7 @@ export function pdfFromJpeg(jpegDataUrl, w, h) {
 /* ------------------------------ PSD (layered) ----------------------------- */
 // A real layered PSD writer: one layer record per canvas object, with
 // name, opacity, visibility, blend mode, and RLE-compressed channel data
-// (R/G/B + alpha mask per layer). Opens in Photoshop/Affinity with
+// (R/G/B + alpha mask per layer). Opens in pro editors (PSD-compatible) with
 // editable layers intact.
 
 const PSD_BLEND_KEYS = {

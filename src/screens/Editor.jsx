@@ -35,6 +35,7 @@ import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectB
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
 import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas } from '../lib/encode'
 import * as PX from '../lib/pxengine'
+import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
@@ -49,6 +50,7 @@ const TAB_ITEMS = [
   { id: 'ai', label: 'AI', icon: 'sparkle' },
   { id: 'layers', label: 'Layers', icon: 'layers' },
   { id: 'text', label: 'Text', icon: 'text' },
+  { id: 'more', label: 'More', icon: 'more' },
 ]
 
 export const TOOLS = [
@@ -178,6 +180,7 @@ export function Editor({ project, onBack }) {
   const [exportGroup, setExportGroup] = useState('all')
   // global search — one query filters AI, Quick, Export, Templates, Layers
   const [globalSearch, setGlobalSearch] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [retouchOpen, setRetouchOpen] = useState(false)
   const [denoiseOpen, setDenoiseOpen] = useState(false)
@@ -231,6 +234,8 @@ export function Editor({ project, onBack }) {
   const cloneSrcRef = useRef(null) // {x,y} natural coords sample point
   // curves / levels
   const [curvesOpen, setCurvesOpen] = useState(false)
+  const [warpOpen, setWarpOpen] = useState(false)
+  const [howtoOpen, setHowtoOpen] = useState(false)
   const [levelsOpen, setLevelsOpen] = useState(false)
   const [menubar, setMenubar] = useState(null) // which menu is open
 
@@ -386,7 +391,7 @@ export function Editor({ project, onBack }) {
       const t = toolRef.current
       if (t === 'select') {
         if (!o.target) {
-          // Photoshop-style: clicking empty canvas deselects; dragging pans
+          // pro-editor style: clicking empty canvas deselects; dragging pans
           c.discardActiveObject()
           c.requestRenderAll()
           pan = { x: o.e.clientX, y: o.e.clientY, vp: [...c.viewportTransform] }
@@ -683,7 +688,7 @@ export function Editor({ project, onBack }) {
     c.setViewportTransform([1, 0, 0, 1, 0, 0])
     c.requestRenderAll()
   }
-  // Photoshop "Fill Screen": zoom so the image covers the whole viewport
+  // "Fill Screen": zoom so the image covers the whole viewport
   const zoomFill = () => {
     const c = fabricRef.current
     const stage = stageWrapRef.current
@@ -1513,6 +1518,100 @@ export function Editor({ project, onBack }) {
     else if (action === 'export') openModal(setExportOpen)
   }
 
+  /* ------------------ More tab: filters / selection / paint / shapes ---------- */
+  // Apply a pxengine filter to the current image (real pixel pipeline).
+  const runFilter = async (name, opts) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy({ kind: 'real', title: 'Filter', step: `Applying ${name}…`, progress: 40 })
+    try {
+      // remap filters are O(w*h) with bilinear sampling — run at a
+      // downscaled working size for speed, then it replaces the image
+      const L = await PX.loadPixels(src, 720)
+      let out
+      if (name === 'median') out = PX.medianFilter(L.data.data, L.w, L.h, 1)
+      else if (name === 'addNoise') out = PX.addNoise(L.data.data, L.w, L.h, 30)
+      else if (name === 'filmGrain') out = PX.filmGrain(L.data.data, L.w, L.h)
+      else if (name === 'graphicPen') out = PX.graphicPen(L.data.data, L.w, L.h)
+      else if (name === 'halftone') out = PX.halftone(L.data.data, L.w, L.h)
+      else if (name === 'tiltShift') out = PX.tiltShift(L.data.data, L.w, L.h)
+      else {
+        const fn = PX.PX_FILTERS[name] || PX.CONV_FILTERS[name] || PX.EDGE_FILTERS[name]
+        if (!fn) return
+        out = fn(L.data.data, L.w, L.h, opts)
+      }
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      await loadIntoCanvas(L.toDataUrl())
+      setBusy(null)
+      showToast(`${name} applied`, 'check')
+    } catch { setBusy(null); showToast('Filter failed', 'close') }
+  }
+
+  // Selection tools — marquee / lasso / wand. Sets the active selection tool.
+  const startSelectionTool = (tool) => {
+    setTool('select')
+    selToolRef.current = tool
+    selDraftRef.current = null
+    setSelActive(true)
+    const msgs = {
+      'marquee-rect': 'Drag a rectangular selection',
+      'marquee-ellipse': 'Drag an elliptical selection',
+      lasso: 'Drag to draw a freehand selection',
+      wand: 'Click a pixel to select its color region',
+    }
+    showToast(msgs[tool] || 'Make a selection', 'info')
+  }
+
+  // Paint tools — clone / heal / red-eye / bucket / gradient.
+  const startPaintTool = (kind) => {
+    setTool('paint-' + kind)
+    cloneSrcRef.current = null
+    const msgs = {
+      clone: 'Alt-click to set the sample point, then paint',
+      heal: 'Alt-click to sample clean area, then paint over flaws',
+      redeye: 'Drag a box around each red eye',
+      bucket: 'Click a region to fill it',
+      gradient: 'Drag from start to end of the gradient',
+    }
+    showToast(msgs[kind] || kind, 'info')
+  }
+
+  // Shape tools
+  const setShapeTool = (shape) => {
+    setTool('shape-' + shape)
+    const msgs = { polygon: 'Click to place vertices, double-click to finish', triangle: 'Drag to draw a triangle', star: 'Drag to draw a star', line: 'Drag to draw a line', custom: 'Choose a custom shape' }
+    showToast(msgs[shape] || shape, 'info')
+  }
+
+  // Run a how-to suggestion: open the right tab + tool.
+  const runHowToAction = (action) => {
+    const map = {
+      removebg: () => { setTab('ai'); runRemoveBg() },
+      replacebg: () => openModal(setReplaceOpen),
+      eraser: () => startErase('erase'),
+      retouch: () => openModal(setRetouchOpen),
+      denoise: () => openModal(setDenoiseOpen),
+      upscale: () => openModal(setUpscaleOpen),
+      textcolor: () => runAutoTextColor(),
+      lut: () => openModal(setLutOpen),
+      collage: () => openModal(setCollageOpen),
+      vectorize: () => { setTab('ai'); runAi('vectorize') },
+      decompose: () => { setTab('ai'); runDecompose() },
+      motion: () => openModal(setMotionOpen),
+      export: () => openModal(setExportOpen),
+      warp: () => openModal(setWarpOpen),
+      text: () => setTool('text'),
+      crop: () => startCrop(),
+      compare: () => setBeforeAfter(true),
+      flip: () => { setTab('quick') },
+      blur: () => { setTab('quick') },
+      'blur-more': () => { setTab('quick') },
+      sharpen: () => { setTab('quick') },
+    }
+    if (map[action]) map[action]()
+    else if (action === 'text') setTool('text')
+  }
+
   /* ------------------------- prompt command bar (#2) ------------------------ */
   const onPromptAction = useCallback(
     (action, payload) => {
@@ -1993,6 +2092,32 @@ export function Editor({ project, onBack }) {
     e.target.value = ''
   }
 
+  /* ------------------- global search results (tools + how-tos) ------------------ */
+  // One query → one dropdown listing matching tools, how-tos, collage sizes,
+  // export presets. Clicking jumps to the tool.
+  const ALL_TOOLS = [
+    ...TAB_ITEMS.map((t) => ({ id: 'tab-' + t.id, label: t.label + ' panel', group: 'Panel', icon: t.icon, go: () => setTab(t.id) })),
+    ...TOOLS.map((t) => ({ id: 'tool-' + t.id, label: t.label, group: 'Tool', icon: t.icon === 'select' ? 'move' : t.icon, go: () => setTool(t.id) })),
+    { id: 'tool-crop', label: 'Crop', group: 'Tool', icon: 'crop', go: () => startCrop() },
+    { id: 'tool-smartcrop', label: 'Smart Crop', group: 'Tool', icon: 'focus', go: () => openModal(setCropOpen) },
+    { id: 'tool-dropper', label: 'Eyedropper', group: 'Tool', icon: 'dropper', go: () => setTool('dropper') },
+    { id: 'tool-blurbrush', label: 'Blur brush', group: 'Tool', icon: 'wind', go: () => startErase('blur') },
+    { id: 'tool-erasebrush', label: 'Erase brush', group: 'Tool', icon: 'eraser', go: () => startErase('alpha') },
+    ...HOWTOS.map((h) => ({ id: 'how-' + h.id, label: h.q, group: 'How do I…?', icon: 'sparkle', go: () => { setHowtoOpen(true) } })),
+    ...EXPORT_PRESETS.slice(0, 27).map((p) => ({ id: 'preset-' + p.id, label: p.name, group: 'Export size', icon: PLATFORM_ICONS[p.platform], go: () => { openModal(setExportOpen); setPreset(p.id) } })),
+  ]
+
+  const gq = globalSearch.trim().toLowerCase()
+  const globalResults = gq
+    ? ALL_TOOLS.filter((t) => (t.label + ' ' + t.group).toLowerCase().includes(gq)).slice(0, 14)
+    : []
+
+  const jumpGlobal = (t) => {
+    t.go()
+    setGlobalSearch('')
+    setSearchFocused(false)
+  }
+
   /* ------------------------------ panel renderer ----------------------------- */
   const renderPanel = () => {
     if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => runAi('enhance'), resetAll, isDefault: isDefaultFilters(filters), busy }} />
@@ -2063,6 +2188,25 @@ export function Editor({ project, onBack }) {
         />
       )
     }
+    if (tab === 'more') {
+      return (
+        <MoreTab
+          search={globalSearch}
+          onAsk={() => openModal(setHowtoOpen)}
+          onFilter={runFilter}
+          onSelection={startSelectionTool}
+          onClone={() => startPaintTool('clone')}
+          onHeal={() => startPaintTool('heal')}
+          onRedEye={() => startPaintTool('redeye')}
+          onBucket={() => startPaintTool('bucket')}
+          onGradient={() => startPaintTool('gradient')}
+          onCurves={() => setCurvesOpen(true)}
+          onLevels={() => setLevelsOpen(true)}
+          onShape={(s2) => setShapeTool(s2)}
+          onWarp={() => openModal(setWarpOpen)}
+        />
+      )
+    }
     return (
       <LayersTab
         layers={layers}
@@ -2107,18 +2251,41 @@ export function Editor({ project, onBack }) {
           <span className="truncate text-sm font-semibold">{project.name}</span>
           <Chip className="hidden sm:inline-flex">{project.layers} Layers</Chip>
         </div>
-        <div className="mx-2 flex min-w-0 flex-1 items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white sm:max-w-xs">
+        <div className="relative mx-2 flex min-w-0 flex-1 items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white sm:max-w-xs">
           <Icon name="search" size={13} className="shrink-0 text-mute" />
           <input
             value={globalSearch}
             onChange={(e) => setGlobalSearch(e.target.value)}
-            placeholder="Filter everything — darken, eraser, WhatsApp…"
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+            placeholder="Search tools, how-to, sizes…"
             className="h-8 w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
           />
           {globalSearch && (
             <button type="button" onClick={() => setGlobalSearch('')} className="shrink-0 text-mute hover:text-white" title="Clear">
               <Icon name="close" size={12} />
             </button>
+          )}
+          {searchFocused && globalResults.length > 0 && (
+            <div className="absolute right-0 top-full z-50 mt-1.5 max-h-80 w-64 overflow-y-auto rounded-ink border border-line bg-surface py-1 shadow-2xl scrollbar-thin">
+              {globalResults.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => jumpGlobal(t)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-white/5"
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center text-mute">
+                    <Icon name={t.icon} size={13} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[11px] text-fg"><Highlight text={t.label} query={globalSearch} /></span>
+                    <span className="block text-[9px] uppercase tracking-[0.1em] text-mute">{t.group}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
         </div>
         <div className="flex-1" />
@@ -2401,7 +2568,7 @@ export function Editor({ project, onBack }) {
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
         </main>
 
-        {/* ------------------------- right panel (Photoshop-style) ------------------ */}
+        {/* ------------------------- right panel ------------------ */}
         {/* Always-visible single column on every screen size. Only the selected
             tab's content shows; collapses to a narrow icon rail for full-canvas
             viewing. Canvas shrinks beside it (never covered). */}
@@ -2445,7 +2612,7 @@ export function Editor({ project, onBack }) {
       </div>
 
       {/* --------------------------- tool dock (2 rows, bottom-center) ----------------- */}
-      {/* Photoshop-style tool dock: two centered rows below the canvas.
+      {/* tool dock: two centered rows below the canvas.
           Row 1 = draw/move tools · Row 2 = edit/utility tools. Compact,
           always visible, canvas is never covered. */}
       <footer className="flex shrink-0 flex-col items-center gap-1 border-t border-line px-2 py-1.5">
@@ -2644,6 +2811,26 @@ export function Editor({ project, onBack }) {
       {/* ------------------------------- batch modal ------------------------------- */}
       <Modal open={batchOpen} onClose={() => setBatchOpen(false)} title="Batch AI" subtitle="Apply one operation to many images at once" width="max-w-lg">
         <BatchBody onRun={runBatch} result={batchResult} onClear={() => setBatchResult(null)} />
+      </Modal>
+
+      {/* ----------------------------- how-to modal ------------------------------ */}
+      <Modal open={howtoOpen} onClose={() => setHowtoOpen(false)} title="How do I…?" subtitle="Ask how to achieve a result — get the tool, steps & tutorials" width="max-w-lg">
+        <HowToBody onRun={(action) => { setHowtoOpen(false); runHowToAction(action) }} />
+      </Modal>
+
+      {/* ----------------------------- warp modal (tin can) -------------------------- */}
+      <Modal open={warpOpen} onClose={() => setWarpOpen(false)} title="Wrap on Can" subtitle="Fit your logo/label onto a tin can so it looks printed" width="max-w-md">
+        <WarpModalBody src={imageSrc} onApply={(url) => { setWarpOpen(false); loadIntoCanvas(url) }} />
+      </Modal>
+
+      {/* ----------------------------- curves modal ------------------------------ */}
+      <Modal open={curvesOpen} onClose={() => setCurvesOpen(false)} title="Curves" subtitle="Tone curve — drag to reshape" width="max-w-sm">
+        <CurvesModalBody src={imageSrc} onApply={(url) => { setCurvesOpen(false); loadIntoCanvas(url) }} />
+      </Modal>
+
+      {/* ----------------------------- levels modal ------------------------------ */}
+      <Modal open={levelsOpen} onClose={() => setLevelsOpen(false)} title="Levels" subtitle="Adjust black / white / gamma" width="max-w-sm">
+        <LevelsModalBody src={imageSrc} onApply={(url) => { setLevelsOpen(false); loadIntoCanvas(url) }} />
       </Modal>
 
       {/* ----------------------------- collage modal ------------------------------ */}
@@ -2896,10 +3083,134 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
   )
 }
 
-/* ------------------------------ tab: Text (Photoshop-style) ------------------ */
+/* ------------------------------ tab: More (advanced tools) -------------------- */
+// Everything advanced lives here so the main one-click tabs stay clean.
+// The global search also finds these.
+function MoreTab({ search = '', onAsk, onFilter, onSelection, onClone, onHeal, onRedEye, onBucket, onGradient, onCurves, onLevels, onShape, onWarp }) {
+  const q = String(search || '').trim().toLowerCase()
+  const match = (...words) => !q || words.some((w) => w.toLowerCase().includes(q))
+
+  const groups = [
+    {
+      label: 'Filters',
+      items: [
+        { t: 'Pinch', d: 'Distort inward', f: () => onFilter('pinch'), icon: 'sparkle' },
+        { t: 'Twirl', d: 'Rotate swirl', f: () => onFilter('twirl'), icon: 'rotateCw' },
+        { t: 'Ripple', d: 'Wavy distortion', f: () => onFilter('ripple'), icon: 'wind' },
+        { t: 'ZigZag', d: 'Pond ripple', f: () => onFilter('zigzag'), icon: 'wind' },
+        { t: 'Glass', d: 'Frosted glass', f: () => onFilter('glass'), icon: 'wind' },
+        { t: 'Spherical', d: 'Fish-eye bulge', f: () => onFilter('spherical'), icon: 'focus' },
+        { t: 'Emboss', d: 'Raised relief', f: () => onFilter('emboss'), icon: 'layers' },
+        { t: 'Find Edges', d: 'Line outline', f: () => onFilter('findEdges'), icon: 'penTool' },
+        { t: 'Glowing Edges', d: 'Neon outline', f: () => onFilter('glowingEdges'), icon: 'sparkle' },
+        { t: 'Solarize', d: 'Partial invert', f: () => onFilter('solarize'), icon: 'sun' },
+        { t: 'Sharpen More', d: 'Strong sharpening', f: () => onFilter('sharpenMore'), icon: 'focus' },
+        { t: 'Sharpen Edges', d: 'Edge contrast', f: () => onFilter('sharpenEdges'), icon: 'focus' },
+        { t: 'Median', d: 'Noise reducer', f: () => onFilter('median'), icon: 'droplet' },
+        { t: 'Add Noise', d: 'Grain effect', f: () => onFilter('addNoise'), icon: 'sparkle' },
+        { t: 'Film Grain', d: 'Cinematic grain', f: () => onFilter('filmGrain'), icon: 'image' },
+        { t: 'Graphic Pen', d: 'Sketch lines', f: () => onFilter('graphicPen'), icon: 'penTool' },
+        { t: 'Halftone', d: 'Dot screen', f: () => onFilter('halftone'), icon: 'grid' },
+        { t: 'Tilt-shift', d: 'Miniature blur', f: () => onFilter('tiltShift'), icon: 'focus' },
+      ],
+    },
+    {
+      label: 'Selection',
+      items: [
+        { t: 'Rect Marquee', d: 'Rect selection', f: () => onSelection('marquee-rect'), icon: 'shape' },
+        { t: 'Ellipse Marquee', d: 'Ellipse selection', f: () => onSelection('marquee-ellipse'), icon: 'circle' },
+        { t: 'Lasso', d: 'Freehand selection', f: () => onSelection('lasso'), icon: 'penTool' },
+        { t: 'Magic Wand', d: 'Color selection', f: () => onSelection('wand'), icon: 'dropper' },
+      ],
+    },
+    {
+      label: 'Retouch & Paint',
+      items: [
+        { t: 'Clone Stamp', d: 'Copy pixels', f: onClone, icon: 'copy' },
+        { t: 'Healing Brush', d: 'Blend flaws', f: onHeal, icon: 'brush' },
+        { t: 'Red Eye', d: 'Fix red eyes', f: onRedEye, icon: 'eye' },
+        { t: 'Paint Bucket', d: 'Flood fill', f: onBucket, icon: 'droplet' },
+        { t: 'Gradient', d: 'Smooth fill', f: onGradient, icon: 'sun' },
+      ],
+    },
+    {
+      label: 'Adjustments',
+      items: [
+        { t: 'Curves', d: 'Tone curve', f: onCurves, icon: 'sliders' },
+        { t: 'Levels', d: 'Histogram levels', f: onLevels, icon: 'sliders' },
+      ],
+    },
+    {
+      label: 'Shapes & Tools',
+      items: [
+        { t: 'Polygon', d: 'Multi-sided shape', f: () => onShape('polygon'), icon: 'shape' },
+        { t: 'Triangle', d: 'Triangle shape', f: () => onShape('triangle'), icon: 'shape' },
+        { t: 'Star', d: 'Star shape', f: () => onShape('star'), icon: 'sparkle' },
+        { t: 'Line', d: 'Straight line', f: () => onShape('line'), icon: 'minus' },
+        { t: 'Warp', d: 'Deform (soon)', f: onWarp, icon: 'refresh' },
+      ],
+    },
+  ]
+
+  const visible = groups
+    .map((g) => ({ ...g, items: g.items.filter((it) => match(it.t, it.d, g.label)) }))
+    .filter((g) => g.items.length > 0)
+
+  return (
+    <div className="p-4">
+      <button
+        type="button"
+        onClick={onAsk}
+        className="mb-3 flex w-full items-center gap-2.5 rounded-ink border border-white/50 bg-surface-2 px-3 py-2.5 text-left transition-colors hover:border-white"
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-ink bg-white text-black">
+          <Icon name="sparkle" size={14} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-fg">Ask “How do I…?”</span>
+          <span className="mt-0.5 block text-[10px] text-mute">Blur the background, remove an object, wrap a logo…</span>
+        </span>
+        <Icon name="chevronRight" size={14} className="shrink-0 text-mute" />
+      </button>
+      <p className="mb-3 rounded-ink border border-line bg-surface-2 px-3 py-2 text-[10px] leading-relaxed text-mute">
+        Advanced tools — kept here so the main panels stay one-click. Everything is also
+        findable via the search bar.
+      </p>
+      {q && visible.length === 0 && <p className="py-6 text-center text-xs text-mute">No advanced tools match “{search}”</p>}
+      {visible.map((g) => (
+        <div key={g.label} className="mb-5 last:mb-0">
+          <div className="mb-2 flex items-center gap-2 px-0.5">
+            <span className="label-xs text-dim">{g.label}</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {g.items.map((it) => (
+              <button
+                key={it.t}
+                type="button"
+                onClick={it.f}
+                className="group flex items-center gap-2 rounded-ink border border-line px-2.5 py-2 text-left transition-colors hover:border-white"
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center text-mute group-hover:text-white">
+                  <Icon name={it.icon} size={13} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[11px] font-semibold text-fg"><Highlight text={it.t} query={search} /></span>
+                  <span className="block truncate text-[9px] text-mute">{it.d}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ------------------------------ tab: Text ------------------ */
 // Character (font, style, size, tracking, leading, color) + Paragraph
 // (alignment). Multi-line text lets you lay out lines of different widths
-// aligned left / center / right / justified — like Photoshop's text engine.
+// aligned left / center / right / justified — like a pro editor's text engine.
 function TextTab({
   activeText, textFont, textSize, textBold, textItalic, textAlign,
   textTrack, textLeading, textColor,
@@ -3037,7 +3348,7 @@ function TextTab({
       </div>
       <p className="mt-3 text-[10px] leading-relaxed text-mute">
         Multi-line: press Enter for a new line. Each line keeps its own width — alignment (left /
-        center / right / justify) arranges how they sit relative to the text box, like Photoshop.
+        center / right / justify) arranges how they sit relative to the text box, like a pro editor.
       </p>
     </div>
   )
@@ -3715,6 +4026,264 @@ function LayoutPreview({ layoutId, active }) {
 /* ----------------------------- collage studio body ------------------------ */
 // New-Image sizes mirror the full export matrix, so a collage can be built
 // at any size you can export to.
+/* --------------------------- Curves modal (tone curve) ---------------------- */
+function CurvesModalBody({ src, onApply }) {
+  const [pts, setPts] = useState([{ x: 0, y: 1 }, { x: 1, y: 0 }]) // (0,1)=bottom-left
+  const [busyNow, setBusyNow] = useState(false)
+  const W = 240, H = 200
+
+  const apply = async () => {
+    if (!src) return
+    setBusyNow(true)
+    try {
+      const L = await PX.loadPixels(src)
+      const d = L.data.data
+      // build a LUT from the curve points (monotonic interpolation)
+      const lut = new Array(256)
+      const sorted = [...pts].sort((a, b) => a.x - b.x)
+      for (let v = 0; v < 256; v++) {
+        const t = v / 255
+        let y = t
+        for (let i = 0; i < sorted.length - 1; i++) {
+          const a = sorted[i], b = sorted[i + 1]
+          if (t >= a.x && t <= b.x) {
+            const f = (t - a.x) / (b.x - a.x || 1)
+            y = a.y + (b.y - a.y) * f
+            break
+          }
+        }
+        lut[v] = Math.round(Math.min(1, Math.max(0, y)) * 255)
+      }
+      for (let i = 0; i < d.length; i += 4) {
+        d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]
+      }
+      L.ctx.putImageData(L.data, 0, 0)
+      onApply(L.toDataUrl())
+    } finally { setBusyNow(false) }
+  }
+
+  const click = (e) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+    const y = Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height))
+    setPts((p) => [...p, { x, y }])
+  }
+
+  return (
+    <div>
+      <div
+        onPointerDown={click}
+        className="relative w-full cursor-crosshair rounded-ink border border-line bg-ink"
+        style={{ height: H }}
+      >
+        {/* grid */}
+        {[0.25, 0.5, 0.75].map((g) => (
+          <div key={g} className="absolute border-l border-line-2" style={{ left: `${g * 100}%`, top: 0, bottom: 0 }} />
+        ))}
+        {[0.25, 0.5, 0.75].map((g) => (
+          <div key={'h' + g} className="absolute border-t border-line-2" style={{ top: `${g * 100}%`, left: 0, right: 0 }} />
+        ))}
+        {/* curve */}
+        <svg className="absolute inset-0" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+          <polyline
+            points={pts.map((p) => `${p.x * W},${(1 - p.y) * H}`).join(' ')}
+            fill="none"
+            stroke="#fff"
+            strokeWidth="2"
+          />
+          {pts.map((p, i) => (
+            <circle key={i} cx={p.x * W} cy={(1 - p.y) * H} r="4" fill="#fff" />
+          ))}
+        </svg>
+      </div>
+      <div className="mt-2 flex items-center justify-between">
+        <button type="button" onClick={() => setPts([{ x: 0, y: 1 }, { x: 1, y: 0 }])} className="label-xs text-mute hover:text-white">Reset</button>
+        <span className="text-[9px] text-mute">Click to add points · drag existing to move</span>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button variant="primary" icon="check" onClick={apply} disabled={busyNow || !src}>
+          {busyNow ? 'Applying…' : 'Apply Curve'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/* --------------------------- Levels modal (histogram) ------------------------ */
+function LevelsModalBody({ src, onApply }) {
+  const [black, setBlack] = useState(0)
+  const [white, setWhite] = useState(255)
+  const [gamma, setGamma] = useState(1)
+  const [busyNow, setBusyNow] = useState(false)
+
+  const apply = async () => {
+    if (!src) return
+    setBusyNow(true)
+    try {
+      const L = await PX.loadPixels(src)
+      const d = L.data.data
+      const range = Math.max(1, white - black)
+      for (let i = 0; i < d.length; i += 4) {
+        for (let c = 0; c < 3; c++) {
+          const v = d[i + c]
+          const norm = Math.min(1, Math.max(0, (v - black) / range))
+          d[i + c] = Math.round(Math.pow(norm, 1 / gamma) * 255)
+        }
+      }
+      L.ctx.putImageData(L.data, 0, 0)
+      onApply(L.toDataUrl())
+    } finally { setBusyNow(false) }
+  }
+
+  return (
+    <div>
+      <Slider label="Black point" value={black} min={0} max={255} defaultValue={0} onChange={setBlack} format={(v) => `${v}`} />
+      <Slider label="White point" value={white} min={0} max={255} defaultValue={255} onChange={setWhite} format={(v) => `${v}`} />
+      <Slider label="Gamma" value={Math.round(gamma * 100)} min={20} max={300} defaultValue={100} onChange={(v) => setGamma(v / 100)} format={(v) => `${(v / 100).toFixed(2)}`} />
+      <div className="mt-4 flex justify-end">
+        <Button variant="primary" icon="check" onClick={apply} disabled={busyNow || !src}>
+          {busyNow ? 'Applying…' : 'Apply Levels'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/* --------------------------- How-To assistant ------------------------------ */
+function HowToBody({ onRun }) {
+  const [q, setQ] = useState('')
+  const [result, setResult] = useState(null)
+  const [asked, setAsked] = useState(false)
+
+  const ask = (e) => {
+    e && e.preventDefault()
+    const m = matchHowTo(q)
+    setResult(m)
+    setAsked(true)
+  }
+
+  const suggestions = ['Blur the background', 'Remove an object', 'Wrap a logo on a can', 'Make text readable', 'Export for Instagram']
+
+  return (
+    <div>
+      <form onSubmit={ask} className="flex items-center gap-2 rounded-ink border border-line p-2.5 focus-within:border-white">
+        <Icon name="sparkle" size={14} className="shrink-0 text-dim" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder='Ask — "how do I blur the background?"'
+          className="min-w-0 flex-1 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+        />
+        <button type="submit" disabled={!q.trim()} className="shrink-0 rounded-ink bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-black disabled:opacity-40">
+          Ask
+        </button>
+      </form>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {suggestions.map((sg) => (
+          <button
+            key={sg}
+            type="button"
+            onClick={() => { setQ(sg); const m = matchHowTo(sg); setResult(m); setAsked(true) }}
+            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-white"
+          >
+            {sg}
+          </button>
+        ))}
+      </div>
+
+      {asked && !result && (
+        <div className="mt-4 rounded-ink border border-line p-4 text-center">
+          <p className="text-xs text-dim">I don't have a match for that yet.</p>
+          <a
+            href={youTubeSearch(q)}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-block text-[11px] font-semibold text-white underline underline-offset-2"
+          >
+            Search YouTube for “{q}”
+          </a>
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-4 rounded-ink border border-line p-4">
+          <div className="label-xs text-dim">How to — {result.q}</div>
+          <ol className="mt-2 space-y-1.5">
+            {result.steps.map((st, i) => (
+              <li key={i} className="flex gap-2 text-[11px] leading-relaxed text-fg">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-white">{i + 1}</span>
+                <span>{st}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onRun(result.action)}
+              className="rounded-ink bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-black"
+            >
+              Open {result.tool}
+            </button>
+            <a
+              href={youTubeSearch(result.yt)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 rounded-ink border border-line px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-white"
+            >
+              <Icon name="play" size={12} /> Watch on YouTube
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* --------------------------- Warp modal (bend/curve) ------------------------- */
+function WarpModalBody({ src, onApply }) {
+  const [curvature, setCurvature] = useState(50)
+  const [shine, setShine] = useState(true)
+  const [busyNow, setBusyNow] = useState(false)
+
+  const apply = async () => {
+    if (!src) return
+    setBusyNow(true)
+    try {
+      const L = await PX.loadPixels(src, 900)
+      const out = PX.cylinderWrap(L.data.data, L.w, L.h, curvature / 100, shine)
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      onApply(L.toDataUrl())
+    } finally { setBusyNow(false) }
+  }
+
+  return (
+    <div>
+      <Slider
+        label="Curvature"
+        value={curvature}
+        min={0}
+        max={100}
+        defaultValue={50}
+        onChange={setCurvature}
+        format={(v) => `${v}%`}
+      />
+      <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-ink border border-line px-3 py-2">
+        <input type="checkbox" checked={shine} onChange={(e) => setShine(e.target.checked)} className="h-3.5 w-3.5 accent-white" />
+        <span className="text-[10px] text-dim">Add cylinder highlight (makes it look printed)</span>
+      </label>
+      <p className="mt-3 text-[10px] leading-relaxed text-mute">
+        Bends the image around a cylinder — great for wrapping a logo or label onto a tin can,
+        bottle or mug so it looks realistic.
+      </p>
+      <div className="mt-4 flex justify-end">
+        <Button variant="primary" icon="check" onClick={apply} disabled={busyNow || !src}>
+          {busyNow ? 'Wrapping…' : 'Apply Wrap'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function CollageBody({ onBuild, showToast, search = '' }) {
   const q = String(search || '').trim().toLowerCase()
   const [photos, setPhotos] = useState([]) // { url, name }

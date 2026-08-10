@@ -312,6 +312,44 @@ export function tiltShift(d, w, h, strength = 6, focusY = 0.5, range = 0.3) {
   return out
 }
 
+/* ------------------------------ cylinder wrap (tin can) ---------------------- */
+// Wrap a flat image (logo / label) onto a cylinder surface so it looks
+// printed on a tin can. Curvature 0..1 (0 = flat, 1 = strong wrap).
+// Optional vertical bow + a highlight "shine" to sell the 3D realism.
+export function cylinderWrap(d, w, h, curvature = 0.5, shine = true) {
+  const cx = (w - 1) / 2
+  const cy = (h - 1) / 2
+  const th = Math.max(0.001, curvature * (Math.PI / 2)) // max half-angle
+  const tv = Math.max(0.001, curvature * (Math.PI / 2) * 0.35) // vertical bow (subtler)
+  const out = new Uint8ClampedArray(d.length)
+  const sinTh = Math.sin(th)
+  const sinTv = Math.sin(tv)
+  for (let y = 0; y < h; y++) {
+    const v = (y - cy) / cy // -1..1
+    const sv = Math.asin(v * sinTv) / tv // bowed source y
+    const sy = cy + sv * cy
+    for (let x = 0; x < w; x++) {
+      const u = (x - cx) / cx // -1..1
+      const su = Math.asin(u * sinTh) / th // inverse cylindrical x
+      const sx = cx + su * cx
+      const [r, g, b] = bilinear(d, w, h, sx, sy)
+      let sh = 1
+      if (shine) {
+        // highlight band off-center (light source) + slight edge darkening
+        const hl = Math.exp(-Math.pow((x - cx * 0.72) / (w * 0.16), 2))
+        const edge = 1 - 0.2 * Math.pow(Math.abs(u), 2.2)
+        sh = edge * (1 + hl * 0.22)
+      }
+      const i = (y * w + x) * 4
+      out[i] = r * sh
+      out[i + 1] = g * sh
+      out[i + 2] = b * sh
+      out[i + 3] = 255
+    }
+  }
+  return out
+}
+
 /* ------------------------------ selection ops ------------------------------ */
 
 // Flood fill (magic wand) — mask of pixels within tolerance of seed.

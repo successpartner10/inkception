@@ -1,5 +1,5 @@
 // src/lib/psd.js
-// Layered PSD export via ag-psd (the library Photopea uses) — per the
+// Layered PSD export via ag-psd (PSD spec) — per the
 // PSD_EXPORT_FIX plan. Walks Fabric.js objects and writes each as a real
 // PSD layer with name / opacity / visibility / blend mode, plus the
 // flattened composite for preview.
