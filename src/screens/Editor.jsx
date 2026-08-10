@@ -186,10 +186,10 @@ export function Editor({ project, onBack }) {
   const [format, setFormat] = useState('png')
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState(null)
-  const [sheetOpen, setSheetOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [upscaled, setUpscaled] = useState(false)
   const [isTemplate, setIsTemplate] = useState(false)
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [textFont, setTextFont] = useState(DEFAULT_FONT)
   const [textSize, setTextSize] = useState(DEFAULT_FONT_SIZE)
   const [activeText, setActiveText] = useState(false)
@@ -206,7 +206,7 @@ export function Editor({ project, onBack }) {
     // Auto-collapse the mobile sheet when a background job starts so the
     // canvas preview (and the progress overlay) stay visible — no manual
     // menu closing needed.
-    if (busy) setSheetOpen(false)
+    // panel content is always visible beside the canvas; nothing to collapse
     // Watchdog: a stuck/hung job must NEVER permanently block the image.
     // Auto-clear after 90s so the canvas is always recoverable.
     if (busy) {
@@ -1134,7 +1134,6 @@ export function Editor({ project, onBack }) {
   const startErase = (mode) => {
     computeDisplayRect()
     setEraseMode(mode)
-    setSheetOpen(false) // show the canvas so the user can paint
     maskCvRef.current = null
     const pc = paintCanvasRef.current
     if (pc) {
@@ -1319,7 +1318,6 @@ export function Editor({ project, onBack }) {
   const startCrop = () => {
     setTool('crop')
     setCropSel(null)
-    setSheetOpen(false) // show the full canvas for cropping
     showToast('Drag on the image to select a crop area', 'crop')
   }
 
@@ -1729,7 +1727,6 @@ export function Editor({ project, onBack }) {
   /* --------------------------------- helpers -------------------------------- */
   const openTab = (t) => {
     setTab(t)
-    setSheetOpen(true)
   }
   const stub = () => showToast('Preview build — tool stub', 'info')
   const onFile = async (e) => {
@@ -1753,7 +1750,6 @@ export function Editor({ project, onBack }) {
           filters={filters}
           setLive={setLive}
           commitFilters={commitFilters}
-          onDone={() => setSheetOpen(false)}
           showToast={showToast}
         />
       )
@@ -2105,30 +2101,88 @@ export function Editor({ project, onBack }) {
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
         </main>
 
-        {/* --------------------------- desktop inspector -------------------------- */}
-        {isDesktop && (
-          <aside className="flex w-[340px] shrink-0 flex-col border-l border-line bg-surface">
-            <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} />
-            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">{renderPanel()}</div>
-            <div className="flex items-center justify-between border-t border-line px-4 py-3">
-              <span className="label-xs text-mute">Auto-saved locally</span>
-              <span className="label-xs text-mute">{imageLabel}</span>
+        {/* ------------------------- right panel (Photoshop-style) ------------------ */}
+        {/* Always-visible single column on every screen size. Only the selected
+            tab's content shows; collapses to a narrow icon rail for full-canvas
+            viewing. Canvas shrinks beside it (never covered). */}
+        <aside
+          className={cn(
+            'flex shrink-0 flex-col border-l border-line bg-surface',
+            panelCollapsed ? 'w-11' : 'w-[300px] sm:w-[340px]',
+          )}
+        >
+          {panelCollapsed ? (
+            <div className="flex flex-col items-center gap-1 py-2">
+              {TAB_ITEMS.map((t) => (
+                <IconBtn
+                  key={t.id}
+                  icon={t.icon}
+                  title={t.label}
+                  active={tab === t.id}
+                  onClick={() => {
+                    setTab(t.id)
+                    setPanelCollapsed(false)
+                  }}
+                />
+              ))}
+              <div className="my-1 h-px w-6 bg-line" />
+              <IconBtn icon="chevronLeft" title="Expand panel" onClick={() => setPanelCollapsed(false)} />
             </div>
-          </aside>
-        )}
+          ) : (
+            <>
+              <div className="flex items-center justify-between border-b border-line pr-1">
+                <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} className="flex-1" />
+                <IconBtn icon="chevronRight" title="Collapse panel" onClick={() => setPanelCollapsed(true)} />
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">{renderPanel()}</div>
+              <div className="flex items-center justify-between border-t border-line px-4 py-2">
+                <span className="label-xs text-mute">Auto-saved locally</span>
+                <span className="label-xs text-mute">{imageLabel}</span>
+              </div>
+            </>
+          )}
+        </aside>
       </div>
 
-      {/* ------------------------------ tool ribbon ------------------------------ */}
-      <footer className="no-scrollbar flex h-12 shrink-0 items-center gap-0.5 overflow-x-auto border-t border-line px-2 sm:px-3">
-        <IconBtn icon="move" title="Select / Move (V)" active={tool === 'select'} onClick={() => setTool('select')} />
-        <IconBtn icon="shape" title="Rectangle (R)" active={tool === 'rect'} onClick={() => setTool('rect')} />
-        <IconBtn icon="circle" title="Ellipse (E)" active={tool === 'ellipse'} onClick={() => setTool('ellipse')} />
-        <IconBtn icon="minus" title="Line (L)" active={tool === 'line'} onClick={() => setTool('line')} />
-        <IconBtn icon="text" title="Text (T)" active={tool === 'text'} onClick={() => setTool('text')} />
-        <IconBtn icon="brush" title="Brush (B)" active={tool === 'brush'} onClick={() => setTool('brush')} />
+      {/* --------------------------- tool dock (2 rows, bottom-center) ----------------- */}
+      {/* Photoshop-style tool dock: two centered rows below the canvas.
+          Row 1 = draw/move tools · Row 2 = edit/utility tools. Compact,
+          always visible, canvas is never covered. */}
+      <footer className="flex shrink-0 flex-col items-center gap-1 border-t border-line px-2 py-1.5">
+        {/* Row 1 — draw tools */}
+        <div className="flex items-center gap-0.5">
+          <IconBtn icon="move" title="Select / Move (V)" active={tool === 'select'} onClick={() => setTool('select')} />
+          <IconBtn icon="shape" title="Rectangle (R)" active={tool === 'rect'} onClick={() => setTool('rect')} />
+          <IconBtn icon="circle" title="Ellipse (E)" active={tool === 'ellipse'} onClick={() => setTool('ellipse')} />
+          <IconBtn icon="minus" title="Line (L)" active={tool === 'line'} onClick={() => setTool('line')} />
+          <IconBtn icon="text" title="Text (T)" active={tool === 'text'} onClick={() => setTool('text')} />
+          <IconBtn icon="brush" title="Brush (B)" active={tool === 'brush'} onClick={() => setTool('brush')} />
+          <div className="mx-1.5 h-5 w-px bg-line" />
+          <IconBtn icon="crop" title="Crop (drag to select)" active={tool === 'crop'} onClick={startCrop} />
+          <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => openModal(setCropOpen)} />
+          <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
+        </div>
+        {/* Row 2 — utility tools */}
+        <div className="flex items-center gap-0.5">
+          <IconBtn icon="zoomOut" title="Zoom out" onClick={() => zoomBy(1 / 1.25)} />
+          <button
+            type="button"
+            title="Fit (100%)"
+            onClick={zoomFit}
+            className="w-11 text-center text-[10px] tabular-nums text-dim hover:text-white"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <IconBtn icon="zoomIn" title="Zoom in" onClick={() => zoomBy(1.25)} />
+          <IconBtn icon="fit" title="Fit" onClick={zoomFit} />
+          <div className="mx-1.5 h-5 w-px bg-line" />
+          <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
+          <IconBtn icon="sparkle" title="AI Suite" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
+          <IconBtn icon="layers" title="Layers" active={tab === 'layers'} onClick={() => openTab('layers')} />
+        </div>
+        {/* font controls appear between rows when the text tool is active */}
         {(tool === 'text' || activeText) && (
-          <>
-            <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
+          <div className="flex items-center gap-1.5">
             <select
               value={textFont}
               onChange={(e) => applyTextFont(e.target.value)}
@@ -2152,53 +2206,9 @@ export function Editor({ project, onBack }) {
               title="Font size"
               className="h-8 w-14 shrink-0 rounded-ink border border-line bg-surface px-2 text-center text-[11px] tabular-nums text-fg focus:border-white focus:outline-none"
             />
-          </>
+          </div>
         )}
-        <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
-        <IconBtn icon="crop" title="Crop (drag to select)" active={tool === 'crop'} onClick={startCrop} />
-        <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => openModal(setCropOpen)} />
-        <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
-        <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
-        <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
-        <IconBtn icon="zoomOut" title="Zoom out" onClick={() => zoomBy(1 / 1.25)} />
-        <span className="w-11 shrink-0 text-center text-[10px] tabular-nums text-dim">
-          {Math.round(zoom * 100)}%
-        </span>
-        <IconBtn icon="zoomIn" title="Zoom in" onClick={() => zoomBy(1.25)} />
-        <IconBtn icon="fit" title="Fit" onClick={zoomFit} />
-        <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
-        <IconBtn
-          icon="sparkle"
-          title="AI Suite"
-          active={tab === 'ai' || aiView === 'vectorize'}
-          onClick={() => openTab('ai')}
-        />
-        <IconBtn icon="layers" title="Layers" active={tab === 'layers'} onClick={() => openTab('layers')} />
-        <div className="ml-auto hidden shrink-0 pr-1 text-[10px] text-mute xl:block">
-          Drag to pan · Scroll to zoom · ⌘Z / ⌘⇧Z undo · ⌘E export
-        </div>
       </footer>
-
-      {/* ------------------------------ mobile sheet ------------------------------ */}
-      {!isDesktop && (
-        <>
-          <button
-            type="button"
-            onClick={() => setSheetOpen((v) => !v)}
-            className="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-ink bg-white text-black"
-            aria-label={sheetOpen ? 'Close panels' : 'Open panels'}
-          >
-            <Icon name={sheetOpen ? 'close' : 'sliders'} size={18} />
-          </button>
-          {sheetOpen && (
-            <div className="fixed inset-x-0 bottom-0 z-40 flex h-[65vh] flex-col rounded-t-ink-lg border-t border-line bg-surface">
-              <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-line-2" />
-              <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} />
-              <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">{renderPanel()}</div>
-            </div>
-          )}
-        </>
-      )}
 
       {/* --------------------------- replace background modal ---------------------- */}
       <Modal

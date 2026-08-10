@@ -155,6 +155,18 @@ const ICONS = {
   ),
   circle: <circle cx="12" cy="12" r="8" />,
   minus: <path d="M5 12h14" />,
+  dockRight: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M15 3v18" />
+    </>
+  ),
+  dockBottom: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 15h18" />
+    </>
+  ),
   grid: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
