@@ -2098,6 +2098,7 @@ export function Editor({ project, onBack }) {
   /* --------------------------------- helpers -------------------------------- */
   const openTab = (t) => {
     setTab(t)
+    setPanelCollapsed(false) // always reveal the panel when opening a tab
   }
   const stub = () => showToast('Preview build — tool stub', 'info')
   const onFile = async (e) => {
