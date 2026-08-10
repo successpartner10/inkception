@@ -74,10 +74,11 @@ export const EXPORT_PRESETS = [
   { id: 'em-hero', platform: 'Email', name: 'Hero Banner', w: 1200, h: 800, ratio: '3:2', use: 'Promotional emails' },
 ]
 
-export const EXPORT_GROUPS = ['Web', 'WhatsApp', 'Google Business', 'Facebook', 'Pinterest', 'YouTube', 'Email']
+export const EXPORT_GROUPS = ['Web', 'Instagram', 'WhatsApp', 'Google Business', 'Facebook', 'Pinterest', 'YouTube', 'Email']
 
 export const PLATFORM_ICONS = {
   Web: 'globe',
+  Instagram: 'instagram',
   WhatsApp: 'message',
   'Google Business': 'store',
   Facebook: 'users',

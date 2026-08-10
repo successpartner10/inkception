@@ -222,6 +222,26 @@ export function Editor({ project, onBack }) {
 
   const showToast = useCallback((msg, icon) => setToast({ msg, icon }), [])
 
+  /* Only one modal open at a time (best practice — prevents stacked dialogs
+     where a backdrop from an earlier modal blocks clicks on the new one). */
+  const closeAllModals = () => {
+    setReplaceOpen(false)
+    setRetouchOpen(false)
+    setDenoiseOpen(false)
+    setLutOpen(false)
+    setCropOpen(false)
+    setMotionOpen(false)
+    setBatchOpen(false)
+    setCollageOpen(false)
+    setUpscaleOpen(false)
+    setPaletteOpen(false)
+    setExportOpen(false)
+  }
+  const openModal = (setter) => {
+    closeAllModals()
+    setter(true)
+  }
+
   /* ------------------------------ fit / sizing ----------------------------- */
   const calcFitFor = useCallback((w, h) => {
     const stage = stageWrapRef.current
@@ -619,7 +639,7 @@ export function Editor({ project, onBack }) {
         else undo()
       } else if (mod && k === 'e') {
         e.preventDefault()
-        setExportOpen(true)
+        openModal(setExportOpen)
       } else if (mod && k === 'b') {
         e.preventDefault()
         setBeforeAfter((v) => !v)
@@ -899,7 +919,7 @@ export function Editor({ project, onBack }) {
     try {
       const colors = await extractPalette(src, 6)
       setPaletteColors(colors)
-      setPaletteOpen(true)
+      openModal(setPaletteOpen)
       setBusy(null)
     } catch {
       setBusy(null)
@@ -1259,23 +1279,23 @@ export function Editor({ project, onBack }) {
   const runSuggestion = (action) => {
     if (action === 'open') fileRef.current && fileRef.current.click()
     else if (action === 'text') setTool('text')
-    else if (action === 'replace') setReplaceOpen(true)
-    else if (action === 'upscale') setUpscaleOpen(true)
-    else if (action === 'export') setExportOpen(true)
+    else if (action === 'replace') openModal(setReplaceOpen)
+    else if (action === 'upscale') openModal(setUpscaleOpen)
+    else if (action === 'export') openModal(setExportOpen)
   }
 
   /* ------------------------- prompt command bar (#2) ------------------------ */
   const onPromptAction = useCallback(
     (action, payload) => {
       if (action === 'removebg') return runRemoveBg()
-      if (action === 'replacebg') return setReplaceOpen(true)
+      if (action === 'replacebg') return openModal(setReplaceOpen)
       if (action === 'enhance') return runAi('enhance')
       if (action === 'upscale') return runAi('upscale')
       if (action === 'vectorize') return runAi('vectorize')
       if (action === 'fx') return setFx((f) => ({ ...f, ...payload }))
       if (action === 'filters') return commitFilters({ ...filtersRef.current, ...payload })
       if (action === 'reset') return resetAll()
-      if (action === 'collage') return setCollageOpen(true)
+      if (action === 'collage') return openModal(setCollageOpen)
       if (action === 'undo') return undo()
       if (action === 'redo') return redo()
       showToast('Try: "remove background", "make it warmer", "upscale 4×"', 'info')
@@ -1734,20 +1754,20 @@ export function Editor({ project, onBack }) {
         <AITab
           busy={busy}
           onRemoveBg={() => runRemoveBg()}
-          onReplaceBg={() => setReplaceOpen(true)}
+          onReplaceBg={() => openModal(setReplaceOpen)}
           onEnhance={() => runAi('enhance')}
           onUpscale={() => runAi('upscale')}
           onVectorize={() => runAi('vectorize')}
-          onRetouch={() => setRetouchOpen(true)}
-          onDenoise={() => setDenoiseOpen(true)}
-          onLut={() => setLutOpen(true)}
-          onCrop={() => setCropOpen(true)}
-          onMotion={() => setMotionOpen(true)}
-          onBatch={() => setBatchOpen(true)}
+          onRetouch={() => openModal(setRetouchOpen)}
+          onDenoise={() => openModal(setDenoiseOpen)}
+          onLut={() => openModal(setLutOpen)}
+          onCrop={() => openModal(setCropOpen)}
+          onMotion={() => openModal(setMotionOpen)}
+          onBatch={() => openModal(setBatchOpen)}
           onDecompose={() => runDecompose()}
           onEraser={(m) => startErase(m)}
-          onCollage={() => setCollageOpen(true)}
-          onUpscale={() => setUpscaleOpen(true)}
+          onCollage={() => openModal(setCollageOpen)}
+          onUpscale={() => openModal(setUpscaleOpen)}
           onPalette={() => runPalette()}
           onAutoTextColor={() => runAutoTextColor()}
           suggestion={getSuggestion()}
@@ -1815,7 +1835,7 @@ export function Editor({ project, onBack }) {
           >
             Open
           </Button>
-          <Button variant="secondary" size="sm" icon="export" onClick={() => setExportOpen(true)}>
+          <Button variant="secondary" size="sm" icon="export" onClick={() => openModal(setExportOpen)}>
             Export
           </Button>
         </div>
@@ -1824,7 +1844,7 @@ export function Editor({ project, onBack }) {
           <IconBtn icon="redo" title="Redo (⌘⇧Z)" disabled={!canRedo} onClick={redo} />
           <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
           <IconBtn icon="folder" title="Open file" onClick={() => fileRef.current && fileRef.current.click()} />
-          <IconBtn icon="export" title="Export (⌘E)" onClick={() => setExportOpen(true)} />
+          <IconBtn icon="export" title="Export (⌘E)" onClick={() => openModal(setExportOpen)} />
         </div>
       </header>
 
@@ -2114,7 +2134,7 @@ export function Editor({ project, onBack }) {
         )}
         <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
         <IconBtn icon="crop" title="Crop (drag to select)" active={tool === 'crop'} onClick={startCrop} />
-        <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => setCropOpen(true)} />
+        <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => openModal(setCropOpen)} />
         <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
         <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
         <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
