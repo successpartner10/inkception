@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.3
+> **Version**: v0.15.9
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10
+> **Updated**: 2026-08-10 (v0.15.9)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -82,6 +82,22 @@ input; applies live to selected text and to new text.
   "Enhancing photo now…" etc.
 - Keyboard: ⌘Z/⌘⇧Z undo/redo, ⌘E export, ⌘O open, ⌘B compare, ⌘N new
 
+## 4b. More tab (advanced, kept out of the one-click flow)
+
+- **Filter menu** (real pixel pipeline): Pinch, Twirl, Ripple, ZigZag, Glass,
+  Spherical, Emboss, Find Edges, Glowing Edges, Solarize, Sharpen More/Edges,
+  Median, Add Noise, Film Grain, Graphic Pen, Halftone, Tilt-shift
+- **Selection**: Rect/Ellipse Marquee, Lasso, Magic Wand
+- **Retouch & paint**: Clone Stamp, Healing Brush, Red Eye, Paint Bucket,
+  Gradient
+- **Adjustments**: Curves (interactive tone curve), Levels (black/white/gamma)
+- **Shapes & tools**: Polygon, Triangle, Star, Line; **Warp** (cylinder wrap
+  for tin-can/mug logos, Curvature + Shine)
+- **How do I…? assistant**: ask how to achieve a result → tool + steps +
+  YouTube tutorial link + one-tap Open tool
+- Everything is also findable via the global search bar (tools, how-tos,
+  export presets, collage sizes — one box, click to jump)
+
 ## 5. AI Suite (17 capabilities, all on-device)
 
 **Content-Aware**
@@ -117,6 +133,11 @@ input; applies live to selected text and to new text.
     or **New Image** at any of the 27 export sizes; **Add to existing** toggle;
     per-photo Fit / Fill / Rotate / Swap after building
 17. **Color Palette** — median-cut dominant-color extraction, tap-to-copy hex
+
+**Unified search** — the top-bar search shows a live dropdown of matching
+panels, tools, how-tos, export presets and collage sizes; click a result to
+jump straight to it. Same box everywhere (home page searches projects +
+templates too).
 
 **Command bar** — "Design with words": type *"remove background"*, *"make it
 warmer"*, *"upscale 4×"*, *"black & white"*, *"collage"*… and it maps to the
