@@ -1,0 +1,12 @@
+{
+  "app": "Inkception",
+  "purpose": "Cloudflare Access email allowlist — lock the live URL to these accounts only",
+  "login_method": "Google",
+  "emails": [
+    "successpartner10@gmail.com",
+    "sandipyashpal@gmail.com",
+    "sulaniyashpal@gmail.com",
+    "sulaniy79@gmail.com"
+  ],
+  "note": "The setup doc originally said 2 accounts; this allowlist contains all 4 provided. Use exactly these addresses in the Cloudflare Access policy rule (Include → Emails)."
+}
