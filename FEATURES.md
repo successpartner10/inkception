@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.10
+> **Version**: v0.15.11
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.10)
+> **Updated**: 2026-08-10 (v0.15.11)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -212,3 +212,11 @@ touch targets, destructive-action confirms, cache-proof versioning.
 **Requirements cross-check** (requirements.md v10 + DESIGN.md): all design
 tokens/geometry/typography implemented; export formats, platform presets,
 layers, quick actions, AI suite, collage, versioning all present.
+
+
+### v0.15.11 — mobile layout fix
+- Mobile right panel now defaults to a **44px vertical tab rail** (stacked
+  tabs); the canvas gets ~full width (was ~26px, now ~322px on a 390px phone).
+- Tapping a rail tab opens the panel as an **overlay** (canvas width
+  unchanged); any action (Quick tap, AI job, tool pick, modal) auto-collapses
+  it back to the rail. Stage padding reduced on small screens.

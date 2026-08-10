@@ -203,7 +203,16 @@ export function Editor({ project, onBack }) {
   const [dragOver, setDragOver] = useState(false)
   const [upscaled, setUpscaled] = useState(false)
   const [isTemplate, setIsTemplate] = useState(false)
-  const [panelCollapsed, setPanelCollapsed] = useState(false)
+  const [panelCollapsed, setPanelCollapsed] = useState(() => {
+    try {
+      const v = localStorage.getItem('inkception.panel')
+      if (v !== null) return v === '1'
+    } catch { /* ignore */ }
+    return window.innerWidth < 1024 // start collapsed on mobile → max canvas
+  })
+  useEffect(() => {
+    try { localStorage.setItem('inkception.panel', panelCollapsed ? '1' : '0') } catch { /* ignore */ }
+  }, [panelCollapsed])
   const [textFont, setTextFont] = useState(DEFAULT_FONT)
   const [textSize, setTextSize] = useState(DEFAULT_FONT_SIZE)
   const [textBold, setTextBold] = useState(false)
@@ -250,6 +259,7 @@ export function Editor({ project, onBack }) {
     // panel content is always visible beside the canvas; nothing to collapse
     // Watchdog: a stuck/hung job must NEVER permanently block the image.
     // Auto-clear after 90s so the canvas is always recoverable.
+    if (!isDesktop && busy) setPanelCollapsed(true)
     if (busy) {
       const t = setTimeout(() => {
         clearInterval(busyTimerRef.current)
@@ -268,6 +278,9 @@ export function Editor({ project, onBack }) {
   useEffect(() => {
     toolRef.current = tool
   }, [tool])
+  useEffect(() => {
+    if (!isDesktop && tool !== 'select') setPanelCollapsed(true)
+  }, [tool, isDesktop])
   useEffect(() => {
     imageSrcRef.current = imageSrc
   }, [imageSrc])
@@ -296,6 +309,7 @@ export function Editor({ project, onBack }) {
   }
   const openModal = (setter) => {
     closeAllModals()
+    if (!isDesktop) setPanelCollapsed(true)
     setter(true)
   }
 
@@ -303,8 +317,10 @@ export function Editor({ project, onBack }) {
   const calcFitFor = useCallback((w, h) => {
     const stage = stageWrapRef.current
     if (!stage || !w || !h) return null
-    const availW = stage.clientWidth - 64
-    const availH = stage.clientHeight - 64
+    // smaller padding on phones → bigger image
+    const pad = window.innerWidth < 768 ? 24 : 64
+    const availW = stage.clientWidth - pad
+    const availH = stage.clientHeight - pad
     if (availW < 40 || availH < 40) return null
     const s = Math.min(availW / w, availH / h)
     return { w: Math.round(w * s), h: Math.round(h * s) }
@@ -1282,6 +1298,7 @@ export function Editor({ project, onBack }) {
 
   const startErase = (mode) => {
     computeDisplayRect()
+    if (!isDesktop) setPanelCollapsed(true)
     setEraseMode(mode)
     maskCvRef.current = null
     const pc = paintCanvasRef.current
@@ -1634,6 +1651,7 @@ export function Editor({ project, onBack }) {
 
   /* --------------------------- manual crop tool ---------------------------- */
   const startCrop = () => {
+    if (!isDesktop) setPanelCollapsed(true)
     setTool('crop')
     setCropSel(null)
     showToast('Drag on the image to select a crop area', 'crop')
@@ -2131,6 +2149,7 @@ export function Editor({ project, onBack }) {
           commitFilters={commitFilters}
           showToast={showToast}
           search={globalSearch}
+          onDone={() => !isDesktop && setPanelCollapsed(true)}
         />
       )
     }
@@ -2316,7 +2335,7 @@ export function Editor({ project, onBack }) {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {/* ------------------------------ canvas area ---------------------------- */}
         <main
           ref={stageWrapRef}
@@ -2575,7 +2594,11 @@ export function Editor({ project, onBack }) {
         <aside
           className={cn(
             'flex shrink-0 flex-col border-l border-line bg-surface',
-            panelCollapsed ? 'w-11' : 'w-[300px] sm:w-[340px]',
+            panelCollapsed
+              ? 'w-11'
+              : isDesktop
+                ? 'w-[340px]'
+                : 'absolute bottom-0 right-0 top-0 z-40 w-[300px] shadow-2xl', // overlay on mobile
           )}
         >
           {panelCollapsed ? (
@@ -2599,7 +2622,7 @@ export function Editor({ project, onBack }) {
             <>
               <div className="flex items-center justify-between border-b border-line pr-1">
                 <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} className="flex-1" />
-                <IconBtn icon="chevronRight" title="Collapse panel" onClick={() => setPanelCollapsed(true)} />
+                <IconBtn icon={isDesktop ? 'chevronRight' : 'close'} title="Collapse panel" onClick={() => setPanelCollapsed(true)} />
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">{renderPanel()}</div>
               <div className="flex items-center justify-between border-t border-line px-4 py-2">
