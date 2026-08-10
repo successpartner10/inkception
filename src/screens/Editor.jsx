@@ -168,6 +168,8 @@ export function Editor({ project, onBack }) {
   const [exportOpen, setExportOpen] = useState(false)
   const [preset, setPreset] = useState('yt-thumb')
   const [exportGroup, setExportGroup] = useState('all')
+  // global search — one query filters AI, Quick, Export, Templates, Layers
+  const [globalSearch, setGlobalSearch] = useState('')
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [retouchOpen, setRetouchOpen] = useState(false)
   const [denoiseOpen, setDenoiseOpen] = useState(false)
@@ -1500,6 +1502,12 @@ export function Editor({ project, onBack }) {
   }
 
   /* --------------------------------- export -------------------------------- */
+  const exportQuery = globalSearch.trim().toLowerCase()
+  const matchesExport = (p) => {
+    if (!exportQuery) return true
+    const hay = [p.name, p.platform, p.ratio, p.use, `${p.w} x ${p.h}`, `${p.w}×${p.h}`].join(' ').toLowerCase()
+    return hay.includes(exportQuery)
+  }
   const EXPORT_FORMATS = [
     { id: 'png', label: 'PNG', hint: 'Lossless' },
     { id: 'jpg', label: 'JPG', hint: 'Compressed' },
@@ -1751,6 +1759,7 @@ export function Editor({ project, onBack }) {
           setLive={setLive}
           commitFilters={commitFilters}
           showToast={showToast}
+          search={globalSearch}
         />
       )
     }
@@ -1781,6 +1790,7 @@ export function Editor({ project, onBack }) {
           onSuggestion={(a) => runSuggestion(a)}
           upscaled={upscaled}
           onPromptAction={onPromptAction}
+          search={globalSearch}
         />
       )
     }
@@ -1803,6 +1813,7 @@ export function Editor({ project, onBack }) {
         blendMode={blendMode}
         setBlendMode={setBlendMode}
         onDuplicateLayer={() => duplicateLayer()}
+        search={globalSearch}
       />
     )
   }
@@ -1826,6 +1837,20 @@ export function Editor({ project, onBack }) {
         <div className="ml-2 flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-semibold">{project.name}</span>
           <Chip className="hidden sm:inline-flex">{project.layers} Layers</Chip>
+        </div>
+        <div className="mx-2 flex min-w-0 flex-1 items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white sm:max-w-xs">
+          <Icon name="search" size={13} className="shrink-0 text-mute" />
+          <input
+            value={globalSearch}
+            onChange={(e) => setGlobalSearch(e.target.value)}
+            placeholder="Filter everything — darken, eraser, WhatsApp…"
+            className="h-8 w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+          />
+          {globalSearch && (
+            <button type="button" onClick={() => setGlobalSearch('')} className="shrink-0 text-mute hover:text-white" title="Clear">
+              <Icon name="close" size={12} />
+            </button>
+          )}
         </div>
         <div className="flex-1" />
 
@@ -2436,7 +2461,7 @@ export function Editor({ project, onBack }) {
                     <span className="h-px flex-1 bg-line" />
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {EXPORT_PRESETS.filter((p) => p.platform === g).map((p) => (
+                    {EXPORT_PRESETS.filter((p) => p.platform === g && matchesExport(p)).map((p) => (
                       <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} />
                     ))}
                   </div>
@@ -2444,7 +2469,7 @@ export function Editor({ project, onBack }) {
               ))
             : (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {EXPORT_PRESETS.filter((p) => p.platform === exportGroup).map((p) => (
+                {EXPORT_PRESETS.filter((p) => p.platform === exportGroup && matchesExport(p)).map((p) => (
                   <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} />
                 ))}
               </div>
@@ -2548,7 +2573,7 @@ function PresetRow({ p, active, onClick }) {
 
 /* ----------------------------- tab: Quick actions -------------------------- */
 // Spec §7 — 20 one-click effects in 4 groups.
-function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToast }) {
+function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToast, search = '' }) {
   const act = (msg) => { onDone && onDone(); showToast && showToast(msg, 'check') }
   const clampFilter = (key, delta, label, min = 40, max = 160) => {
     commitFilters({ ...filters, [key]: Math.min(max, Math.max(min, filters[key] + delta)) })
@@ -2602,9 +2627,17 @@ function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToas
     },
   ]
 
+  const q = search.trim().toLowerCase()
+  const visibleGroups = groups
+    .map((g) => ({ ...g, items: g.items.filter((it) => !q || it.label.toLowerCase().includes(q) || (g.label + ' ' + it.label).toLowerCase().includes(q)) }))
+    .filter((g) => g.items.length > 0)
+
   return (
     <div className="p-4">
-      {groups.map((g) => (
+      {q && visibleGroups.length === 0 && (
+        <p className="py-6 text-center text-xs text-mute">No quick actions match “{search}”</p>
+      )}
+      {visibleGroups.map((g) => (
         <div key={g.label} className="mb-5 last:mb-0">
           <div className="mb-2 flex items-center gap-2 px-1">
             <span className="label-xs text-dim">{g.label}</span>
@@ -2681,8 +2714,11 @@ function AITab({
   busy, onRemoveBg, onReplaceBg, onEnhance, onVectorize,
   onRetouch, onDenoise, onLut, onCrop, onMotion, onBatch, onDecompose, onEraser,
   onCollage, onUpscale, onPalette, onAutoTextColor, suggestion, onSuggestion, upscaled, onPromptAction,
+  search = '',
 }) {
   const [phrase, setPhrase] = useState('')
+
+  const q = search.trim().toLowerCase()
 
   const submit = (e) => {
     e.preventDefault()
@@ -2727,6 +2763,10 @@ function AITab({
     },
   ]
 
+  const visibleSections = sections
+    .map((sec) => ({ ...sec, items: sec.items.filter((it) => !q || it.title.toLowerCase().includes(q) || it.desc.toLowerCase().includes(q) || (sec.label + ' ' + it.title).toLowerCase().includes(q)) }))
+    .filter((sec) => sec.items.length > 0)
+
   return (
     <div className="p-4">
       {/* Command bar — "design with words" (audit #2) */}
@@ -2770,7 +2810,7 @@ function AITab({
       </p>
 
       {/* Smart suggestion banner */}
-      {suggestion && (
+      {!q && suggestion && (
         <button
           type="button"
           onClick={() => onSuggestion(suggestion.action)}
@@ -2787,7 +2827,10 @@ function AITab({
         </button>
       )}
 
-      {sections.map((sec) => (
+      {q && visibleSections.length === 0 && (
+        <p className="py-6 text-center text-xs text-mute">No AI tools match “{search}”</p>
+      )}
+      {visibleSections.map((sec) => (
         <div key={sec.label} className="mt-5">
           <div className="mb-2 flex items-center gap-2 px-0.5">
             <span className="label-xs text-dim">{sec.label}</span>
@@ -2832,6 +2875,7 @@ function AITab({
 function LayersTab({
   layers, extraLayers = [], selected, onSelect, onToggleVisibility, onToggleLock, onDeleteLayer,
   onFitPhoto, onRotatePhoto, onShiftSlot, imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
+  search = '',
 }) {
   const previews = {
     text: <span className="text-[10px] font-extrabold tracking-widest text-fg">Tt</span>,
@@ -2846,6 +2890,10 @@ function LayersTab({
   }
 
   const selectedLayer = layers.find((l) => l.id === selected)
+  const q = (typeof search === 'string' ? search : '').trim().toLowerCase()
+  const visibleExtra = q
+    ? extraLayers.filter((l) => (l.name + ' ' + l.type).toLowerCase().includes(q))
+    : extraLayers
 
   return (
     <div className="p-4">
@@ -2884,7 +2932,7 @@ function LayersTab({
               <span className="label-xs text-dim">Decomposed (AI)</span>
               <span className="h-px flex-1 bg-line" />
             </div>
-            {extraLayers.map((l) => (
+            {visibleExtra.map((l) => (
               <div key={l.id} className="space-y-1">
                 <LayerRow
                   layer={{ name: l.name, type: l.type, visible: l.visible, locked: false }}
