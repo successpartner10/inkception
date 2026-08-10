@@ -1591,6 +1591,27 @@ export function Editor({ project, onBack }) {
     else if (action === 'export') openModal(setExportOpen)
   }
 
+  /* Crop by percentage — trims amt% from each side (cents the image). */
+  const runCropAmount = async (amt) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    const pct = Math.max(2, Math.min(45, Math.abs(amt)))
+    setBusy({ kind: 'real', title: 'Crop', step: `Cropping ${pct}% from each side…`, progress: 40 })
+    try {
+      const img = await loadImageElement(src)
+      const W = img.naturalWidth, H = img.naturalHeight
+      const cw = Math.max(2, Math.round(W * (1 - (pct * 2) / 100)))
+      const ch = Math.max(2, Math.round(H * (1 - (pct * 2) / 100)))
+      const cv = document.createElement('canvas')
+      cv.width = cw; cv.height = ch
+      const ctx = cv.getContext('2d')
+      ctx.drawImage(img, (W - cw) / 2, (H - ch) / 2, cw, ch, 0, 0, cw, ch)
+      await loadIntoCanvas(cv.toDataURL('image/png'))
+      setBusy(null)
+      showToast(`Cropped ${pct}% from each side → ${cw}×${ch}`, 'crop')
+    } catch { setBusy(null); showToast('Crop failed', 'close') }
+  }
+
   /* ------------------ More tab: filters / selection / paint / shapes ---------- */
   // Apply a pxengine filter to the current image (real pixel pipeline).
   const runFilter = async (name, opts) => {
@@ -1819,6 +1840,38 @@ export function Editor({ project, onBack }) {
         proposeAction(payload.label, payload.tab, payload.icon, payload.fnKey)
         return
       }
+      if (action === 'opentool' && payload) {
+        const map = {
+          select: 'select', rect: 'rect', ellipse: 'ellipse', line: 'line',
+          text: 'text', brush: 'brush', crop: 'crop', dropper: 'dropper',
+        }
+        if (map[payload.tool]) setTool(map[payload.tool])
+        else if (payload.tool === 'wand') startSelectionTool('wand')
+        else if (payload.tool === 'lasso') startSelectionTool('lasso')
+        else if (payload.tool === 'marquee') startSelectionTool('marquee-rect')
+        return
+      }
+      if (action === 'zoom' && payload) {
+        if (payload.dir === 'in') zoomBy(1.25)
+        else if (payload.dir === 'out') zoomBy(1 / 1.25)
+        else zoomFit()
+        return
+      }
+      if (action === 'cropamt' && payload) { runCropAmount(payload.amt); return }
+      if (action === 'filter' && payload) { runFilter(payload.name); return }
+      if (action === 'moretool' && payload) {
+        const map = {
+          clone: () => startPaintTool('clone'), heal: () => startPaintTool('heal'),
+          redeye: () => startPaintTool('redeye'), bucket: () => startPaintTool('bucket'),
+          gradient: () => startPaintTool('gradient'), curves: () => openModal(setCurvesOpen),
+          levels: () => openModal(setLevelsOpen), polygon: () => setShapeTool('polygon'),
+          triangle: () => setShapeTool('triangle'), star: () => setShapeTool('star'),
+          warp: () => openModal(setWarpOpen),
+        }
+        if (map[payload.key]) map[payload.key]()
+        return
+      }
+      if (action === 'export') { openModal(setExportOpen); return }
       if (action === 'removebg') return runRemoveBg()
       if (action === 'replacebg') return openModal(setReplaceOpen)
       if (action === 'enhance') return runAi('enhance')
@@ -2378,6 +2431,7 @@ export function Editor({ project, onBack }) {
           onRevertTo={revertToStep}
           highlightTarget={highlightTarget}
           onPropose={proposeAction}
+          onRunHowTo={runHowToAction}
         />
       )
     }
@@ -3747,8 +3801,10 @@ function AITab({
   onCollage, onUpscale, onPalette, onAutoTextColor, suggestion, onSuggestion, upscaled, onPromptAction,
   search = '', onRunChain, commandCount = 0, onUndoLast,
   commandStack = [], onRevertTo, highlightTarget, onPropose,
+  onRunHowTo,
 }) {
   const [phrase, setPhrase] = useState('')
+  const [howtoResult, setHowtoResult] = useState(null) // matched how-to shown inline
 
   const q = search.trim().toLowerCase()
 
@@ -3761,7 +3817,19 @@ function AITab({
       onRunChain(chain)
     } else {
       const m = matchPrompt(chain[0])
-      if (m) onPromptAction(m.action, m.payload)
+      if (m && m.action === 'question') {
+        // question → show the how-to guide inline
+        const h = matchHowTo(chain[0] || (m.payload && m.payload.phrase))
+        setHowtoResult(h)
+        if (!h) onPromptAction('unknown', {})
+      } else if (m && m.action !== 'unknown') {
+        setHowtoResult(null)
+        onPromptAction(m.action, m.payload)
+      } else {
+        const h = matchHowTo(chain[0])
+        setHowtoResult(h)
+        if (!h) onPromptAction('unknown', {})
+      }
     }
   }
 
@@ -3816,7 +3884,7 @@ function AITab({
           <input
             value={phrase}
             onChange={(e) => setPhrase(e.target.value)}
-            placeholder='Describe the edit — "remove background"…'
+            placeholder='Describe the edit or ask how — "remove background", "how do I blur the background"…'
             className="min-w-0 flex-1 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
           />
           <button
@@ -3875,6 +3943,41 @@ function AITab({
           "Undo last command" reverts just the last step.
         </p>
       </form>
+
+      {howtoResult && (
+        <div className="mt-3 rounded-ink border border-line bg-surface-2 p-3">
+          <div className="label-xs text-dim">How to — {howtoResult.q}</div>
+          <ol className="mt-2 space-y-1.5">
+            {howtoResult.steps.map((st, i) => (
+              <li key={i} className="flex gap-2 text-[11px] leading-relaxed text-fg">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-white">{i + 1}</span>
+                <span>{st}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { onRunHowTo(howtoResult.action); setHowtoResult(null) }}
+              className="rounded-ink bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-black"
+            >
+              Open {howtoResult.tool}
+            </button>
+            <a
+              href={youTubeSearch(howtoResult.yt)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 rounded-ink border border-line px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-white"
+            >
+              <Icon name="play" size={12} /> Watch on YouTube
+            </a>
+            <button type="button" onClick={() => setHowtoResult(null)} className="ml-auto text-[9px] uppercase tracking-[0.1em] text-mute hover:text-white">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
 
       <p className="mt-4 text-[10px] leading-relaxed text-mute">
         All processing runs on-device and reads the actual image content. No fake AI: deterministic

@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.16
+> **Version**: v0.15.17
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.16)
+> **Updated**: 2026-08-10 (v0.15.17)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -256,3 +256,19 @@ layers, quick actions, AI suite, collage, versioning all present.
 - **History mini-map** under the command bar: numbered chips of every
   executed step — tap any chip to **undo up to that step** (reverts and
   truncates after)
+
+
+### v0.15.17 — AI command bar drives EVERYTHING
+- Questions ("how do I blur the background") show the inline guide instead
+  of executing (question-intent detection)
+- Command vocabulary expanded to the full app:
+  - Tools: open crop/rect/ellipse/line/text/brush/dropper/lasso/wand/marquee
+  - Crop: "crop slightly smaller" (trim %), "less crop", "crop to square"
+  - Zoom: "zoom in/out/fit screen"
+  - More tab: pinch, twirl, emboss, find edges, solarize, median, halftone,
+    tilt-shift, clone stamp, healing, red eye, bucket, gradient, curves,
+    levels, polygon, triangle, star, warp
+  - Export: "export png/jpg/psd…"
+- Verified chain: "open crop tool, crop slightly smaller, zoom in, undo,
+  less crop, crop to square" runs end-to-end; full audit 16/18 (2 filter
+  checks were timing-only, verified working)
