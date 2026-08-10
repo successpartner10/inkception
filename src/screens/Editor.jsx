@@ -39,7 +39,7 @@ import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
-import { PROMPT_SUGGESTIONS, matchPrompt } from '../lib/prompts'
+import { PROMPT_SUGGESTIONS, matchPrompt, splitCommandChain } from '../lib/prompts'
 import { COLLAGE_LAYOUTS, computeSlots } from '../lib/collage'
 import { DEFAULT_FONT, DEFAULT_FONT_SIZE, FONTS } from '../lib/fonts'
 import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
@@ -224,6 +224,9 @@ export function Editor({ project, onBack }) {
   const cropRef = useRef(null) // drag start point
   const cropOverlayRect = useRef(null)
   const dragTimerRef = useRef(null)
+  // live command chain: stack of executed commands with before-snapshots
+  const commandStackRef = useRef([])
+  const [commandCount, setCommandCount] = useState(0)
   const colorRef = useRef('#ffffff')
   // selection engine
   const [selMask, setSelMask] = useState(null) // {w,h,data:Uint8Array} natural res
@@ -1678,6 +1681,49 @@ export function Editor({ project, onBack }) {
   }
 
   /* ------------------------- prompt command bar (#2) ------------------------ */
+  /* ----------------------- live command chain (AI) ----------------------- */
+  // "auto enhance, now crop to square, then black & white" — runs each step,
+  // remembers before-snapshots, so "undo last command" reverts just the last.
+  const runCommandChain = useCallback(
+    async (chain) => {
+      const done = []
+      for (const step of chain) {
+        const m = matchPrompt(step)
+        if (!m) {
+          showToast(`Skipped: "${step}" (no match)`, 'info')
+          continue
+        }
+        if (m.action === 'undocmd' || m.action === 'redocmd') {
+          onPromptAction(m.action, m.payload)
+          continue
+        }
+        commandStackRef.current.push({ phrase: step, before: snapshot() })
+        setCommandCount(commandStackRef.current.length)
+        onPromptAction(m.action, m.payload)
+        done.push(step)
+        await new Promise((r) => setTimeout(r, 260))
+      }
+      showToast(done.length ? `✓ ${done.join(' → ')}` : 'No commands matched', 'check')
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+
+  const undoLastCommand = useCallback(() => {
+    const last = commandStackRef.current.pop()
+    setCommandCount(commandStackRef.current.length)
+    if (!last) {
+      showToast('No commands to undo', 'info')
+      return
+    }
+    restoreSnap(last.before)
+    showToast(`Undid: "${last.phrase}"`, 'undo')
+  }, [restoreSnap, showToast])
+
+  const redoLastCommand = useCallback(() => {
+    showToast('Redo last command — use ⌘⇧Z (or re-type it)', 'redo')
+  }, [showToast])
+
   const onPromptAction = useCallback(
     (action, payload) => {
       if (action === 'removebg') return runRemoveBg()
@@ -2231,6 +2277,9 @@ export function Editor({ project, onBack }) {
           upscaled={upscaled}
           onPromptAction={onPromptAction}
           search={globalSearch}
+          onRunChain={runCommandChain}
+          commandCount={commandCount}
+          onUndoLast={undoLastCommand}
         />
       )
     }
@@ -3568,7 +3617,7 @@ function AITab({
   busy, onRemoveBg, onReplaceBg, onEnhance, onVectorize,
   onRetouch, onDenoise, onLut, onCrop, onMotion, onBatch, onDecompose, onEraser,
   onCollage, onUpscale, onPalette, onAutoTextColor, suggestion, onSuggestion, upscaled, onPromptAction,
-  search = '',
+  search = '', onRunChain, commandCount = 0, onUndoLast,
 }) {
   const [phrase, setPhrase] = useState('')
 
@@ -3576,10 +3625,15 @@ function AITab({
 
   const submit = (e) => {
     e.preventDefault()
-    const m = matchPrompt(phrase)
-    if (!m) return
+    const chain = splitCommandChain(phrase)
+    if (!chain.length) return
     setPhrase('')
-    onPromptAction(m.action, m.payload)
+    if (chain.length > 1 && onRunChain) {
+      onRunChain(chain)
+    } else {
+      const m = matchPrompt(chain[0])
+      if (m) onPromptAction(m.action, m.payload)
+    }
   }
 
   const sections = [
@@ -3656,6 +3710,22 @@ function AITab({
             </button>
           ))}
         </div>
+        {commandCount > 0 && (
+          <div className="mt-2 flex items-center justify-between rounded-ink border border-line px-2 py-1.5">
+            <span className="label-xs text-mute">Commands · {commandCount}</span>
+            <button
+              type="button"
+              onClick={onUndoLast}
+              className="flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:text-white"
+            >
+              <Icon name="undo" size={11} /> Undo last
+            </button>
+          </div>
+        )}
+        <p className="mt-2 text-[9px] leading-relaxed text-mute">
+          Tip: chain steps with commas — "auto enhance, now crop to square, then black & white".
+          "Undo last command" reverts just the last step.
+        </p>
       </form>
 
       <p className="mt-4 text-[10px] leading-relaxed text-mute">

@@ -52,9 +52,21 @@ export function buildFabricFilters(f) {
   list.push(new F.Contrast({ contrast: f.contrast / 100 - 1 }))
   list.push(new F.Saturation({ saturation: f.saturation / 100 - 1 }))
   if (f.temperature > 0) {
-    list.push(new F.Tint({ color: '#ff8a3d', opacity: (f.temperature / 100) * 0.32 }))
+    const a = (f.temperature / 100) * 0.22
+    list.push(new F.ColorMatrix({ matrix: [
+      1, 0, 0, 0, a * 120,
+      0, 1, 0, 0, a * 45,
+      0, 0, 1, 0, a * -10,
+      0, 0, 0, 1, 0,
+    ] }))
   } else if (f.temperature < 0) {
-    list.push(new F.Tint({ color: '#4d7dff', opacity: (-f.temperature / 100) * 0.32 }))
+    const a = (-f.temperature / 100) * 0.22
+    list.push(new F.ColorMatrix({ matrix: [
+      1, 0, 0, 0, a * -30,
+      0, 1, 0, 0, a * -10,
+      0, 0, 1, 0, a * 70,
+      0, 0, 0, 1, 0,
+    ] }))
   }
   if (f.tint !== 0) {
     list.push(new F.HueRotation({ rotation: f.tint * 0.12 }))

@@ -2,6 +2,16 @@
 // concrete tool actions. Runs 100% locally; this is the "front door" for the
 // AI suite: "Design with words, not menus."
 
+/** Split a multi-step command into individual phrases.
+ *  "auto enhance, now crop to square, then black & white"
+ *  → ["auto enhance", "crop to square", "black & white"] */
+export function splitCommandChain(text) {
+  return String(text || '')
+    .split(/\s*(?:,|\bthen\b|\bnow\b|\band\b|\bafter that\b|\bnext\b|\b\.\s*)\s*/i)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 // Returns one of:
 //   { action: 'removebg' | 'replacebg' | 'enhance' | 'upscale' | 'vectorize'
 //           | 'undo' | 'redo' | 'reset' }
