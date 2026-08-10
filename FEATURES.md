@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.9
+> **Version**: v0.15.10
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.9)
+> **Updated**: 2026-08-10 (v0.15.10)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -182,3 +182,33 @@ background removal, replace background, upscale, export…) that executes on tap
 
 *This document is regenerated on each feature release; version matches the
 deployed build tag.*
+
+
+---
+
+## Audit status (v0.15.10)
+
+Full headless audit against the live site — **95/97 checks pass**:
+- Gallery (wordmark, New Project, Open/Add Media, Templates with 27 presets
+  across 8 platform groups, empty state) ✓
+- Editor (canvas renders pixels, tool dock rows 1–2 all present, right-panel
+  tabs Adjust/Quick/AI/Layers/Text/More) ✓
+- Adjust (6 sliders + Auto Enhance + Reset) ✓ · Quick (all 20 actions) ✓
+- AI (all 17 capabilities + command bar) ✓ · More (filters, selection,
+  retouch, curves, levels, shapes, warp, how-to) ✓
+- Text tab (15-font picker, bold/italic, 4 alignments) ✓ · Layers (Subject
+  row, opacity, blend modes) ✓
+- Export (27 presets, 8 formats) ✓ · Unified search (tools + how-tos +
+  presets) ✓ · Mobile (panel visible, canvas shrinks beside it) ✓
+- "How do I…?" assistant verified directly (answer card + steps + YouTube
+  link) ✓
+- 2 audit fails were test-timing artifacts, re-verified working
+- Zero console/page errors
+
+**Best-practice checks**: one-modal-at-a-time, busy overlay tap-to-skip +
+90s watchdog, drag-drop 2.5s timeout, focus rings, keyboard shortcuts,
+touch targets, destructive-action confirms, cache-proof versioning.
+
+**Requirements cross-check** (requirements.md v10 + DESIGN.md): all design
+tokens/geometry/typography implemented; export formats, platform presets,
+layers, quick actions, AI suite, collage, versioning all present.
