@@ -1180,6 +1180,86 @@ export function Editor({ project, onBack }) {
     if (mode !== 'off') showToast(`Motion: ${mode} — export is a still frame`, 'play')
   }
 
+  /* Background-aware text color — reads the image, picks black or white
+     text for contrast (useful for posters/overlays). */
+  const runAutoTextColor = async () => {
+    const src = imageSrcRef.current
+    if (!src) {
+      showToast('Load an image first', 'info')
+      return
+    }
+    const c = fabricRef.current
+    const act = c && c.getActiveObject()
+    if (!act || !isTextObject(act)) {
+      showToast('Select a text object first (Text tool)', 'info')
+      return
+    }
+    setBusy({ kind: 'real', title: 'Smart Text Color', step: 'Sampling background…', progress: 60 })
+    try {
+      // sample the average luminance under the text's bounding box
+      const img = await loadImageElement(src)
+      const cv = document.createElement('canvas')
+      cv.width = img.naturalWidth
+      cv.height = img.naturalHeight
+      const ctx = cv.getContext('2d')
+      ctx.drawImage(img, 0, 0)
+      // text bbox in natural coords (canvas fit scale inverse)
+      const nw = naturalRef.current.w
+      const nh = naturalRef.current.h
+      const bx = act.left
+      const by = act.top
+      const bw = act.width * act.scaleX
+      const bh = act.height * act.scaleY
+      const sx = Math.max(0, Math.round((bx / fit.w) * nw))
+      const sy = Math.max(0, Math.round((by / fit.h) * nh))
+      const sw = Math.max(1, Math.round((bw / fit.w) * nw))
+      const sh = Math.max(1, Math.round((bh / fit.h) * nh))
+      const data = ctx.getImageData(sx, sy, Math.min(sw, nw - sx), Math.min(sh, nh - sy)).data
+      let lum = 0
+      let n = 0
+      for (let i = 0; i < data.length; i += 4) {
+        lum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]
+        n++
+      }
+      lum = n ? lum / n : 128
+      const color = lum < 140 ? '#ffffff' : '#000000'
+      act.set('fill', color)
+      c.requestRenderAll()
+      setBusy(null)
+      showToast(color === '#ffffff' ? 'White text — dark background' : 'Black text — light background', 'text')
+    } catch {
+      setBusy(null)
+      showToast('Text color failed', 'close')
+    }
+  }
+
+  /* Smart Suggestions — context-aware next-step hints after edits. */
+  const getSuggestion = () => {
+    const src = imageSrcRef.current
+    if (!src) return { title: 'Start with an image', desc: 'Open a file or add a template', action: 'open' }
+    const bgHidden = layers.find((l) => l.id === 'backdrop') && !layers.find((l) => l.id === 'backdrop').visible
+    const upsc = upscaled
+    const hasText = (() => {
+      const c = fabricRef.current
+      return c && c.getObjects().some((o) => isTextObject(o))
+    })()
+    if (bgHidden && !hasText)
+      return { title: 'Add a headline', desc: 'Background is removed — drop in bold text', action: 'text' }
+    if (bgHidden)
+      return { title: 'Replace background', desc: 'Try a colored or gradient backdrop', action: 'replace' }
+    if (!upsc)
+      return { title: 'Upscale 4×', desc: 'Sharper exports for print or social', action: 'upscale' }
+    return { title: 'Export it', desc: 'Your edit is ready — pick a platform size', action: 'export' }
+  }
+
+  const runSuggestion = (action) => {
+    if (action === 'open') fileRef.current && fileRef.current.click()
+    else if (action === 'text') setTool('text')
+    else if (action === 'replace') setReplaceOpen(true)
+    else if (action === 'upscale') setUpscaleOpen(true)
+    else if (action === 'export') setExportOpen(true)
+  }
+
   /* ------------------------- prompt command bar (#2) ------------------------ */
   const onPromptAction = useCallback(
     (action, payload) => {
@@ -1301,6 +1381,56 @@ export function Editor({ project, onBack }) {
       img.set('fitMode', mode)
       c.requestRenderAll()
       showToast(mode === 'cover' ? 'Photo expanded to fill its slot' : 'Photo fit inside its slot', 'fit')
+    },
+    [showToast],
+  )
+
+  /* Rotate a collage photo around its center (keeps its slot position). */
+  const rotateCollagePhoto = useCallback(
+    (id, deg) => {
+      const d = decompRef.current.find((x) => x.id === id)
+      const img = d && d.img
+      const c = fabricRef.current
+      if (!img || !c) return
+      img.rotate((img.angle || 0) + deg)
+      img.setCoords()
+      c.requestRenderAll()
+      showToast(`Rotated ${deg}°`, 'rotateCw')
+    },
+    [showToast],
+  )
+
+  /* Shuffle the selected collage photo's grid slot to the left (wrap). */
+  const shiftCollageSlot = useCallback(
+    (id, dir) => {
+      const colItems = decompRef.current.filter((x) => x.id.startsWith('col-'))
+      const i = colItems.findIndex((x) => x.id === id)
+      if (i < 0 || colItems.length < 2) return
+      const j = (i + dir + colItems.length) % colItems.length
+      const a = colItems[i].img
+      const b = colItems[j].img
+      const sa = a.slotRect
+      const sb = b.slotRect
+      if (!sa || !sb) return
+      a.set('slotRect', sb)
+      b.set('slotRect', sa)
+      // re-fit both into their new slots (keep their fit modes)
+      const refit = (img) => {
+        const s = img.slotRect
+        const mode = img.fitMode === 'cover' ? Math.max : Math.min
+        const sc = mode(s.w / img.width, s.h / img.height)
+        img.set({
+          left: s.x + (s.w - img.width * sc) / 2,
+          top: s.y + (s.h - img.height * sc) / 2,
+          scaleX: sc,
+          scaleY: sc,
+        })
+      }
+      refit(a)
+      refit(b)
+      const c = fabricRef.current
+      if (c) c.requestRenderAll()
+      showToast(`Moved photo ${dir > 0 ? 'forward' : 'backward'} in the grid`, 'move')
     },
     [showToast],
   )
@@ -1613,6 +1743,9 @@ export function Editor({ project, onBack }) {
           onCollage={() => setCollageOpen(true)}
           onUpscale={() => setUpscaleOpen(true)}
           onPalette={() => runPalette()}
+          onAutoTextColor={() => runAutoTextColor()}
+          suggestion={getSuggestion()}
+          onSuggestion={(a) => runSuggestion(a)}
           upscaled={upscaled}
           onPromptAction={onPromptAction}
         />
@@ -1628,6 +1761,8 @@ export function Editor({ project, onBack }) {
         onToggleLock={toggleLock}
         onDeleteLayer={deleteLayer}
         onFitPhoto={fitCollagePhoto}
+        onRotatePhoto={rotateCollagePhoto}
+        onShiftSlot={shiftCollageSlot}
         imageSrc={imageSrc}
         showToast={showToast}
         layerOpacity={layerOpacity}
@@ -2481,7 +2616,7 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
 function AITab({
   busy, onRemoveBg, onReplaceBg, onEnhance, onVectorize,
   onRetouch, onDenoise, onLut, onCrop, onMotion, onBatch, onDecompose, onEraser,
-  onCollage, onUpscale, onPalette, upscaled, onPromptAction,
+  onCollage, onUpscale, onPalette, onAutoTextColor, suggestion, onSuggestion, upscaled, onPromptAction,
 }) {
   const [phrase, setPhrase] = useState('')
 
@@ -2503,6 +2638,7 @@ function AITab({
         { icon: 'sparkle', title: 'Generative Fill', desc: 'Paint to re-fill region', onClick: () => onEraser('fill') },
         { icon: 'crop', title: 'Smart Crop', desc: 'Face/subject-aware', onClick: onCrop },
         { icon: 'layers', title: 'Decompose', desc: 'Panels · text · subject · bg', onClick: onDecompose, busy: busy?.kind === 'real' },
+        { icon: 'text', title: 'Smart Text Color', desc: 'Auto black/white on selection', onClick: onAutoTextColor },
       ],
     },
     {
@@ -2569,6 +2705,24 @@ function AITab({
         tools are labeled as such. Export matrix untouched.
       </p>
 
+      {/* Smart suggestion banner */}
+      {suggestion && (
+        <button
+          type="button"
+          onClick={() => onSuggestion(suggestion.action)}
+          className="mt-4 flex w-full items-center gap-3 rounded-ink border border-white/60 bg-surface-2 p-3 text-left transition-colors hover:border-white"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-ink bg-white text-black">
+            <Icon name="sparkle" size={14} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-fg">{suggestion.title}</span>
+            <span className="mt-0.5 block text-[10px] text-mute">{suggestion.desc}</span>
+          </span>
+          <Icon name="chevronRight" size={14} className="shrink-0 text-mute" />
+        </button>
+      )}
+
       {sections.map((sec) => (
         <div key={sec.label} className="mt-5">
           <div className="mb-2 flex items-center gap-2 px-0.5">
@@ -2613,7 +2767,7 @@ function AITab({
 /* ------------------------------- tab: Layers ------------------------------ */
 function LayersTab({
   layers, extraLayers = [], selected, onSelect, onToggleVisibility, onToggleLock, onDeleteLayer,
-  onFitPhoto, imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
+  onFitPhoto, onRotatePhoto, onShiftSlot, imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
 }) {
   const previews = {
     text: <span className="text-[10px] font-extrabold tracking-widest text-fg">Tt</span>,
@@ -2678,12 +2832,13 @@ function LayersTab({
                   onDelete={() => onDeleteLayer(l.id)}
                 />
                 {l.type === 'Collage' && onFitPhoto && (
-                  <div className="flex items-center gap-1 pl-12">
-                    <span className="label-xs text-mute">Grid size:</span>
+                  <div className="flex flex-wrap items-center gap-1 pl-12">
+                    <span className="label-xs text-mute">Grid:</span>
                     <button
                       type="button"
                       onClick={() => onFitPhoto(l.id, 'contain')}
                       className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                      title="Shrink photo to fit its slot"
                     >
                       Fit
                     </button>
@@ -2691,10 +2846,51 @@ function LayersTab({
                       type="button"
                       onClick={() => onFitPhoto(l.id, 'cover')}
                       className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                      title="Expand photo to fill its slot"
                     >
                       Fill
                     </button>
-                    <span className="ml-1 text-[9px] text-mute">auto expand / shrink into slot</span>
+                    {onRotatePhoto && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onRotatePhoto(l.id, -15)}
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                          title="Rotate left 15°"
+                        >
+                          ↺
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRotatePhoto(l.id, 15)}
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                          title="Rotate right 15°"
+                        >
+                          ↻
+                        </button>
+                      </>
+                    )}
+                    {onShiftSlot && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onShiftSlot(l.id, -1)}
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                          title="Swap with previous slot"
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onShiftSlot(l.id, 1)}
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                          title="Swap with next slot"
+                        >
+                          →
+                        </button>
+                      </>
+                    )}
+                    <span className="ml-1 text-[9px] text-mute">fit · fill · rotate · swap</span>
                   </div>
                 )}
               </div>
