@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Inkception — Lock Down the URL (Cloudflare Access, the easy way)</title>
+<style>
+  body { margin:0; background:#0e0e0e; color:#e5e2e1; font-family: -apple-system, "Segoe UI", Arial, sans-serif; line-height:1.5; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 18px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color:#9a9a9a; font-size: 13px; margin-bottom: 22px; }
+  h2 { font-size: 15px; margin: 26px 0 10px; border-bottom: 1px solid #2a2a2a; padding-bottom: 6px; }
+  .step { display: flex; gap: 12px; margin-bottom: 10px; }
+  .num { flex: 0 0 26px; height: 26px; border-radius: 8px; background:#fff; color:#000; font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+  .body { flex:1; font-size: 13.5px; }
+  .body b { color:#fff; }
+  .click { display:inline-block; background:#201f1f; border:1px solid #3a3a3a; border-radius:6px; padding:1px 7px; font-size:12px; font-family: ui-monospace, Menlo, monospace; }
+  .note { background:#1c1b1b; border:1px solid #333; border-left:3px solid #fff; border-radius:8px; padding:10px 12px; font-size:12.5px; color:#c4c7c8; margin:10px 0; }
+  .warn { background:#2a1b1b; border:1px solid #5a2a2a; border-left:3px solid #ffb4ab; border-radius:8px; padding:10px 12px; font-size:12.5px; color:#ffd9d5; margin:10px 0; }
+  .ok { color:#7ddb7d; font-weight:700; }
+  .box { border:1px solid #3a3a3a; border-radius:10px; padding:12px 14px; margin:8px 0; background:#131313; }
+  ul { margin:6px 0 6px 18px; padding:0; }
+  li { margin-bottom:4px; }
+  .mail { font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Inkception — Lock Down the URL</h1>
+  <div class="sub">Cloudflare Access the easy way · email one-time PIN (no Google OAuth needed) · ~15 minutes</div>
+
+  <div class="note"><b>Why this works:</b> we deploy the site to <b>Cloudflare Pages</b> (free, gives us our own URL that Cloudflare controls), then put a <b>Zero Trust Access</b> wall in front of it. Only the 4 allowlisted emails get in. No code changes needed — the app is already ready.</div>
+
+  <h2>Before you start (2 min)</h2>
+  <div class="step"><div class="num">✓</div><div class="body">Create a free Cloudflare account at <b>cloudflare.com</b> (if you don't have one) and log in. Keep the GitHub repo <b>public</b> (it already is).</div></div>
+
+  <h2>Step 1 — Deploy the site to Cloudflare Pages</h2>
+  <div class="step"><div class="num">1</div><div class="body">Log in at <b>cloudflare.com</b>. In the left sidebar click <span class="click">Workers &amp; Pages</span>.</div></div>
+  <div class="step"><div class="num">2</div><div class="body">Click <span class="click">Create</span> → <span class="click">Pages</span> → <span class="click">Connect to Git</span>.</div></div>
+  <div class="step"><div class="num">3</div><div class="body">Authorize GitHub if asked, then pick the repo <b>successpartner10/Inkception</b>.</div></div>
+  <div class="step"><div class="num">4</div><div class="body">Build settings: Framework preset = <span class="click">Vite</span> · Build command = <span class="click">npm run build</span> · Build output directory = <span class="click">dist</span>.</div></div>
+  <div class="step"><div class="num">5</div><div class="body">Click <span class="click">Save and Deploy</span>. Wait ~1 minute. Cloudflare shows you a URL like <b class="mail">https://inkception.pages.dev</b> — write it down. <span class="ok">✓ Done</span></div></div>
+
+  <h2>Step 2 — Turn on Zero Trust (free)</h2>
+  <div class="step"><div class="num">6</div><div class="body">Go to <b>cloudflare.com</b> account home. Click the <span class="click">Zero Trust</span> product tile (or visit <b>one.one.one.one → Zero Trust</b> / <b>cloudflare.com/products/zero-trust/</b> → <span class="click">Try Zero Trust free</span>).</div></div>
+  <div class="step"><div class="num">7</div><div class="body">Pick a team name (anything, e.g. <span class="mail">inkception</span>), choose the <b>Free</b> plan, finish the wizard.</div></div>
+  <div class="note">If you can't find Zero Trust later: <b>dash.cloudflare.com</b> → select your account → left sidebar has <span class="click">Zero Trust</span>.</div>
+
+  <h2>Step 3 — Create the Access application</h2>
+  <div class="step"><div class="num">8</div><div class="body">Inside Zero Trust, left sidebar: <span class="click">Access</span> → <span class="click">Applications</span> → <span class="click">Add an application</span> → <span class="click">Self-hosted</span>.</div></div>
+  <div class="step"><div class="num">9</div><div class="body"><b>Application name:</b> <span class="mail">Inkception</span> · <b>Domain:</b> enter your <span class="mail">inkception.pages.dev</span> (subdomain + domain fields). Leave the rest default, click <span class="click">Next</span>.</div></div>
+  <div class="step"><div class="num">10</div><div class="body"><b>Login methods:</b> turn ON only <span class="click">One-time PIN</span>. Turn OFF Google/GitHub/etc. if shown. Click <span class="click">Next</span>.</div></div>
+  <div class="ok" style="margin-top:6px">This is the "no Google OAuth" trick — Cloudflare emails a login code, so we skip Google Cloud Console entirely.</div>
+
+  <h2>Step 4 — The allowlist policy (THE critical step)</h2>
+  <div class="step"><div class="num">11</div><div class="body">On the policy page click <span class="click">Add a policy</span>. <b>Policy name:</b> <span class="mail">Allowlist</span> · <b>Action:</b> <span class="click">Allow</span>.</div></div>
+  <div class="step"><div class="num">12</div><div class="body">Under <b>Configure rules</b>: Include → <span class="click">Emails</span> → add each address, then click Apply:</div></div>
+  <div class="box">
+    <div class="mail">successpartner10@gmail.com</div>
+    <div class="mail">sandipyashpal@gmail.com</div>
+    <div class="mail">sulaniyashpal@gmail.com</div>
+    <div class="mail">sulaniy79@gmail.com</div>
+  </div>
+  <div class="step"><div class="num">13</div><div class="body">Click <span class="click">Save policy</span> → then <span class="click">Save application</span>.</div></div>
+  <div class="warn"><b>Don't skip the policy.</b> The One-time PIN login alone lets anyone with an email sign in — the <b>Include → Emails</b> rule is what locks it to your 4 addresses.</div>
+
+  <h2>Step 5 — Test it</h2>
+  <div class="step"><div class="num">14</div><div class="body">Open <span class="mail">https://inkception.pages.dev</span> in a private/incognito window → you'll be asked for your email → enter one of the 4 → Cloudflare emails you a code → enter it → the app loads. <span class="ok">✓</span></div></div>
+  <div class="step"><div class="num">15</div><div class="body">Try a different email (e.g. a second Gmail you have) → you should get a <b>blocked</b> page. <span class="ok">✓ Locked down</span></div></div>
+
+  <h2>If something looks different</h2>
+  <ul>
+    <li><b>No "Workers &amp; Pages"?</b> It's in the account's left sidebar after you log in at dash.cloudflare.com.</li>
+    <li><b>No "Zero Trust" in the sidebar?</b> You may still be on the old plan page — click the Zero Trust product tile on the Cloudflare home dashboard first, then follow the wizard once.</li>
+    <li><b>Pages URL has your repo name in it?</b> Fine — any <span class="mail">*.pages.dev</span> URL works; use whatever it gives you.</li>
+    <li><b>Worried about the old GitHub Pages URL?</b> You can leave it up; the new locked URL is the one you share. (To fully kill the old one, delete the repo or remove Pages in repo Settings → Pages → Unpublish.)</li>
+  </ul>
+
+  <div class="note">Keep this safe: only these 4 emails can log in. To change who's allowed later, edit the policy in Zero Trust → Access → Applications → Inkception → Policies.</div>
+</div>
+</body>
+</html>
