@@ -635,13 +635,26 @@ export function Editor({ project, onBack }) {
   const canRedo = histPos < hist.length - 1
 
   /* ------------------------------ zoom / pan ------------------------------ */
+  const [zoomMenuOpen, setZoomMenuOpen] = useState(false)
+  const ZOOM_MIN = 0.05
+  const ZOOM_MAX = 8
+
+  const zoomTo = (z, point) => {
+    const c = fabricRef.current
+    if (!c) return
+    const v = clamp(z, ZOOM_MIN, ZOOM_MAX)
+    zoomRef.current = v
+    setZoom(v)
+    if (point) c.zoomToPoint(point, v)
+    else {
+      c.setViewportTransform([v, 0, 0, v, 0, 0])
+      c.requestRenderAll()
+    }
+  }
   const zoomBy = (f) => {
     const c = fabricRef.current
     if (!c) return
-    const z = clamp(zoomRef.current * f, 0.2, 5)
-    zoomRef.current = z
-    setZoom(z)
-    c.zoomToPoint({ x: c.getWidth() / 2, y: c.getHeight() / 2 }, z)
+    zoomTo(zoomRef.current * f, { x: c.getWidth() / 2, y: c.getHeight() / 2 })
   }
   const zoomFit = () => {
     const c = fabricRef.current
@@ -650,6 +663,21 @@ export function Editor({ project, onBack }) {
     setZoom(1)
     c.setViewportTransform([1, 0, 0, 1, 0, 0])
     c.requestRenderAll()
+  }
+  // Photoshop "Fill Screen": zoom so the image covers the whole viewport
+  const zoomFill = () => {
+    const c = fabricRef.current
+    const stage = stageWrapRef.current
+    if (!c || !stage) return
+    const img = imgObjRef.current
+    if (!img) return zoomFit()
+    const aw = stage.clientWidth - 64
+    const ah = stage.clientHeight - 64
+    if (aw < 40 || ah < 40) return
+    const imgW = img.width * img.scaleX
+    const imgH = img.height * img.scaleY
+    const z = Math.max(aw / imgW, ah / imgH)
+    zoomTo(z, { x: c.getWidth() / 2, y: c.getHeight() / 2 })
   }
 
   useEffect(() => {
@@ -741,6 +769,18 @@ export function Editor({ project, onBack }) {
       } else if (mod && k === 'o') {
         e.preventDefault()
         fileRef.current && fileRef.current.click()
+      } else if (mod && k === '0') {
+        e.preventDefault()
+        zoomFit()
+      } else if (mod && k === '1') {
+        e.preventDefault()
+        zoomTo(1)
+      } else if (mod && (k === '=' || k === '+')) {
+        e.preventDefault()
+        zoomBy(1.25)
+      } else if (mod && k === '-') {
+        e.preventDefault()
+        zoomBy(1 / 1.25)
       } else if (mod || e.metaKey || e.ctrlKey || e.altKey) {
         return
       } else {
@@ -757,6 +797,7 @@ export function Editor({ project, onBack }) {
           e.preventDefault()
           deleteActive()
         } else if (e.key === 'Escape') {
+          setZoomMenuOpen(false)
           const c = fabricRef.current
           if (c) {
             c.discardActiveObject()
@@ -767,7 +808,7 @@ export function Editor({ project, onBack }) {
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [undo, redo, deleteActive])
+  }, [undo, redo, deleteActive, zoomFit, zoomTo, zoomBy])
 
   /* --------------------------------- layers -------------------------------- */
   const toggleLayer = (id) => {
@@ -2297,14 +2338,31 @@ export function Editor({ project, onBack }) {
           {/* floating zoom pill */}
           <div className="absolute bottom-4 left-4 flex items-center rounded-ink border border-line bg-surface">
             <IconBtn icon="zoomOut" title="Zoom out" onClick={() => zoomBy(1 / 1.25)} />
-            <button
-              type="button"
-              title="Fit (100%)"
-              onClick={zoomFit}
-              className="w-11 text-center text-[10px] tabular-nums text-dim hover:text-white"
-            >
-              {Math.round(zoom * 100)}%
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                title="Zoom presets"
+                onClick={() => setZoomMenuOpen((v) => !v)}
+                className="w-12 text-center text-[10px] tabular-nums text-dim hover:text-white"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              {zoomMenuOpen && (
+                <div className="absolute bottom-full left-1/2 z-50 mb-1.5 w-36 -translate-x-1/2 overflow-hidden rounded-ink border border-line bg-surface shadow-xl">
+                  <ZoomMenuRow label="Fit Screen" kbd="⌘0" onClick={() => { zoomFit(); setZoomMenuOpen(false) }} />
+                  <ZoomMenuRow label="Fill Screen" onClick={() => { zoomFill(); setZoomMenuOpen(false) }} />
+                  <div className="mx-2 h-px bg-line" />
+                  {[25, 50, 100, 200, 400, 800].map((p) => (
+                    <ZoomMenuRow
+                      key={p}
+                      label={`${p}%`}
+                      active={Math.round(zoom * 100) === p}
+                      onClick={() => { zoomTo(p / 100); setZoomMenuOpen(false) }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
             <IconBtn icon="zoomIn" title="Zoom in" onClick={() => zoomBy(1.25)} />
           </div>
 
@@ -2398,21 +2456,37 @@ export function Editor({ project, onBack }) {
           <IconBtn icon="eraser" title="Erase brush — paint to transparent" active={eraseMode === 'alpha'} onClick={() => startErase('alpha')} />
           <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
           <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => openModal(setCropOpen)} />
-          <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
         </div>
         {/* Row 2 — utility tools */}
         <div className="flex items-center gap-0.5">
           <IconBtn icon="zoomOut" title="Zoom out" onClick={() => zoomBy(1 / 1.25)} />
-          <button
-            type="button"
-            title="Fit (100%)"
-            onClick={zoomFit}
-            className="w-11 text-center text-[10px] tabular-nums text-dim hover:text-white"
-          >
-            {Math.round(zoom * 100)}%
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              title="Zoom presets"
+              onClick={() => setZoomMenuOpen((v) => !v)}
+              className="w-12 text-center text-[10px] tabular-nums text-dim hover:text-white"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            {zoomMenuOpen && (
+              <div className="absolute bottom-full left-1/2 z-50 mb-1.5 w-36 -translate-x-1/2 overflow-hidden rounded-ink border border-line bg-surface shadow-xl">
+                <ZoomMenuRow label="Fit Screen" kbd="⌘0" onClick={() => { zoomFit(); setZoomMenuOpen(false) }} />
+                <ZoomMenuRow label="Fill Screen" onClick={() => { zoomFill(); setZoomMenuOpen(false) }} />
+                <div className="mx-2 h-px bg-line" />
+                {[25, 50, 100, 200, 400, 800].map((p) => (
+                  <ZoomMenuRow
+                    key={p}
+                    label={`${p}%`}
+                    active={Math.round(zoom * 100) === p}
+                    onClick={() => { zoomTo(p / 100); setZoomMenuOpen(false) }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
           <IconBtn icon="zoomIn" title="Zoom in" onClick={() => zoomBy(1.25)} />
-          <IconBtn icon="fit" title="Fit" onClick={zoomFit} />
+          <IconBtn icon="fit" title="Fit screen" onClick={zoomFit} />
           <div className="mx-1.5 h-5 w-px bg-line" />
           <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
           <IconBtn icon="sparkle" title="AI Suite" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
@@ -2786,6 +2860,23 @@ function PresetRow({ p, active, onClick, query = '' }) {
 
 /* ----------------------------- tab: Quick actions -------------------------- */
 // Spec §7 — 20 one-click effects in 4 groups.
+/* --------------------------- zoom preset row (menu) ------------------------- */
+function ZoomMenuRow({ label, kbd, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center justify-between px-3 py-1.5 text-left text-[11px] transition-colors',
+        active ? 'bg-white/10 font-semibold text-white' : 'text-dim hover:bg-white/5 hover:text-white',
+      )}
+    >
+      <span>{label}</span>
+      {kbd && <span className="text-[9px] text-mute">{kbd}</span>}
+    </button>
+  )
+}
+
 /* ------------------------------ tab: Text (Photoshop-style) ------------------ */
 // Character (font, style, size, tracking, leading, color) + Paragraph
 // (alignment). Multi-line text lets you lay out lines of different widths
