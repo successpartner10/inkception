@@ -511,7 +511,11 @@ export function Editor({ project, onBack }) {
     setFilters({ ...hist[p] })
   }, [hist, histPos])
 
-  const resetAll = () => commitFilters({ ...DEFAULT_FILTERS })
+  const resetAll = () => {
+    // set the live values AND push to history so Reset actually applies
+    setFilters({ ...DEFAULT_FILTERS })
+    commitFilters({ ...DEFAULT_FILTERS })
+  }
   const canUndo = histPos > 0
   const canRedo = histPos < hist.length - 1
 
@@ -1718,6 +1722,8 @@ export function Editor({ project, onBack }) {
           filters={filters}
           setLive={setLive}
           commitFilters={commitFilters}
+          onDone={() => setSheetOpen(false)}
+          showToast={showToast}
         />
       )
     }
@@ -2490,50 +2496,56 @@ function PresetRow({ p, active, onClick }) {
 
 /* ----------------------------- tab: Quick actions -------------------------- */
 // Spec §7 — 20 one-click effects in 4 groups.
-function QuickTab({ fx, setFx, filters, setLive, commitFilters }) {
-  const clampFilter = (key, delta, min = 40, max = 160) =>
+function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToast }) {
+  const act = (msg) => { onDone && onDone(); showToast && showToast(msg, 'check') }
+  const clampFilter = (key, delta, label, min = 40, max = 160) => {
     commitFilters({ ...filters, [key]: Math.min(max, Math.max(min, filters[key] + delta)) })
+    act(label)
+  }
 
-  const toggle = (key) => setFx((f) => ({ ...f, [key]: !f[key] }))
+  const toggle = (key, label) => {
+    setFx((f) => ({ ...f, [key]: !f[key] }))
+    act(label)
+  }
 
   const groups = [
     {
       label: 'Color',
       items: [
-        { label: 'Invert', icon: 'refresh', active: fx.invert, onClick: () => toggle('invert') },
-        { label: 'Black & White', icon: 'image', active: fx.bw, onClick: () => toggle('bw') },
-        { label: 'Sepia', icon: 'clock', active: fx.sepia, onClick: () => toggle('sepia') },
-        { label: 'Vintage', icon: 'archive', active: fx.vintage, onClick: () => toggle('vintage') },
+        { label: 'Invert', icon: 'refresh', active: fx.invert, onClick: () => toggle('invert', 'Inverted now') },
+        { label: 'Black & White', icon: 'image', active: fx.bw, onClick: () => toggle('bw', 'Black & White now') },
+        { label: 'Sepia', icon: 'clock', active: fx.sepia, onClick: () => toggle('sepia', 'Sepia now') },
+        { label: 'Vintage', icon: 'archive', active: fx.vintage, onClick: () => toggle('vintage', 'Vintage now') },
       ],
     },
     {
       label: 'Adjust',
       items: [
-        { label: 'Brighten', icon: 'sun', onClick: () => clampFilter('brightness', 12) },
-        { label: 'Darken', icon: 'moon', onClick: () => clampFilter('brightness', -12) },
-        { label: 'Contrast +', icon: 'sliders', onClick: () => clampFilter('contrast', 10) },
-        { label: 'Contrast −', icon: 'sliders', onClick: () => clampFilter('contrast', -10) },
-        { label: 'Saturate', icon: 'droplet', onClick: () => clampFilter('saturation', 15, 0, 200) },
-        { label: 'Desaturate', icon: 'droplet', onClick: () => commitFilters({ ...filters, saturation: 60 }) },
+        { label: 'Brighten', icon: 'sun', onClick: () => clampFilter('brightness', 12, 'Brightened now') },
+        { label: 'Darken', icon: 'moon', onClick: () => clampFilter('brightness', -12, 'Darkened now') },
+        { label: 'Contrast +', icon: 'sliders', onClick: () => clampFilter('contrast', 10, 'Contrast + now') },
+        { label: 'Contrast −', icon: 'sliders', onClick: () => clampFilter('contrast', -10, 'Contrast − now') },
+        { label: 'Saturate', icon: 'droplet', onClick: () => clampFilter('saturation', 15, 'Saturated now', 0, 200) },
+        { label: 'Desaturate', icon: 'droplet', onClick: () => { commitFilters({ ...filters, saturation: 60 }); act('Desaturated now') } },
       ],
     },
     {
       label: 'Filter',
       items: [
-        { label: 'Blur', icon: 'wind', active: fx.blur > 0, onClick: () => setFx((f) => ({ ...f, blur: f.blur > 0 ? 0 : 0.35 })) },
-        { label: 'Blur More', icon: 'wind', active: fx.blur >= 0.7, onClick: () => setFx((f) => ({ ...f, blur: f.blur >= 0.7 ? 0 : 0.9 })) },
-        { label: 'Sharpen', icon: 'focus', active: fx.sharpen, onClick: () => toggle('sharpen') },
-        { label: 'Noise', icon: 'sparkle', active: fx.noise > 0, onClick: () => setFx((f) => ({ ...f, noise: f.noise > 0 ? 0 : 60 })) },
-        { label: 'Pixelate', icon: 'grid', active: fx.pixelate > 0, onClick: () => setFx((f) => ({ ...f, pixelate: f.pixelate > 0 ? 0 : 8 })) },
+        { label: 'Blur', icon: 'wind', active: fx.blur > 0, onClick: () => { setFx((f) => ({ ...f, blur: f.blur > 0 ? 0 : 0.35 })); act('Blur now') } },
+        { label: 'Blur More', icon: 'wind', active: fx.blur >= 0.7, onClick: () => { setFx((f) => ({ ...f, blur: f.blur >= 0.7 ? 0 : 0.9 })); act('Blur More now') } },
+        { label: 'Sharpen', icon: 'focus', active: fx.sharpen, onClick: () => toggle('sharpen', 'Sharpened now') },
+        { label: 'Noise', icon: 'sparkle', active: fx.noise > 0, onClick: () => { setFx((f) => ({ ...f, noise: f.noise > 0 ? 0 : 60 })); act('Noise now') } },
+        { label: 'Pixelate', icon: 'grid', active: fx.pixelate > 0, onClick: () => { setFx((f) => ({ ...f, pixelate: f.pixelate > 0 ? 0 : 8 })); act('Pixelate now') } },
       ],
     },
     {
       label: 'Transform',
       items: [
-        { label: 'Flip H', icon: 'flipH', active: fx.flipX, onClick: () => toggle('flipX') },
-        { label: 'Flip V', icon: 'flipV', active: fx.flipY, onClick: () => toggle('flipY') },
-        { label: 'Rotate 90°', icon: 'rotateCw', onClick: () => setFx((f) => ({ ...f, angle: (f.angle + 90) % 360 })) },
-        { label: 'Reset All', icon: 'refresh', onClick: () => { setFx({ ...QUICK_DEFAULTS }); commitFilters({ ...DEFAULT_FILTERS }) } },
+        { label: 'Flip H', icon: 'flipH', active: fx.flipX, onClick: () => toggle('flipX', 'Flipped horizontal') },
+        { label: 'Flip V', icon: 'flipV', active: fx.flipY, onClick: () => toggle('flipY', 'Flipped vertical') },
+        { label: 'Rotate 90°', icon: 'rotateCw', onClick: () => { setFx((f) => ({ ...f, angle: (f.angle + 90) % 360 })); act('Rotated 90° now') } },
+        { label: 'Reset All', icon: 'refresh', onClick: () => { setFx({ ...QUICK_DEFAULTS }); commitFilters({ ...DEFAULT_FILTERS }); act('Reset all now') } },
       ],
     },
   ]
