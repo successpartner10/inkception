@@ -196,6 +196,7 @@ export function Editor({ project, onBack }) {
   const [cropSel, setCropSel] = useState(null) // {x,y,w,h} in display px
   const cropRef = useRef(null) // drag start point
   const cropOverlayRect = useRef(null)
+  const dragTimerRef = useRef(null)
 
   useEffect(() => {
     beforeAfterRef.current = beforeAfter
@@ -206,6 +207,16 @@ export function Editor({ project, onBack }) {
     // canvas preview (and the progress overlay) stay visible — no manual
     // menu closing needed.
     if (busy) setSheetOpen(false)
+    // Watchdog: a stuck/hung job must NEVER permanently block the image.
+    // Auto-clear after 90s so the canvas is always recoverable.
+    if (busy) {
+      const t = setTimeout(() => {
+        clearInterval(busyTimerRef.current)
+        setBusy(null)
+        showToast('Operation timed out — the canvas is unlocked', 'info')
+      }, 90000)
+      return () => clearTimeout(t)
+    }
   }, [busy])
   useEffect(() => {
     filtersRef.current = filters
@@ -1855,11 +1866,22 @@ export function Editor({ project, onBack }) {
           onDragOver={(e) => {
             e.preventDefault()
             setDragOver(true)
+            // hard safety: the "Drop image" hint can never stick around
+            clearTimeout(dragTimerRef.current)
+            dragTimerRef.current = setTimeout(() => setDragOver(false), 2500)
           }}
-          onDragLeave={() => setDragOver(false)}
+          onDragLeave={() => {
+            setDragOver(false)
+            clearTimeout(dragTimerRef.current)
+          }}
+          onDragEnd={() => {
+            setDragOver(false)
+            clearTimeout(dragTimerRef.current)
+          }}
           onDrop={async (e) => {
             e.preventDefault()
             setDragOver(false)
+            clearTimeout(dragTimerRef.current)
             const f = e.dataTransfer.files && e.dataTransfer.files[0]
             if (f && f.type.startsWith('image/')) {
               const url = URL.createObjectURL(f)
@@ -2025,7 +2047,11 @@ export function Editor({ project, onBack }) {
             )}
 
             {busy && (
-              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/70">
+              <div
+                className="absolute inset-0 z-30 flex cursor-pointer flex-col items-center justify-center gap-4 bg-black/70"
+                onClick={skipAi}
+                title="Tap anywhere to skip"
+              >
                 <span className="h-8 w-8 animate-spin rounded-full border border-white/25 border-t-white" />
                 <div className="text-center">
                   <div className="text-sm font-semibold text-white">{busyNowPhrase(busy.title)}</div>
@@ -2034,13 +2060,9 @@ export function Editor({ project, onBack }) {
                 <div className="h-[2px] w-40 overflow-hidden bg-line-2">
                   <div className="h-full bg-white transition-all duration-300" style={{ width: `${busy.progress}%` }} />
                 </div>
-                <button
-                  type="button"
-                  onClick={skipAi}
-                  className="label-xs text-mute transition-colors hover:text-white"
-                >
-                  Skip
-                </button>
+                <span className="label-xs text-mute underline-offset-2 hover:text-white hover:underline">
+                  Tap anywhere to skip
+                </span>
               </div>
             )}
 
