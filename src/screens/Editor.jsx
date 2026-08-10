@@ -167,6 +167,9 @@ export function Editor({ project, onBack }) {
   const [textFont, setTextFont] = useState(DEFAULT_FONT)
   const [textSize, setTextSize] = useState(DEFAULT_FONT_SIZE)
   const [activeText, setActiveText] = useState(false)
+  const [cropSel, setCropSel] = useState(null) // {x,y,w,h} in display px
+  const cropRef = useRef(null) // drag start point
+  const cropOverlayRect = useRef(null)
 
   useEffect(() => {
     beforeAfterRef.current = beforeAfter
@@ -360,7 +363,7 @@ export function Editor({ project, onBack }) {
       try {
         const el = await loadImageElement(src)
         naturalRef.current = { w: el.naturalWidth || el.width, h: el.naturalHeight || el.height }
-        computeFit()
+          computeFit()
       } catch {
         showToast('Could not load image', 'close')
       }
@@ -694,16 +697,19 @@ export function Editor({ project, onBack }) {
       setTool('select')
       setBusy({ kind: 'real', title: 'Collage Studio', step: 'Arranging photos…', progress: 40 })
       try {
-        const slots = computeSlots(layoutId, urls.length, W, H)
+        // cap photos at the layout's max so a too-large selection still builds
+        const meta = COLLAGE_LAYOUTS.find((l) => l.id === layoutId)
+        const used = meta ? urls.slice(0, meta.max) : urls
+        const slots = computeSlots(layoutId, used.length, W, H)
         const rot =
           layoutId === 'polaroid'
             ? [-6, 6, 5, -5, 4]
             : layoutId === 'overlap'
               ? [-3, 3, -2, 2, -2]
               : null
-        for (let i = 0; i < slots.length && i < urls.length; i++) {
+        for (let i = 0; i < slots.length && i < used.length; i++) {
           const slot = slots[i]
-          const img = await FabricImage.fromURL(urls[i])
+          const img = await FabricImage.fromURL(used[i])
           const px = { x: slot.x * W, y: slot.y * H, w: slot.w * W, h: slot.h * H }
           const s = Math.min(px.w / img.width, px.h / img.height)
           img.set({
@@ -720,7 +726,7 @@ export function Editor({ project, onBack }) {
             img.set({ left: img.left + (i % 5) * 22, top: img.top + (i % 5) * 22 })
           }
           c.add(img)
-          decompRef.current.push({ id: `col-${Date.now()}-${i}`, img, name: `Photo ${i + 1}`, type: 'Collage', dataUrl: urls[i], visible: true })
+          decompRef.current.push({ id: `col-${Date.now()}-${i}`, img, name: `Photo ${i + 1}`, type: 'Collage', dataUrl: used[i], visible: true })
         }
         c.requestRenderAll()
         setExtraLayers(
@@ -729,10 +735,10 @@ export function Editor({ project, onBack }) {
         setBusy(null)
         showToast(
           placement === 'new'
-            ? `New ${size.w}×${size.h} canvas with ${urls.length} photos`
+            ? `New ${size.w}×${size.h} canvas with ${used.length} photos`
             : append
-              ? `Added ${urls.length} photos to the canvas`
-              : `Collage built — ${urls.length} photos on canvas`,
+              ? `Added ${used.length} photos to the canvas`
+              : `Collage built — ${used.length} photos on canvas`,
           'grid',
         )
       } catch {
@@ -1159,6 +1165,85 @@ export function Editor({ project, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [commitFilters, resetAll, undo, redo],
   )
+
+  /* --------------------------- manual crop tool ---------------------------- */
+  const startCrop = () => {
+    setTool('crop')
+    setCropSel(null)
+    showToast('Drag on the image to select a crop area', 'crop')
+  }
+
+  const cropPointerDown = (e) => {
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const b = e.currentTarget.getBoundingClientRect()
+    cropOverlayRect.current = { w: b.width, h: b.height }
+    const x = e.clientX - b.left
+    const y = e.clientY - b.top
+    cropRef.current = { x, y }
+    setCropSel({ x, y, w: 0, h: 0 })
+  }
+  const cropPointerMove = (e) => {
+    const s = cropRef.current
+    if (!s) return
+    const b = e.currentTarget.getBoundingClientRect()
+    const x = Math.min(Math.max(e.clientX - b.left, 0), b.width)
+    const y = Math.min(Math.max(e.clientY - b.top, 0), b.height)
+    setCropSel({
+      x: Math.min(s.x, x),
+      y: Math.min(s.y, y),
+      w: Math.abs(x - s.x),
+      h: Math.abs(y - s.y),
+    })
+  }
+  const cropPointerUp = () => {
+    cropRef.current = null
+  }
+
+  const applyCrop = async () => {
+    const sel = cropSel
+    const src = imageSrcRef.current
+    const drRaw = cropOverlayRect.current
+    const dr = drRaw && typeof drRaw.getBoundingClientRect === 'function' ? drRaw.getBoundingClientRect() : drRaw
+    if (!sel || !src || !dr || !dr.w || !dr.h || sel.w < 4 || sel.h < 4) {
+      showToast('Drag a selection on the image first', 'info')
+      return
+    }
+    // display → natural coordinates
+    const sx = (sel.x / dr.w) * naturalRef.current.w
+    const sy = (sel.y / dr.h) * naturalRef.current.h
+    const sw = (sel.w / dr.w) * naturalRef.current.w
+    const sh = (sel.h / dr.h) * naturalRef.current.h
+    setBusy({ kind: 'real', title: 'Crop', step: 'Cropping…', progress: 50 })
+    try {
+      const img = await loadImageElement(src)
+      const cv = document.createElement('canvas')
+      cv.width = Math.max(2, Math.round(sw))
+      cv.height = Math.max(2, Math.round(sh))
+      await loadIntoCanvas(cv.toDataURL('image/png'))
+      setBusy(null)
+      setTool('select')
+      setCropSel(null)
+      showToast(`Cropped to ${Math.round(sw)}×${Math.round(sh)}`, 'crop')
+      return
+      const ctx = cv.getContext('2d')
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cv.width, cv.height)
+      await loadIntoCanvas(cv.toDataURL('image/png'))
+      setBusy(null)
+      setTool('select')
+      setCropSel(null)
+      showToast(`Cropped to ${Math.round(sw)}×${Math.round(sh)}`, 'crop')
+    } catch {
+      setBusy(null)
+      showToast('Crop failed', 'close')
+    }
+  }
+
+  const cancelCrop = () => {
+    setTool('select')
+    setCropSel(null)
+    cropRef.current = null
+  }
 
   /* ------------------------- text font / size controls ---------------------- */
   useEffect(() => {
@@ -1666,6 +1751,44 @@ export function Editor({ project, onBack }) {
               />
             )}
 
+            {tool === 'crop' && displayRect && (
+              <>
+                <div
+                  ref={cropOverlayRect}
+                  className="absolute z-20 cursor-crosshair touch-none"
+                  style={{ left: displayRect.x, top: displayRect.y, width: displayRect.w, height: displayRect.h }}
+                  onPointerDown={cropPointerDown}
+                  onPointerMove={(e) => e.buttons === 1 && cropPointerMove(e)}
+                  onPointerUp={cropPointerUp}
+                  onPointerCancel={cropPointerUp}
+                >
+                  {/* dim outside the selection */}
+                  {cropSel && cropSel.w > 0 && (
+                    <>
+                      <div className="absolute bg-black/45" style={{ top: 0, left: 0, width: displayRect.w, height: cropSel.y }} />
+                      <div className="absolute bg-black/45" style={{ top: cropSel.y, left: 0, width: cropSel.x, height: cropSel.h }} />
+                      <div className="absolute bg-black/45" style={{ top: cropSel.y, right: 0, left: cropSel.x + cropSel.w, height: cropSel.h }} />
+                      <div className="absolute bg-black/45" style={{ top: cropSel.y + cropSel.h, left: 0, width: displayRect.w, height: displayRect.h - cropSel.y - cropSel.h }} />
+                      <div
+                        className="absolute border border-white"
+                        style={{ top: cropSel.y, left: cropSel.x, width: cropSel.w, height: cropSel.h }}
+                      />
+                      <span className="absolute rounded-ink bg-black/60 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-white" style={{ top: cropSel.y - 18, left: cropSel.x }}>
+                        {Math.round((cropSel.w / displayRect.w) * naturalRef.current.w)}×{Math.round((cropSel.h / displayRect.h) * naturalRef.current.h)}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="absolute inset-x-0 bottom-3 z-30 flex justify-center">
+                  <div className="flex items-center gap-2 rounded-ink border border-line bg-surface px-3 py-2">
+                    <span className="label-xs text-dim">Drag to select crop area</span>
+                    <Button variant="ghost" size="sm" onClick={cancelCrop}>Cancel</Button>
+                    <Button variant="primary" size="sm" icon="check" onClick={applyCrop}>Apply Crop</Button>
+                  </div>
+                </div>
+              </>
+            )}
+
             {eraseMode && (
               <div className="absolute inset-x-0 bottom-3 z-30 flex justify-center">
                 <div className="flex items-center gap-2 rounded-ink border border-line bg-surface px-3 py-2">
@@ -1788,7 +1911,8 @@ export function Editor({ project, onBack }) {
           </>
         )}
         <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
-        <IconBtn icon="crop" title="Smart Crop (subject-aware)" onClick={() => setCropOpen(true)} />
+        <IconBtn icon="crop" title="Crop (drag to select)" active={tool === 'crop'} onClick={startCrop} />
+        <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => setCropOpen(true)} />
         <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
         <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
         <div className="mx-1.5 h-5 w-px shrink-0 bg-line" />
@@ -1945,7 +2069,7 @@ export function Editor({ project, onBack }) {
         subtitle="2–12 photos · 12 AI layouts"
         width="max-w-xl"
       >
-        <CollageBody onBuild={buildCollage} />
+        <CollageBody onBuild={buildCollage} showToast={showToast} />
       </Modal>
 
       {/* ----------------------------- upscale modal ------------------------------ */}
@@ -2732,7 +2856,7 @@ function LayoutPreview({ layoutId, active }) {
 /* ----------------------------- collage studio body ------------------------ */
 // New-Image sizes mirror the full export matrix, so a collage can be built
 // at any size you can export to.
-function CollageBody({ onBuild }) {
+function CollageBody({ onBuild, showToast }) {
   const [photos, setPhotos] = useState([]) // { url, name }
   const [layout, setLayout] = useState('grid4')
   const [placement, setPlacement] = useState('current') // 'current' | 'new'
@@ -2907,15 +3031,24 @@ function CollageBody({ onBuild }) {
             <button
               key={l.id}
               type="button"
-              onClick={() => setLayout(l.id)}
-              disabled={!ok}
+              onClick={() => {
+                if (photos.length < l.min) {
+                  showToast(`Add ${l.min - photos.length} more photo${l.min - photos.length === 1 ? '' : 's'} for ${l.name}`, 'info')
+                  return
+                }
+                if (photos.length > l.max) {
+                  showToast(`${l.name} fits up to ${l.max} — building with the first ${l.max}`, 'info')
+                }
+                setLayout(l.id)
+              }}
+              title={ok ? l.name : `${l.name} needs ${l.min}–${l.max} photos`}
               className={cn(
                 'group rounded-ink border p-1.5 transition-colors',
                 layout === l.id && ok
                   ? 'border-white bg-surface-2'
                   : ok
                     ? 'border-line hover:border-line-2'
-                    : 'border-line opacity-35',
+                    : 'border-line opacity-60 hover:border-line-2',
               )}
             >
               <LayoutPreview layoutId={l.id} active={layout === l.id && ok} />
@@ -2931,6 +3064,10 @@ function CollageBody({ onBuild }) {
           )
         })}
       </div>
+      <p className="mt-2 text-[10px] text-mute">
+        {photos.length} photo{photos.length === 1 ? '' : 's'} selected · {current ? `${current.min}–${current.max} for ${current.name}` : 'pick a template'}
+        {photos.length > 0 && current && photos.length < current.min ? ` · add ${current.min - photos.length} more` : ''}
+      </p>
 
       <div className="mt-5 flex items-center justify-between gap-3">
         <span className="text-[10px] text-mute">
