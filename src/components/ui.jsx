@@ -162,7 +162,11 @@ export function Toast({ toast, onDone }) {
 
   if (!toast) return null
   return (
-    <div className="fixed bottom-6 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-ink bg-white px-4 py-2.5 text-xs font-semibold text-black ring-1 ring-black/20">
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-6 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-ink bg-white px-4 py-2.5 text-xs font-semibold text-black ring-1 ring-black/20"
+    >
       <Icon name={toast.icon ?? 'check'} size={14} />
       {toast.msg}
     </div>

@@ -163,7 +163,7 @@ const LAYER_DEFAULTS = [
   { id: 'backdrop', name: 'Backdrop', type: 'Fill', visible: true, locked: false },
 ]
 
-export function Editor({ project, onBack }) {
+export function Editor({ project, onBack, onRename = () => {} }) {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   /* ------------------------------ canvas refs ------------------------------ */
@@ -283,12 +283,47 @@ export function Editor({ project, onBack }) {
   const [theme, setThemeState] = useState(getTheme)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const changeTheme = (t) => { persistTheme(t); setThemeState(t) }
+  // privacy: forget learning (recipes + stats) or wipe ALL local data
+  const forgetLearning = () => {
+    try {
+      localStorage.removeItem('inkception.recipes.v1')
+      localStorage.removeItem('inkception.stats.v1')
+      localStorage.removeItem('inkception.enhance')
+    } catch { /* ignore */ }
+    persistRecipes([])
+    statsRef.current = {}
+    recentRef.current = []
+    prevKeyRef.current = null
+    setStatsVer((v) => v + 1)
+    setSettingsOpen(false)
+    showToast('Learning forgotten — recipes & stats cleared', 'refresh')
+  }
+  const clearAllLocalData = () => {
+    try {
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('inkception.')) localStorage.removeItem(k)
+      })
+    } catch { /* ignore */ }
+    // back to the gallery with a fresh slate
+    window.location.href = import.meta.env.BASE_URL
+  }
   // enhance strength + reduce chips (Auto Enhance is tunable, never too strong)
   const [enhanceOpen, setEnhanceOpen] = useState(false)
-  const [enhanceAmt, setEnhanceAmt] = useState(60)
-  const [enhanceRedux, setEnhanceRedux] = useState({ sat: false, warm: false, bright: false })
+  // persisted per device — tune once, stays tuned
+  const [enhanceAmt, setEnhanceAmt] = useState(() => {
+    try { const v = JSON.parse(localStorage.getItem('inkception.enhance') || 'null'); return v && typeof v.amt === 'number' ? v.amt : 60 } catch { return 60 }
+  })
+  const [enhanceRedux, setEnhanceRedux] = useState(() => {
+    try { const v = JSON.parse(localStorage.getItem('inkception.enhance') || 'null'); return v && v.redux ? v.redux : { sat: false, warm: false, bright: false } } catch { return { sat: false, warm: false, bright: false } }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('inkception.enhance', JSON.stringify({ amt: enhanceAmt, redux: enhanceRedux })) } catch { /* ignore */ }
+  }, [enhanceAmt, enhanceRedux])
   // effects gallery — every Action previewed on YOUR image
   const [galleryOpen, setGalleryOpen] = useState(false)
+  // rename project inline in the header
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(project.name)
   // selection engine
   const [selMask, setSelMask] = useState(null) // {w,h,data:Uint8Array} natural res
   const selRef = useRef(null)
@@ -321,7 +356,6 @@ export function Editor({ project, onBack }) {
     justDoItRef.current = justDoIt
     try { localStorage.setItem('inkception.justdoit', justDoIt ? '1' : '0') } catch { /* ignore */ }
   }, [justDoIt])
-  const [moreOpenGroup, setMoreOpenGroup] = useState(null)
   const [levelsOpen, setLevelsOpen] = useState(false)
   const [menubar, setMenubar] = useState(null) // which menu is open
 
@@ -2325,10 +2359,10 @@ export function Editor({ project, onBack }) {
       text: () => setTool('text'),
       crop: () => startCrop(),
       compare: () => setBeforeAfter(true),
-      flip: () => { setTab('quick') },
-      blur: () => { setTab('quick') },
-      'blur-more': () => { setTab('quick') },
-      sharpen: () => { setTab('quick') },
+      flip: () => openTab('actions'),
+      blur: () => startErase('blur'),
+      'blur-more': () => startErase('blur'),
+      sharpen: () => openTab('actions'),
     }
     if (map[action]) map[action]()
     else if (action === 'text') setTool('text')
@@ -2394,7 +2428,7 @@ export function Editor({ project, onBack }) {
         exposure: () => { setTab('adjust'); setHighlightTarget('Brightness') },
         contrast: () => { setTab('adjust'); setHighlightTarget('Contrast') },
         saturation: () => { setTab('adjust'); setHighlightTarget('Saturation') },
-        sharpen: () => { setTab('quick'); setHighlightTarget('Sharpen') },
+        sharpen: () => { openTab('actions'); setHighlightTarget('Sharpen') },
         blur: () => startErase('blur'),
         redeye: () => startPaintTool('redeye'),
         bg: () => openModal(setReplaceOpen),
@@ -2514,9 +2548,9 @@ export function Editor({ project, onBack }) {
           text: 'text', brush: 'brush', crop: 'crop', dropper: 'dropper',
         }
         if (map[payload.tool]) setTool(map[payload.tool])
-        else if (payload.tool === 'wand') { setTab('more'); setMoreOpenGroup('Selection'); startSelectionTool('wand') }
-        else if (payload.tool === 'lasso') { setTab('more'); setMoreOpenGroup('Selection'); startSelectionTool('lasso') }
-        else if (payload.tool === 'marquee') { setTab('more'); setMoreOpenGroup('Selection'); startSelectionTool('marquee-rect') }
+        else if (payload.tool === 'wand') startSelectionTool('wand')
+        else if (payload.tool === 'lasso') startSelectionTool('lasso')
+        else if (payload.tool === 'marquee') startSelectionTool('marquee-rect')
         return
       }
       if (action === 'zoom' && payload) {
@@ -2526,11 +2560,8 @@ export function Editor({ project, onBack }) {
         return
       }
       if (action === 'cropamt' && payload) { runCropAmount(payload.amt); return }
-      if (action === 'filter' && payload) { setTab('more'); setMoreOpenGroup('Filters'); runFilter(payload.name); return }
+      if (action === 'filter' && payload) { runFilter(payload.name); return }
       if (action === 'moretool' && payload) {
-        setTab('more')
-        const gmap = { clone: 'Retouch & Paint', heal: 'Retouch & Paint', redeye: 'Retouch & Paint', bucket: 'Retouch & Paint', gradient: 'Retouch & Paint', curves: 'Adjustments', levels: 'Adjustments', polygon: 'Shapes & Tools', triangle: 'Shapes & Tools', star: 'Shapes & Tools', warp: 'Shapes & Tools' }
-        setMoreOpenGroup(gmap[payload.key] || 'Shapes & Tools')
         const map = {
           clone: () => startPaintTool('clone'), heal: () => startPaintTool('heal'),
           redeye: () => startPaintTool('redeye'), bucket: () => startPaintTool('bucket'),
@@ -3128,6 +3159,13 @@ export function Editor({ project, onBack }) {
   }
 
   /* --------------------------------- helpers -------------------------------- */
+  const commitRename = () => {
+    const name = (nameDraft || '').trim()
+    if (name && name !== project.name) onRename(name)
+    else setNameDraft(project.name)
+    setEditingName(false)
+  }
+
   const openTab = (t) => {
     setTab(t)
     setPanelCollapsed(false) // always reveal the panel when opening a tab
@@ -3142,6 +3180,28 @@ export function Editor({ project, onBack }) {
     e.target.value = ''
   }
 
+  // Paste an image from the clipboard (screenshots, copied files) → canvas.
+  useEffect(() => {
+    const onPaste = (e) => {
+      const items = e.clipboardData && e.clipboardData.items
+      if (!items) return
+      for (const it of items) {
+        if (it.type && it.type.startsWith('image/')) {
+          e.preventDefault()
+          const f = it.getAsFile()
+          if (f) {
+            const url = URL.createObjectURL(f)
+            loadIntoCanvas(url)
+            showToast('Pasted image — ready to edit', 'upload')
+          }
+          return
+        }
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [loadIntoCanvas, showToast])
+
   /* ------------------- global search results (tools + how-tos) ------------------ */
   // One query → one dropdown listing matching tools, how-tos, collage sizes,
   // export presets. Clicking jumps to the tool.
@@ -3153,6 +3213,33 @@ export function Editor({ project, onBack }) {
     { id: 'tool-dropper', label: 'Eyedropper', group: 'Tool', icon: 'dropper', go: () => setTool('dropper') },
     { id: 'tool-blurbrush', label: 'Blur brush', group: 'Tool', icon: 'wind', go: () => startErase('blur') },
     { id: 'tool-erasebrush', label: 'Erase brush', group: 'Tool', icon: 'eraser', go: () => startErase('alpha') },
+    // advanced tools (formerly the More tab) — folded into search + Actions
+    { id: 'tool-wand', label: 'Magic Wand', group: 'Selection', icon: 'dropper', go: () => startSelectionTool('wand') },
+    { id: 'tool-lasso', label: 'Lasso', group: 'Selection', icon: 'penTool', go: () => startSelectionTool('lasso') },
+    { id: 'tool-marquee', label: 'Rect Marquee', group: 'Selection', icon: 'shape', go: () => startSelectionTool('marquee-rect') },
+    { id: 'tool-marquee-e', label: 'Ellipse Marquee', group: 'Selection', icon: 'circle', go: () => startSelectionTool('marquee-ellipse') },
+    { id: 'tool-clone', label: 'Clone Stamp', group: 'Retouch', icon: 'copy', go: () => startPaintTool('clone') },
+    { id: 'tool-heal', label: 'Healing Brush', group: 'Retouch', icon: 'brush', go: () => startPaintTool('heal') },
+    { id: 'tool-redeye', label: 'Red Eye', group: 'Retouch', icon: 'eye', go: () => startPaintTool('redeye') },
+    { id: 'tool-bucket', label: 'Paint Bucket', group: 'Retouch', icon: 'droplet', go: () => startPaintTool('bucket') },
+    { id: 'tool-gradient', label: 'Gradient', group: 'Retouch', icon: 'sun', go: () => startPaintTool('gradient') },
+    { id: 'tool-curves', label: 'Curves', group: 'Adjust', icon: 'sliders', go: () => openModal(setCurvesOpen) },
+    { id: 'tool-levels', label: 'Levels', group: 'Adjust', icon: 'sliders', go: () => openModal(setLevelsOpen) },
+    { id: 'tool-polygon', label: 'Polygon', group: 'Shapes', icon: 'shape', go: () => setShapeTool('polygon') },
+    { id: 'tool-triangle', label: 'Triangle', group: 'Shapes', icon: 'shape', go: () => setShapeTool('triangle') },
+    { id: 'tool-star', label: 'Star', group: 'Shapes', icon: 'sparkle', go: () => setShapeTool('star') },
+    { id: 'tool-warp', label: 'Warp', group: 'Shapes', icon: 'refresh', go: () => openModal(setWarpOpen) },
+    { id: 'tool-sharpenmore', label: 'Sharpen More', group: 'Filter', icon: 'focus', go: () => runFilter('sharpenMore') },
+    { id: 'tool-emboss', label: 'Emboss', group: 'Filter', icon: 'layers', go: () => runFilter('emboss') },
+    { id: 'tool-findedges', label: 'Find Edges', group: 'Filter', icon: 'penTool', go: () => runFilter('findEdges') },
+    { id: 'tool-solarize', label: 'Solarize', group: 'Filter', icon: 'sun', go: () => runFilter('solarize') },
+    { id: 'tool-twirl', label: 'Twirl', group: 'Filter', icon: 'rotateCw', go: () => runFilter('twirl') },
+    { id: 'tool-pinch', label: 'Pinch', group: 'Filter', icon: 'sparkle', go: () => runFilter('pinch') },
+    { id: 'tool-ripple', label: 'Ripple', group: 'Filter', icon: 'wind', go: () => runFilter('ripple') },
+    { id: 'tool-zigzag', label: 'ZigZag', group: 'Filter', icon: 'wind', go: () => runFilter('zigzag') },
+    { id: 'tool-glass', label: 'Glass', group: 'Filter', icon: 'wind', go: () => runFilter('glass') },
+    { id: 'tool-spherical', label: 'Spherical', group: 'Filter', icon: 'focus', go: () => runFilter('spherical') },
+    { id: 'tool-sharpenedges', label: 'Sharpen Edges', group: 'Filter', icon: 'focus', go: () => runFilter('sharpenEdges') },
     ...HOWTOS.map((h) => ({ id: 'how-' + h.id, label: h.q, group: 'How do I…?', icon: 'sparkle', go: () => { setHowtoOpen(true) } })),
     ...EXPORT_PRESETS.slice(0, 27).map((p) => ({ id: 'preset-' + p.id, label: p.name, group: 'Export size', icon: PLATFORM_ICONS[p.platform], go: () => { openModal(setExportOpen); setPreset(p.id) } })),
     ...recipes.map((r) => ({ id: 'recipe-' + r.id, label: 'Run recipe: ' + r.name, group: 'Recipes', icon: 'pin', go: () => runRecipe(r) })),
@@ -3172,21 +3259,6 @@ export function Editor({ project, onBack }) {
   /* ------------------------------ panel renderer ----------------------------- */
   const renderPanel = () => {
     if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => openModal(setEnhanceOpen), resetAll, isDefault: isDefaultFilters(filters), busy, highlightTarget }} />
-    if (tab === 'quick') {
-      return (
-        <QuickTab
-          fx={fx}
-          setFx={(u) => { pushHistory(); setFx(u) }}
-          filters={filters}
-          setLive={setLive}
-          commitFilters={commitFilters}
-          showToast={showToast}
-          search={globalSearch}
-          onDone={() => !isDesktop && setPanelCollapsed(true)}
-          highlightTarget={highlightTarget}
-        />
-      )
-    }
     if (tab === 'actions') {
       return (
         <ActionsTab
@@ -3277,26 +3349,6 @@ export function Editor({ project, onBack }) {
         />
       )
     }
-    if (tab === 'more') {
-      return (
-        <MoreTab
-          search={globalSearch}
-          onAsk={() => openModal(setHowtoOpen)}
-          onFilter={runFilter}
-          onSelection={startSelectionTool}
-          onClone={() => startPaintTool('clone')}
-          onHeal={() => startPaintTool('heal')}
-          onRedEye={() => startPaintTool('redeye')}
-          onBucket={() => startPaintTool('bucket')}
-          onGradient={() => startPaintTool('gradient')}
-          onCurves={() => { setCurvesOpen(true); setMoreOpenGroup('Adjustments') }}
-          onLevels={() => { setLevelsOpen(true); setMoreOpenGroup('Adjustments') }}
-          openGroups={moreOpenGroup ? [moreOpenGroup] : []}
-          onShape={(s2) => setShapeTool(s2)}
-          onWarp={() => openModal(setWarpOpen)}
-        />
-      )
-    }
     return (
       <LayersTab
         layers={layers}
@@ -3338,7 +3390,30 @@ export function Editor({ project, onBack }) {
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-3 sm:px-4">
         <IconBtn icon="chevronLeft" title="Back to gallery" onClick={onBack} />
         <div className="ml-2 flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold">{project.name}</span>
+          {editingName ? (
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename()
+                if (e.key === 'Escape') { setNameDraft(project.name); setEditingName(false) }
+              }}
+              className="w-40 rounded-ink border border-line bg-surface px-2 py-0.5 text-sm font-semibold text-fg focus:border-white focus:outline-none"
+              aria-label="Project name"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setNameDraft(project.name); setEditingName(true) }}
+              title="Rename project"
+              className="group flex min-w-0 items-center gap-1.5 rounded-ink px-1 py-0.5 text-left transition-colors hover:bg-white/5"
+            >
+              <span className="truncate text-sm font-semibold">{project.name}</span>
+              <Icon name="pencil" size={11} className="shrink-0 text-mute opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
+          )}
           <Chip className="hidden sm:inline-flex">{project.layers} Layers</Chip>
         </div>
         <div className="relative mx-2 flex min-w-0 flex-1 items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white sm:max-w-xs">
@@ -3349,6 +3424,7 @@ export function Editor({ project, onBack }) {
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
             placeholder="Search tools, how-to, sizes…"
+            aria-label="Search tools, how-to and sizes"
             className="h-8 w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
           />
           {globalSearch && (
@@ -4253,7 +4329,7 @@ export function Editor({ project, onBack }) {
         onSave={saveRecipeDraft}
       />
 
-      {/* settings — theme presets + AI mode */}
+      {/* settings — theme presets + AI mode + shortcuts + privacy */}
       <SettingsModal
         open={settingsOpen}
         theme={theme}
@@ -4261,6 +4337,8 @@ export function Editor({ project, onBack }) {
         justDoIt={justDoIt}
         setJustDoIt={setJustDoIt}
         onClose={() => setSettingsOpen(false)}
+        onForgetLearning={forgetLearning}
+        onClearAll={clearAllLocalData}
       />
 
       {/* enhance — strength slider + reduce chips + region */}
@@ -4372,144 +4450,6 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
 /* ------------------------------ tab: More (advanced tools) -------------------- */
 // Everything advanced lives here so the main one-click tabs stay clean.
 // The global search also finds these.
-function MoreTab({ search = '', onAsk, onFilter, onSelection, onClone, onHeal, onRedEye, onBucket, onGradient, onCurves, onLevels, onShape, onWarp, openGroups = [] }) {
-  const q = String(search || '').trim().toLowerCase()
-  const match = (...words) => !q || words.some((w) => w.toLowerCase().includes(q))
-  const [openSet, setOpenSet] = useState(() => new Set(openGroups))
-  // auto-open groups that a command targets
-  useEffect(() => {
-    if (openGroups.length) setOpenSet((prev) => new Set([...prev, ...openGroups]))
-  }, [openGroups.join(',')])
-  const toggleGroup = (g) => setOpenSet((prev) => { const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n })
-
-  const groups = [
-    {
-      label: 'Filters',
-      items: [
-        { t: 'Pinch', d: 'Distort inward', f: () => onFilter('pinch'), icon: 'sparkle' },
-        { t: 'Twirl', d: 'Rotate swirl', f: () => onFilter('twirl'), icon: 'rotateCw' },
-        { t: 'Ripple', d: 'Wavy distortion', f: () => onFilter('ripple'), icon: 'wind' },
-        { t: 'ZigZag', d: 'Pond ripple', f: () => onFilter('zigzag'), icon: 'wind' },
-        { t: 'Glass', d: 'Frosted glass', f: () => onFilter('glass'), icon: 'wind' },
-        { t: 'Spherical', d: 'Fish-eye bulge', f: () => onFilter('spherical'), icon: 'focus' },
-        { t: 'Emboss', d: 'Raised relief', f: () => onFilter('emboss'), icon: 'layers' },
-        { t: 'Find Edges', d: 'Line outline', f: () => onFilter('findEdges'), icon: 'penTool' },
-        { t: 'Glowing Edges', d: 'Neon outline', f: () => onFilter('glowingEdges'), icon: 'sparkle' },
-        { t: 'Solarize', d: 'Partial invert', f: () => onFilter('solarize'), icon: 'sun' },
-        { t: 'Sharpen More', d: 'Strong sharpening', f: () => onFilter('sharpenMore'), icon: 'focus' },
-        { t: 'Sharpen Edges', d: 'Edge contrast', f: () => onFilter('sharpenEdges'), icon: 'focus' },
-        { t: 'Median', d: 'Noise reducer', f: () => onFilter('median'), icon: 'droplet' },
-        { t: 'Add Noise', d: 'Grain effect', f: () => onFilter('addNoise'), icon: 'sparkle' },
-        { t: 'Film Grain', d: 'Cinematic grain', f: () => onFilter('filmGrain'), icon: 'image' },
-        { t: 'Graphic Pen', d: 'Sketch lines', f: () => onFilter('graphicPen'), icon: 'penTool' },
-        { t: 'Halftone', d: 'Dot screen', f: () => onFilter('halftone'), icon: 'grid' },
-        { t: 'Tilt-shift', d: 'Miniature blur', f: () => onFilter('tiltShift'), icon: 'focus' },
-      ],
-    },
-    {
-      label: 'Selection',
-      items: [
-        { t: 'Rect Marquee', d: 'Rect selection', f: () => onSelection('marquee-rect'), icon: 'shape' },
-        { t: 'Ellipse Marquee', d: 'Ellipse selection', f: () => onSelection('marquee-ellipse'), icon: 'circle' },
-        { t: 'Lasso', d: 'Freehand selection', f: () => onSelection('lasso'), icon: 'penTool' },
-        { t: 'Magic Wand', d: 'Color selection', f: () => onSelection('wand'), icon: 'dropper' },
-      ],
-    },
-    {
-      label: 'Retouch & Paint',
-      items: [
-        { t: 'Clone Stamp', d: 'Copy pixels', f: onClone, icon: 'copy' },
-        { t: 'Healing Brush', d: 'Blend flaws', f: onHeal, icon: 'brush' },
-        { t: 'Red Eye', d: 'Fix red eyes', f: onRedEye, icon: 'eye' },
-        { t: 'Paint Bucket', d: 'Flood fill', f: onBucket, icon: 'droplet' },
-        { t: 'Gradient', d: 'Smooth fill', f: onGradient, icon: 'sun' },
-      ],
-    },
-    {
-      label: 'Adjustments',
-      items: [
-        { t: 'Curves', d: 'Tone curve', f: onCurves, icon: 'sliders' },
-        { t: 'Levels', d: 'Histogram levels', f: onLevels, icon: 'sliders' },
-      ],
-    },
-    {
-      label: 'Shapes & Tools',
-      items: [
-        { t: 'Polygon', d: 'Multi-sided shape', f: () => onShape('polygon'), icon: 'shape' },
-        { t: 'Triangle', d: 'Triangle shape', f: () => onShape('triangle'), icon: 'shape' },
-        { t: 'Star', d: 'Star shape', f: () => onShape('star'), icon: 'sparkle' },
-        { t: 'Line', d: 'Straight line', f: () => onShape('line'), icon: 'minus' },
-        { t: 'Warp', d: 'Deform (soon)', f: onWarp, icon: 'refresh' },
-      ],
-    },
-  ]
-
-  const visible = groups
-    .map((g) => ({ ...g, items: g.items.filter((it) => match(it.t, it.d, g.label)) }))
-    .filter((g) => g.items.length > 0)
-
-  return (
-    <div className="p-4">
-      <button
-        type="button"
-        onClick={onAsk}
-        className="mb-3 flex w-full items-center gap-2.5 rounded-ink border border-white/50 bg-surface-2 px-3 py-2.5 text-left transition-colors hover:border-white"
-      >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-ink bg-white text-black">
-          <Icon name="sparkle" size={14} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-fg">Ask “How do I…?”</span>
-          <span className="mt-0.5 block text-[10px] text-mute">Blur the background, remove an object, wrap a logo…</span>
-        </span>
-        <Icon name="chevronRight" size={14} className="shrink-0 text-mute" />
-      </button>
-      <p className="mb-3 rounded-ink border border-line bg-surface-2 px-3 py-2 text-[10px] leading-relaxed text-mute">
-        Advanced tools — kept here so the main panels stay one-click. Everything is also
-        findable via the search bar.
-      </p>
-      {q && visible.length === 0 && <p className="py-6 text-center text-xs text-mute">No advanced tools match “{search}”</p>}
-      {visible.map((g) => {
-        const isOpen = q ? true : openSet.has(g.label)
-        return (
-        <div key={g.label} className="mb-2 last:mb-0 rounded-ink border border-line">
-          <button
-            type="button"
-            onClick={() => toggleGroup(g.label)}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left"
-          >
-            <span className="label-xs text-dim">{g.label}</span>
-            <span className="label-xs text-mute">({g.items.length})</span>
-            <span className="h-px flex-1 bg-line" />
-            <Icon name={isOpen ? 'chevronUp' : 'chevronDown'} size={12} className="text-mute" />
-          </button>
-          {isOpen && (
-          <div className="grid grid-cols-2 gap-1.5 p-2">
-            {g.items.map((it) => (
-              <button
-                key={it.t}
-                type="button"
-                onClick={it.f}
-                className="group flex items-center gap-2 rounded-ink border border-line px-2.5 py-2 text-left transition-colors hover:border-white"
-              >
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center text-mute group-hover:text-white">
-                  <Icon name={it.icon} size={13} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-[11px] font-semibold text-fg"><Highlight text={it.t} query={search} /></span>
-                  <span className="block truncate text-[9px] text-mute">{it.d}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-          )}
-        </div>
-        )
-      })}
-    </div>
-  )
-}
-
 /* ------------------------------ tab: Actions (gallery) -------------------- */
 function ActionsTab({ search = '', imageSrc, onRun, onGallery }) {
   const [cat, setCat] = useState('all')
@@ -4874,7 +4814,15 @@ function RecipeBuilderModal({ open, draft, library, onClose, onChange, onSave })
 }
 
 /* ----------------------------- settings modal ----------------------------- */
-function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose }) {
+const SHORTCUTS = [
+  ['⌘/Ctrl + Z', 'Undo'], ['⌘⇧/Ctrl⇧ + Z', 'Redo'], ['⌘/Ctrl + E', 'Export'],
+  ['⌘/Ctrl + O', 'Open file'], ['⌘/Ctrl + V', 'Paste image'], ['⌘/Ctrl + B', 'Before / After'],
+  ['⌘/Ctrl + 0', 'Fit screen'], ['⌘/Ctrl + 1', '100% zoom'], ['⌘/Ctrl + +/-', 'Zoom in/out'],
+  ['⌘/Ctrl + N', 'New project'], ['V · R · E · L · T · B', 'Select · Rect · Ellipse · Line · Text · Brush'],
+  ['Delete / Backspace', 'Delete object'], ['Esc', 'Cancel / deselect'],
+]
+function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose, onForgetLearning, onClearAll }) {
+  const [confirmClear, setConfirmClear] = useState(false)
   return (
     <Modal open={open} onClose={onClose} title="Settings" subtitle="All preferences stay on this device — no account, no cloud" width="max-w-md">
       <div className="flex flex-col gap-5">
@@ -4920,10 +4868,42 @@ function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose })
           </div>
         </div>
 
+        <div>
+          <label className="label-xs text-dim">Keyboard shortcuts</label>
+          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+            {SHORTCUTS.map(([keys, label]) => (
+              <div key={label} className="flex items-center justify-between gap-2 text-[9.5px]">
+                <span className="text-mute">{label}</span>
+                <span className="rounded-ink bg-surface-2 px-1.5 py-0.5 font-mono font-semibold text-fg">{keys}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="rounded-ink border border-line bg-surface-2/50 px-3 py-2">
           <p className="text-[9px] leading-relaxed text-mute">
             Everything else is automatic: autosave (every 15 s), undo history, recipes and usage stats all live in your browser's local storage.
           </p>
+        </div>
+
+        <div>
+          <label className="label-xs text-dim">Local data</label>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <Button variant="secondary" size="sm" icon="refresh" onClick={onForgetLearning} title="Clears recipes + usage stats (learning), keeps your projects">
+              Forget my learning
+            </Button>
+            {!confirmClear ? (
+              <Button variant="danger" size="sm" icon="trash" onClick={() => setConfirmClear(true)} title="Removes ALL Inkception data from this browser">
+                Clear all local data
+              </Button>
+            ) : (
+              <>
+                <Button variant="danger" size="sm" icon="check" onClick={onClearAll}>Confirm — erase everything</Button>
+                <Button variant="ghost" size="sm" onClick={() => setConfirmClear(false)}>Cancel</Button>
+              </>
+            )}
+          </div>
+          <p className="mt-1.5 text-[9px] text-mute">Both actions are permanent and only affect this device's browser storage.</p>
         </div>
       </div>
     </Modal>
@@ -5214,99 +5194,6 @@ function TextTab({
         Multi-line: press Enter for a new line. Each line keeps its own width — alignment (left /
         center / right / justify) arranges how they sit relative to the text box, like a pro editor.
       </p>
-    </div>
-  )
-}
-
-function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToast, search = '', highlightTarget = null }) {
-  const act = (msg) => { onDone && onDone(); showToast && showToast(msg, 'check') }
-  const clampFilter = (key, delta, label, min = 40, max = 160) => {
-    commitFilters({ ...filters, [key]: Math.min(max, Math.max(min, filters[key] + delta)) })
-    act(label)
-  }
-
-  const toggle = (key, label) => {
-    setFx((f) => ({ ...f, [key]: !f[key] }))
-    act(label)
-  }
-
-  const groups = [
-    {
-      label: 'Color',
-      items: [
-        { label: 'Invert', icon: 'refresh', active: fx.invert, onClick: () => toggle('invert', 'Inverted now') },
-        { label: 'Black & White', icon: 'image', active: fx.bw, onClick: () => toggle('bw', 'Black & White now') },
-        { label: 'Sepia', icon: 'clock', active: fx.sepia, onClick: () => toggle('sepia', 'Sepia now') },
-        { label: 'Vintage', icon: 'archive', active: fx.vintage, onClick: () => toggle('vintage', 'Vintage now') },
-      ],
-    },
-    {
-      label: 'Adjust',
-      items: [
-        { label: 'Brighten', icon: 'sun', onClick: () => clampFilter('brightness', 12, 'Brightened now') },
-        { label: 'Darken', icon: 'moon', onClick: () => clampFilter('brightness', -12, 'Darkened now') },
-        { label: 'Contrast +', icon: 'sliders', onClick: () => clampFilter('contrast', 10, 'Contrast + now') },
-        { label: 'Contrast −', icon: 'sliders', onClick: () => clampFilter('contrast', -10, 'Contrast − now') },
-        { label: 'Saturate', icon: 'droplet', onClick: () => clampFilter('saturation', 15, 'Saturated now', 0, 200) },
-        { label: 'Desaturate', icon: 'droplet', onClick: () => { commitFilters({ ...filters, saturation: 60 }); act('Desaturated now') } },
-      ],
-    },
-    {
-      label: 'Filter',
-      items: [
-        { label: 'Blur', icon: 'wind', active: fx.blur > 0, onClick: () => { setFx((f) => ({ ...f, blur: f.blur > 0 ? 0 : 0.35 })); act('Blur now') } },
-        { label: 'Blur More', icon: 'wind', active: fx.blur >= 0.7, onClick: () => { setFx((f) => ({ ...f, blur: f.blur >= 0.7 ? 0 : 0.9 })); act('Blur More now') } },
-        { label: 'Sharpen', icon: 'focus', active: fx.sharpen, onClick: () => toggle('sharpen', 'Sharpened now') },
-        { label: 'Noise', icon: 'sparkle', active: fx.noise > 0, onClick: () => { setFx((f) => ({ ...f, noise: f.noise > 0 ? 0 : 60 })); act('Noise now') } },
-        { label: 'Pixelate', icon: 'grid', active: fx.pixelate > 0, onClick: () => { setFx((f) => ({ ...f, pixelate: f.pixelate > 0 ? 0 : 8 })); act('Pixelate now') } },
-      ],
-    },
-    {
-      label: 'Transform',
-      items: [
-        { label: 'Flip H', icon: 'flipH', active: fx.flipX, onClick: () => toggle('flipX', 'Flipped horizontal') },
-        { label: 'Flip V', icon: 'flipV', active: fx.flipY, onClick: () => toggle('flipY', 'Flipped vertical') },
-        { label: 'Rotate 90°', icon: 'rotateCw', onClick: () => { setFx((f) => ({ ...f, angle: (f.angle + 90) % 360 })); act('Rotated 90° now') } },
-        { label: 'Reset All', icon: 'refresh', onClick: () => { setFx({ ...QUICK_DEFAULTS }); commitFilters({ ...DEFAULT_FILTERS }); act('Reset all now') } },
-      ],
-    },
-  ]
-
-  const q = search.trim().toLowerCase()
-  const visibleGroups = groups
-    .map((g) => ({ ...g, items: g.items.filter((it) => !q || it.label.toLowerCase().includes(q) || (g.label + ' ' + it.label).toLowerCase().includes(q)) }))
-    .filter((g) => g.items.length > 0)
-
-  return (
-    <div className="p-4">
-      {q && visibleGroups.length === 0 && (
-        <p className="py-6 text-center text-xs text-mute">No quick actions match “{search}”</p>
-      )}
-      {visibleGroups.map((g) => (
-        <div key={g.label} className="mb-5 last:mb-0">
-          <div className="mb-2 flex items-center gap-2 px-1">
-            <span className="label-xs text-dim">{g.label}</span>
-            <span className="h-px flex-1 bg-line" />
-          </div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {g.items.map((it) => (
-              <button
-                key={it.label}
-                type="button"
-                onClick={it.onClick}
-                className={cn(
-                  'flex flex-col items-center gap-1.5 rounded-ink border px-1 py-2.5 transition-colors',
-                  it.active ? 'border-white bg-surface-2 text-fg' : 'border-line text-dim hover:border-line-2 hover:text-fg',
-                  highlightTarget === it.label && 'border-white ring-2 ring-white/40 animate-pulse',
-                )}
-              >
-                <Icon name={it.icon} size={15} />
-                <span className="text-[8.5px] font-semibold uppercase tracking-[0.06em]"><Highlight text={it.label} query={search} /></span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
     </div>
   )
 }

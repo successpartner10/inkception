@@ -56,6 +56,21 @@
 [data-theme='light'] .hover\:bg-white\/10:hover { background-color: rgba(0, 0, 0, 0.08); }
 [data-theme='light'] ::selection { background: #161616; color: #ffffff; }
 [data-theme='light'] :focus-visible { outline-color: #161616; }
+[data-theme='light'] .checkerboard {
+  background-image: conic-gradient(#e2e2e2 25%, #d5d5d5 0 50%, #e2e2e2 0 75%, #d5d5d5 0);
+}
+
+/* accessibility: honor reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 @layer base {
   html,

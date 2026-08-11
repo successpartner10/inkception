@@ -63,11 +63,11 @@ export function matchPrompt(raw) {
     return { action: 'question', payload: { phrase: raw } }
 
   // ---- navigation ----
-  if (has('open') && (has('quick') || has('quick menu'))) return { action: 'nav', payload: { tab: 'quick' } }
+  if (has('open') && (has('quick') || has('quick menu'))) return { action: 'nav', payload: { tab: 'actions' } }
   if (has('open') && (has('ai menu') || has('ai tools') || has('ai panel') || (has('ai') && has('menu')))) return { action: 'nav', payload: { tab: 'ai' } }
   if (has('open') && (has('adjust') || has('adjustments'))) return { action: 'nav', payload: { tab: 'adjust' } }
   if (has('open') && has('layer')) return { action: 'nav', payload: { tab: 'layers' } }
-  if (has('open') && (has('more') || has('advanced'))) return { action: 'nav', payload: { tab: 'more' } }
+  if (has('open') && (has('more') || has('advanced'))) return { action: 'nav', payload: { tab: 'actions' } }
   if (has('open') && (has('export') || has('export menu'))) return { action: 'nav', payload: { tab: 'export' } }
 
   // ---- open a specific tool ----
@@ -157,9 +157,9 @@ export function matchPrompt(raw) {
     [[['light', 'lighting', 'exposure', 'brightness', 'darkness'], 'Exposure & light', 'adjust', 'sliders', 'exposure']],
     [[['contrast', 'punch', 'crispness'], 'Contrast', 'adjust', 'sliders', 'contrast']],
     [[['color', 'colors', 'colour', 'saturation', 'vibrancy'], 'Saturation & color', 'adjust', 'sliders', 'saturation']],
-    [[['sharp', 'sharpen', 'crisp', 'focused'], 'Sharpen', 'quick', 'focus', 'sharpen']],
-    [[['red eye', 'redeye', 'red eyes'], 'Red Eye', 'more', 'eye', 'redeye']],
-    [[['blur', 'blurry', 'background blur'], 'Blur Brush', 'quick', 'wind', 'blur']],
+    [[['sharp', 'sharpen', 'crisp', 'focused'], 'Sharpen', 'actions', 'focus', 'sharpen']],
+    [[['red eye', 'redeye', 'red eyes'], 'Red Eye', 'actions', 'eye', 'redeye']],
+    [[['blur', 'blurry', 'background blur'], 'Blur Brush', 'actions', 'wind', 'blur']],
     [[['skin', 'portrait', 'face', 'blemish', 'smooth'], 'Retouch', 'ai', 'droplet', 'retouch']],
     [[['background', 'backdrop', 'behind'], 'Background tools', 'ai', 'image', 'bg']],
   ]
@@ -266,7 +266,7 @@ export const PROMPT_SUGGESTIONS = [
   'Black & white',
   'Crop to square',
   'Upscale 4×',
-  'Open quick menu',
+  'Open Actions menu',
   'Run my recipe',
   'Undo last',
 ]

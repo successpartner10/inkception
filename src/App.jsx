@@ -82,6 +82,9 @@ export default function App() {
 
   const deleteProject = (id) => setProjects((ps) => ps.filter((p) => p.id !== id))
 
+  const renameProject = (id, name) =>
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name } : p)))
+
   // ⌘N → new project from anywhere
   useEffect(() => {
     const h = (e) => {
@@ -95,7 +98,7 @@ export default function App() {
   }, [])
 
   if (view === 'editor' && current) {
-    return <Editor key={current.id} project={current} onBack={() => setView('gallery')} />
+    return <Editor key={current.id} project={current} onBack={() => setView('gallery')} onRename={(name) => renameProject(current.id, name)} />
   }
 
   return (

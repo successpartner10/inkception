@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.0
+> **Version**: v0.17.1
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.0)
+> **Updated**: 2026-08-11 (v0.17.1)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -138,8 +138,15 @@ input; applies live to selected text and to new text.
   paint, remembered per device
 - **AI assistant mode**: Guided (propose → confirm → run) vs ⚡ Just do it
   (runs immediately, still undoable) — also toggleable inline in the AI tab
+- **Keyboard shortcuts cheat-sheet** — undo/redo/export/open/paste/zoom,
+  tool keys, Delete, Esc
+- **Rename project** — click the name in the editor header
+- **Privacy**: **Forget my learning** (recipes + usage stats) and
+  **Clear all local data** (everything, with confirm)
 - Automatic & always-on: autosave (every 15 s + on close), snapshot undo
   history, recipe + usage stats — all in localStorage
+- **Paste image** (Ctrl/Cmd+V) anywhere — screenshots land straight in the
+  editor or as a new project
 
 ## 5. AI Suite (17 capabilities, all on-device)
 
@@ -226,6 +233,9 @@ background removal, replace background, upscale, export…) that executes on tap
 - **PWA**: `manifest.webmanifest` + icons + network-first service worker —
   the hosted site installs like an app and works offline after the first
   visit. (Not used by the standalone file, which is offline by design.)
+- **8 sample photos** embedded (Portrait, City Dusk, Food Flatlay, Misty
+  Pines, Sneaker, Mountain, Vase, Mono B&W) — "start with a sample" strip
+  on the home screen; offline-safe data URLs in the standalone build
 
 ## 8. Versioning & Cache-Busting
 
@@ -458,3 +468,33 @@ layers, quick actions, AI suite, collage, versioning all present.
   wrap — 390px viewport clean), wired the **Canvas texture** Action,
   removed dead code; 22-step audit passes (incl. theme, recipes,
   multi-export, PWA, mobile) with no console errors.
+
+### v0.17.1 — Polish round (all 10)
+1. **Paste image** — Ctrl/Cmd+V imports a screenshot/copied image straight
+   into the canvas (editor) or as a new project (gallery)
+2. **Keyboard shortcuts cheat-sheet** — full list in Settings (⌘Z/⌘E/⌘O/⌘B/
+   ⌘+/⌘0/⌘1, tool keys V/R/E/L/T/B, Delete, Esc)
+3. **Rename project** — click the project name in the editor header, type,
+   Enter — renames in the gallery too
+4. **Privacy controls in Settings** — **Forget my learning** (clears recipes +
+   usage stats + enhance prefs) and **Clear all local data** (wipes every
+   Inkception key in the browser, back to a clean gallery) with confirm step
+5. **Enhance settings remembered** — strength slider + Reduce chips persist
+   per device, so you tune it once
+6. **Dead tabs removed** — the legacy Quick/More tab surfaces are gone;
+   their 25+ filters & tools (Magic Wand, Clone Stamp, Curves, Emboss,
+   Twirl, Warp…) are folded into the global search, one click to run
+7. **First-run hint** — one-time dismissible banner on the home screen:
+   "Everything here is free & local"
+8. **8 sample photos** — new Portrait, City Dusk, Food Flatlay, Misty Pines,
+   Sneaker + originals, shown as a "start with a sample" strip on the home
+   screen; embedded into the offline build
+9. **Faster loading (code-split)** — main bundle cut from ~1.3 MB to ~716 KB;
+   React/Fabric/PSD split into cached vendor chunks and the MediaPipe AI
+   model now loads only when you first use segmentation. Offline standalone
+   rebuilt as a single self-contained module
+10. **Accessibility** — labelled search inputs, live-region toasts,
+    `prefers-reduced-motion` respected, light-theme checkerboard + focus
+    contrast fixes
+- 26-step automated audit passes (all 10 items + full regression + offline
+  standalone + on-demand AI loading, no console errors)

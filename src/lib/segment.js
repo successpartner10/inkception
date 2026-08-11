@@ -6,13 +6,15 @@
 // This replaces the old deterministic "edge brighten + checkerboard" trick
 // with a true alpha matte of the subject.
 
-import { SelfieSegmentation } from '@mediapipe/selfie_segmentation'
 import { loadImageElement } from './utils'
 
 const base = import.meta.env.BASE_URL
 let segPromise = null
 
-function createSegmenter() {
+// MediaPipe is imported lazily (code-split) so it doesn't load until the
+// first segmentation — keeps the initial bundle small.
+async function createSegmenter() {
+  const { SelfieSegmentation } = await import('@mediapipe/selfie_segmentation')
   return new Promise((resolve, reject) => {
     const seg = new SelfieSegmentation({
       locateFile: (file) => `${base}mediapipe/${file}`,

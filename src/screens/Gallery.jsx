@@ -2,7 +2,7 @@
 // Blueprint §3.A: 48px header (ik monogram / INKCEPTION / profile),
 // hero card, 2-col scrollable project grid.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { cn, fileToDataUrl, formatDate } from '../lib/utils'
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS } from '../lib/export'
 import { Icon } from '../components/Icon'
@@ -15,6 +15,18 @@ const FILTERS = [
   { id: 'archived', label: 'Archived' },
 ]
 
+// Sample photos — literal asset paths so the offline build can embed them.
+const SAMPLE_PHOTOS = [
+  { name: 'Portrait', src: `${import.meta.env.BASE_URL}samples/portrait.jpg` },
+  { name: 'City Dusk', src: `${import.meta.env.BASE_URL}samples/city.jpg` },
+  { name: 'Food Flatlay', src: `${import.meta.env.BASE_URL}samples/food.jpg` },
+  { name: 'Misty Pines', src: `${import.meta.env.BASE_URL}samples/nature.jpg` },
+  { name: 'Sneaker', src: `${import.meta.env.BASE_URL}samples/product.jpg` },
+  { name: 'Mountain', src: `${import.meta.env.BASE_URL}samples/mountain.jpg` },
+  { name: 'Vase', src: `${import.meta.env.BASE_URL}samples/vase.jpg` },
+  { name: 'Mono B&W', src: `${import.meta.env.BASE_URL}samples/bw.jpg` },
+]
+
 export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTemplate }) {
   const [filter, setFilter] = useState('all')
   const [pendingDelete, setPendingDelete] = useState(null)
@@ -22,6 +34,14 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
   const [templateGroup, setTemplateGroup] = useState('all')
   const [importing, setImporting] = useState(false)
   const [gallerySearch, setGallerySearch] = useState('')
+  // first-run hint — one-time, dismissible
+  const [showIntro, setShowIntro] = useState(() => {
+    try { return localStorage.getItem('inkception.intro') !== '1' } catch { return true }
+  })
+  const dismissIntro = () => {
+    try { localStorage.setItem('inkception.intro', '1') } catch { /* ignore */ }
+    setShowIntro(false)
+  }
 
   const gq = gallerySearch.trim().toLowerCase()
   const matchProject = (p) => !gq || p.name.toLowerCase().includes(gq)
@@ -29,6 +49,27 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
     !gq ||
     [p.name, p.platform, p.ratio, p.use, `${p.w} x ${p.h}`, `${p.w}×${p.h}`].join(' ').toLowerCase().includes(gq)
   const fileRef = useRef(null)
+
+  // paste an image from the clipboard → new project
+  useEffect(() => {
+    const onPaste = (e) => {
+      const items = e.clipboardData && e.clipboardData.items
+      if (!items) return
+      for (const it of items) {
+        if (it.type && it.type.startsWith('image/')) {
+          e.preventDefault()
+          const f = it.getAsFile()
+          if (!f) return
+          fileToDataUrl(f)
+            .then(onImportMedia)
+            .catch(() => onImportMedia(URL.createObjectURL(f)))
+          return
+        }
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [onImportMedia])
 
   const recent = [...projects]
     .filter(matchProject)
@@ -71,6 +112,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
             value={gallerySearch}
             onChange={(e) => setGallerySearch(e.target.value)}
             placeholder="Filter projects, templates…"
+            aria-label="Filter projects and templates"
             className="h-8 w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
           />
           {gallerySearch && (
@@ -84,6 +126,24 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
 
       <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
+          {/* First-run hint — free, local, everything is on-device */}
+          {showIntro && (
+            <div className="mb-6 flex items-start gap-3 rounded-ink-lg border border-white/20 bg-surface p-4 sm:items-center">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ink bg-white text-black">
+                <Icon name="sparkle" size={16} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold">Everything here is free & local.</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-mute">
+                  Open a photo, run one-click Actions (Actions tab), type things like “remove background” or “run my recipe” in the AI bar — no account, no uploads, nothing leaves this device.
+                </p>
+              </div>
+              <button type="button" onClick={dismissIntro} className="shrink-0 rounded-ink border border-line px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-dim transition-colors hover:border-white hover:text-white">
+                Got it
+              </button>
+            </div>
+          )}
+
           {/* Hero */}
           <section className="rounded-ink-lg border border-line bg-surface p-6 sm:p-10">
             <Chip active>AI-First Design Studio</Chip>
@@ -115,6 +175,27 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
               <span className="hidden text-[10px] font-semibold uppercase tracking-[0.14em] text-mute sm:block">
                 ⌘N
               </span>
+            </div>
+            {/* Sample photos — one click to start editing */}
+            <div className="mt-8">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="label-xs text-dim">Or start with a sample</span>
+                <span className="h-px flex-1 bg-line" />
+              </div>
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+                {SAMPLE_PHOTOS.map((s) => (
+                  <button
+                    key={s.src}
+                    type="button"
+                    title={`Open ${s.name} sample`}
+                    onClick={() => onImportMedia(s.src)}
+                    className="group overflow-hidden rounded-ink border border-line transition-colors hover:border-white"
+                  >
+                    <img src={s.src} alt={s.name} loading="lazy" className="aspect-square w-full object-cover" />
+                    <span className="block truncate bg-surface px-1 py-1 text-center text-[8px] font-semibold text-dim group-hover:text-white">{s.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
           </section>

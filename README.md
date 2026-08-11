@@ -29,7 +29,11 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
   `project-<ts>.zip` with every size at once (27 presets × 8 formats)
 - **Interface themes** — Dark (default) / Light / Auto, plus Settings hub
 - **PWA** — installable like an app; works offline after first visit
-- Works offline: `inkception-standalone.html` (fonts + samples embedded)
+- **Paste to edit** — Ctrl/Cmd+V drops a screenshot straight onto the canvas
+- **Privacy** — Settings → Forget my learning / Clear all local data
+- **8 sample photos** to start from, one click
+- **Fast** — code-split: ~716 KB main bundle, AI model loads on demand
+- Works offline: `inkception-standalone.html` (fonts + 8 samples embedded)
 
 ## Use it on your laptop — fully offline
 
@@ -38,7 +42,7 @@ release (in the workspace root):
 
 | File | What it is |
 |---|---|
-| `inkception-standalone.html` | The **whole app in one file** (~7 MB) — 15 fonts + sample images embedded |
+| `inkception-standalone.html` | The **whole app in one file** (~8 MB) — 15 fonts + 8 sample photos embedded |
 | `inkception-offline.zip` | Same app + the `mediapipe/` AI model folder + `README.txt` (~9 MB) |
 
 **Setup (one time):**
