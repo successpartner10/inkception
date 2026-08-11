@@ -10,6 +10,7 @@ export const COLLAGE_LAYOUTS = [
   { id: 'triptych', name: 'Triptych', min: 3, max: 3 },
   { id: 'quad', name: 'Quad', min: 4, max: 4 },
   { id: 'hero', name: 'Hero + Sidekick', min: 2, max: 3 },
+  { id: 'circleinset', name: 'Circle Inset', min: 2, max: 2, whiteBack: true },
   { id: 'horizontal', name: 'Horizontal', min: 2, max: 6 },
   { id: 'vertical', name: 'Vertical', min: 2, max: 6 },
   { id: 'masonry', name: 'Masonry', min: 3, max: 6 },
@@ -50,6 +51,13 @@ export function computeSlots(layoutId, count, W, H) {
     case 'hero':
       if (count === 2) return [one(0, 0, 0.64, 1), one(0.66, 0.08, 0.32, 0.84)]
       return [one(0, 0, 0.64, 1), one(0.66, 0, 0.32, 0.5), one(0.66, 0.52, 0.32, 0.48)]
+    case 'circleinset':
+      // main image sits on the white backdrop with margins (contain); the
+      // second slot is a CIRCLE (white-ring frame) in the lower-right.
+      return [
+        one(0.07, 0.07, 0.86, 0.86),
+        { ...one(0.63, 0.58, 0.33, 0.33), circle: true },
+      ]
     case 'masonry': {
       const slots = []
       let cy = [0, 0]

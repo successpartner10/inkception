@@ -4,7 +4,7 @@
 // action grid and AI layer segmentation stack.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Canvas, Ellipse, IText, Line, PencilBrush, Polygon, Rect, Triangle, Image as FabricImage } from 'fabric'
+import { Canvas, Circle, Ellipse, IText, Line, PencilBrush, Polygon, Rect, Triangle, Image as FabricImage } from 'fabric'
 import { Icon } from '../components/Icon'
 import {
   ActionCard,
@@ -1107,6 +1107,62 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   }, [layers])
 
   /* --------------------------- collage studio (#9) -------------------------- */
+
+  // Gutter ratio — visible gap between grid cells (as % of the cell size).
+  const GUTTER_RATIO = 0.008
+
+  // Fit a collage photo to its slot. Default 'cover' fills the whole cell
+  // (clipped to the slot so it never bleeds over neighbours) with a thin
+  // white border + a gutter, so the grid design reads clearly. A slot with
+  // `circle: true` gets a circular clip instead (for Circle Inset).
+  const fitPhotoToSlot = useCallback((img, slot, mode = 'cover') => {
+    if (!img || !slot) return
+    if (slot.circle) {
+      const r = Math.min(slot.w, slot.h) / 2
+      const cx = slot.x + slot.w / 2
+      const cy = slot.y + slot.h / 2
+      const d = r * 2
+      const s = mode === 'cover' ? Math.max(d / img.width, d / img.height) : Math.min(d / img.width, d / img.height)
+      img.set({
+        left: cx - (img.width * s) / 2,
+        top: cy - (img.height * s) / 2,
+        scaleX: s,
+        scaleY: s,
+      })
+      // circle clip centred on the photo (local units)
+      img.set('clipPath', new Circle({ left: 0, top: 0, radius: r / s, originX: 'center', originY: 'center', fill: '#ffffff' }))
+      img.set('fitMode', mode)
+      return img
+    }
+    const g = Math.max(2, Math.round(Math.min(slot.w, slot.h) * GUTTER_RATIO))
+    const r = { x: slot.x + g, y: slot.y + g, w: Math.max(1, slot.w - 2 * g), h: Math.max(1, slot.h - 2 * g) }
+    const s = mode === 'cover' ? Math.max(r.w / img.width, r.h / img.height) : Math.min(r.w / img.width, r.h / img.height)
+    img.set({
+      left: r.x + (r.w - img.width * s) / 2,
+      top: r.y + (r.h - img.height * s) / 2,
+      scaleX: s,
+      scaleY: s,
+    })
+    img.set('fitMode', mode)
+    let clip = null
+    if (mode === 'cover') {
+      // clip rect in the image's local (unscaled) units, centered on the photo;
+      // the stroke renders as a crisp white border along the cell edge.
+      clip = new Rect({
+        left: -r.w / s / 2,
+        top: -r.h / s / 2,
+        width: r.w / s,
+        height: r.h / s,
+        originX: 'center',
+        originY: 'center',
+        fill: '#ffffff',
+        stroke: '#ffffff',
+        strokeWidth: Math.max(0.5, 1.6 / s),
+      })
+    }
+    img.set('clipPath', clip)
+    return img
+  }, [])
   const buildCollage = useCallback(
     async (layoutId, urls, opts = {}) => {
       const c = fabricRef.current
@@ -1149,7 +1205,9 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       try {
         // cap photos at the layout's max so a too-large selection still builds
         const meta = COLLAGE_LAYOUTS.find((l) => l.id === layoutId)
-        const used = meta ? urls.slice(0, meta.max) : urls
+        let used = meta ? urls.slice(0, meta.max) : urls
+        // Circle Inset with a single photo → reuse it in the circle too
+        if (layoutId === 'circleinset' && used.length === 1) used = [used[0], used[0]]
         const slots = computeSlots(layoutId, used.length, W, H)
         const rot =
           layoutId === 'polaroid'
@@ -1157,31 +1215,59 @@ export function Editor({ project, onBack, onRename = () => {} }) {
             : layoutId === 'overlap'
               ? [-3, 3, -2, 2, -2]
               : null
+        // layouts with a white backdrop (Circle Inset) → paint the canvas white first
+        if (meta && meta.whiteBack) {
+          c.getObjects().filter((o) => o.colBg).forEach((o) => c.remove(o))
+          // drop the base photo so the white backdrop is actually visible
+          if (imgObjRef.current) {
+            c.remove(imgObjRef.current)
+            imgObjRef.current = null
+          }
+          const bg = new Rect({
+            left: 0, top: 0, width: W, height: H,
+            fill: '#ffffff', selectable: false, evented: false,
+          })
+          bg.colBg = true
+          c.add(bg)
+          if (c.sendObjectToBack) c.sendObjectToBack(bg)
+          else if (c.sendToBack) c.sendToBack(bg)
+          else c.getObjects().length > 0 && c.moveObjectTo(bg, 0)
+        }
         for (let i = 0; i < slots.length && i < used.length; i++) {
           const slot = slots[i]
           const img = await FabricImage.fromURL(used[i])
-          const px = { x: slot.x * W, y: slot.y * H, w: slot.w * W, h: slot.h * H }
-          // cover — scale up so the photo fills its whole grid slot (crops
-          // overflow). This is the collage default; "contain" is available
-          // per-photo from the Layers tab (Fit photo).
-          const s = Math.max(px.w / img.width, px.h / img.height)
-          img.set({
-            left: px.x + (px.w - img.width * s) / 2,
-            top: px.y + (px.h - img.height * s) / 2,
-            scaleX: s,
-            scaleY: s,
-            selectable: true,
-            evented: true,
-          })
+          const px = { x: slot.x * W, y: slot.y * H, w: slot.w * W, h: slot.h * H, ...(slot.circle ? { circle: true } : {}) }
+          img.set({ selectable: true, evented: true })
           if (rot) img.set('angle', rot[i % rot.length])
+          // circular slot → cover-fill the circle (clip to circle); on the
+          // Circle Inset main slot use 'contain' so the photo sits on white
+          const mode = slot.circle ? 'cover' : layoutId === 'circleinset' ? 'contain' : 'cover'
+          fitPhotoToSlot(img, px, mode)
           if (append) {
             // cascade new photos slightly so nothing is hidden exactly underneath
             img.set({ left: img.left + (i % 5) * 22, top: img.top + (i % 5) * 22 })
           }
           // remember the grid slot so the photo can auto fit/fill it later
           img.set('slotRect', px)
-          img.set('fitMode', 'cover')
           c.add(img)
+          // white ring frame around a circular slot (crisp, not clip-stroke dependent)
+          if (slot.circle) {
+            const r = Math.min(px.w, px.h) / 2
+            const ringW = Math.max(3, Math.round(r * 0.06))
+            const ring = new Circle({
+              left: px.x + px.w / 2,
+              top: px.y + px.h / 2,
+              radius: Math.max(1, r - ringW / 2),
+              originX: 'center',
+              originY: 'center',
+              fill: 'transparent',
+              stroke: '#ffffff',
+              strokeWidth: ringW,
+              selectable: false,
+              evented: false,
+            })
+            c.add(ring)
+          }
           decompRef.current.push({ id: `col-${Date.now()}-${i}`, img, name: `Photo ${i + 1}`, type: 'Collage', dataUrl: used[i], visible: true })
         }
         c.requestRenderAll()
@@ -1202,7 +1288,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         showToast('Collage failed', 'close')
       }
     },
-    [fit.w, fit.h, calcFitFor, showToast],
+    [fit.w, fit.h, calcFitFor, fitPhotoToSlot, showToast],
   )
 
   /* ------------------------------ AI pipeline ------------------------------ */
@@ -2747,18 +2833,11 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       const slot = img && img.slotRect
       const c = fabricRef.current
       if (!img || !slot || !c) return
-      const s = mode === 'cover' ? Math.max(slot.w / img.width, slot.h / img.height) : Math.min(slot.w / img.width, slot.h / img.height)
-      img.set({
-        left: slot.x + (slot.w - img.width * s) / 2,
-        top: slot.y + (slot.h - img.height * s) / 2,
-        scaleX: s,
-        scaleY: s,
-      })
-      img.set('fitMode', mode)
+      fitPhotoToSlot(img, slot, mode)
       c.requestRenderAll()
-      showToast(mode === 'cover' ? 'Photo expanded to fill its slot' : 'Photo fit inside its slot', 'fit')
+      showToast(mode === 'cover' ? 'Photo fills its grid slot' : 'Photo fit inside its slot', 'fit')
     },
-    [showToast],
+    [fitPhotoToSlot, showToast],
   )
 
   /* Rotate a collage photo around its center (keeps its slot position). */
@@ -2790,18 +2869,8 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       if (!sa || !sb) return
       a.set('slotRect', sb)
       b.set('slotRect', sa)
-      // re-fit both into their new slots (keep their fit modes)
-      const refit = (img) => {
-        const s = img.slotRect
-        const mode = img.fitMode === 'cover' ? Math.max : Math.min
-        const sc = mode(s.w / img.width, s.h / img.height)
-        img.set({
-          left: s.x + (s.w - img.width * sc) / 2,
-          top: s.y + (s.h - img.height * sc) / 2,
-          scaleX: sc,
-          scaleY: sc,
-        })
-      }
+      // re-fit both into their new slots (keep their fit modes, gutter+border)
+      const refit = (img) => fitPhotoToSlot(img, img.slotRect, img.fitMode || 'cover')
       refit(a)
       refit(b)
       const c = fabricRef.current
@@ -5964,13 +6033,14 @@ function LayoutPreview({ layoutId, active, photos = [], need = 0 }) {
   const count = Math.max(meta.min, Math.min(meta.max, photos.length))
   const slots = computeSlots(layoutId, count, 1, 1)
   return (
-    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[4px] bg-white/15">
+    <div className={cn('relative aspect-[4/3] w-full overflow-hidden rounded-[4px]', meta.whiteBack ? 'bg-white' : 'bg-white/15')}>
       {slots.map((s, i) => {
-        const photo = photos[i]
+        // circle inset reuses the first photo in the round slot when only one is picked
+        const photo = photos[i] || (s.circle ? photos[0] : null)
         return (
           <span
             key={i}
-            className="absolute overflow-hidden rounded-[2px]"
+            className={cn('absolute overflow-hidden', s.circle ? 'rounded-full shadow-[0_0_0_3px_#fff]' : 'rounded-[2px]')}
             style={{
               left: `${s.x * 100}%`,
               top: `${s.y * 100}%`,
@@ -5981,7 +6051,7 @@ function LayoutPreview({ layoutId, active, photos = [], need = 0 }) {
             {photo ? (
               <img src={photo.url} alt="" draggable={false} className="h-full w-full object-cover" />
             ) : (
-              <span className={cn('block h-full w-full', active ? 'bg-white' : 'bg-white/70')} />
+              <span className={cn('block h-full w-full', s.circle ? 'bg-white/90' : active ? 'bg-white' : 'bg-white/70')} />
             )}
           </span>
         )

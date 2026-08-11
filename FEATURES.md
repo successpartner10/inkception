@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.4
+> **Version**: v0.17.5
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.4)
+> **Updated**: 2026-08-11 (v0.17.5)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -177,8 +177,9 @@ input; applies live to selected text and to new text.
 14. **Motion** — animated preview (Slow Zoom / Pan / Light Sweep) via keyframes
 15. **Batch AI** — run one op across many images (Remove BG / Enhance / Upscale
     / Denoise), per-file downloads
-16. **Collage Studio** — 2–12 photos, **12 layouts** (Grid 2/3/4, Diptych,
-    Triptych, Quad, Hero+Sidekick, Horizontal, Vertical, Masonry, Overlap,
+16. **Collage Studio** — 2–12 photos, **13 layouts** (Grid 2/3/4, Diptych,
+    Triptych, Quad, Hero+Sidekick, **Circle Inset** (white bg + circular
+    frame), Horizontal, Vertical, Masonry, Overlap,
     Polaroid Spread) with visual template previews; **Place On** current canvas
     or **New Image** at any of the 27 export sizes; **Add to existing** toggle;
     per-photo Fit / Fill / Rotate / Swap after building
@@ -533,3 +534,15 @@ layers, quick actions, AI suite, collage, versioning all present.
   inside the slot) when you want the smaller look
 - Verified with extreme aspect ratios (16:4 wide + 4:16 tall photos both
   fill their slots, no gaps)
+
+### v0.17.5 — Circle Inset collage (white background + circular frame)
+- New **Circle Inset** collage layout: the canvas turns **white**, the main
+  photo sits on it (contained, with margins — like a print on white), and a
+  second photo appears in a **circular frame with a crisp white ring**
+  (lower-right). One photo only? It's reused in the circle automatically.
+- The circle uses a real circular clipPath + a dedicated white ring object
+  (not stroke-on-clip), so it renders crisply and exports cleanly in every
+  format (incl. PSD/SVG layers)
+- Template preview shows the white backdrop + round slot; verified on-canvas:
+  white 64% / main photo 31% / circle 4%, zero errors; standard grid collages
+  still clip + gutter correctly
