@@ -37,6 +37,7 @@ import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas } from '../lib/en
 import * as PX from '../lib/pxengine'
 import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
 import { ACTION_CATS, ACTIONS } from '../lib/actions'
+import { bumpUsage, defaultRecipe, loadRecipes, loadStats, mostUsed, saveRecipes, saveStats, stepSummary, suggestEmoji, suggestName, uid } from '../lib/recipes'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
@@ -48,10 +49,45 @@ import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMe
 const TAB_ITEMS = [
   { id: 'adjust', label: 'Adjust', icon: 'sliders' },
   { id: 'actions', label: 'Actions', icon: 'sparkle' },
+  { id: 'recipes', label: 'Recipes', icon: 'pin' },
   { id: 'ai', label: 'AI', icon: 'sparkle' },
   { id: 'layers', label: 'Layers', icon: 'layers' },
   { id: 'text', label: 'Text', icon: 'text' },
 ]
+
+// One-click building blocks for recipes (all free/local, need no input).
+// Gallery actions (from ACTIONS) are added dynamically; extras are the
+// prompt-level one-touch runs that don't map to a gallery card.
+const RECIPE_EXTRA = [
+  { key: 'enhance', label: 'Auto Enhance', group: 'One-touch', desc: 'Balance light + color in one step', icon: 'sparkle' },
+  { key: 'crop-square', label: 'Crop to Square', group: 'One-touch', desc: 'Smart-crop to 1:1', icon: 'crop' },
+  { key: 'crop-portrait', label: 'Crop to Portrait', group: 'One-touch', desc: 'Smart-crop to 4:5', icon: 'crop' },
+  { key: 'remove-bg', label: 'Remove Background', group: 'One-touch', desc: 'Cut out the subject (real matte)', icon: 'scissors' },
+  { key: 'sharpen', label: 'Sharpen', group: 'One-touch', desc: 'Crisper detail', icon: 'focus' },
+  { key: 'text-color', label: 'Auto Text Color', group: 'One-touch', desc: 'Match text color to the image', icon: 'text' },
+  { key: 'bw', label: 'Black & White', group: 'One-touch', desc: 'Grayscale', icon: 'image' },
+  { key: 'warm', label: 'Warm Up', group: 'One-touch', desc: 'Warmer temperature', icon: 'sun' },
+  { key: 'cool', label: 'Cool Down', group: 'One-touch', desc: 'Cooler temperature', icon: 'moon' },
+  { key: 'brighten', label: 'Brighten', group: 'One-touch', desc: 'More light', icon: 'sun' },
+  { key: 'darken', label: 'Darken', group: 'One-touch', desc: 'Less light', icon: 'moon' },
+  { key: 'contrast', label: 'More Contrast', group: 'One-touch', desc: 'Punchier contrast', icon: 'sliders' },
+  { key: 'saturate', label: 'More Color', group: 'One-touch', desc: 'More saturation', icon: 'droplet' },
+  { key: 'desaturate', label: 'Less Color', group: 'One-touch', desc: 'Fade the colors', icon: 'droplet' },
+]
+
+// Keys that are safe to re-run inside a recipe (deterministic, no modal, no
+// brush/region input). Anything outside this set is captured as "needs input"
+// and excluded from recipe steps.
+const RECIPE_SAFE_KEYS = new Set([
+  // gallery actions (local)
+  'teeth', 'pimples', 'wrinkles', 'glamour', 'chin', 'slim', 'motionbg', 'restore', 'crease', 'repaircrease', 'colorbw',
+  'halftone', 'filmgrain', 'tilt', 'vignette', 'sepia', 'posterize', 'glitch', 'mirror', 'kaleido', 'duotone', 'splittone',
+  'goldenhour', 'hdr', 'faded', 'instant', 'aged', 'vintagebw', 'pop', 'pixelate', 'neon', 'zoomblur', 'grain2', 'eyes',
+  'lipcolor', 'sketch', 'charcoal', 'cutout', 'bwchannel', 'despeckle', 'dehaze',
+  // one-touch extras
+  'enhance', 'crop-square', 'crop-portrait', 'remove-bg', 'sharpen', 'text-color',
+  'bw', 'warm', 'cool', 'brighten', 'darken', 'contrast', 'saturate', 'desaturate',
+])
 
 export const TOOLS = [
   { id: 'select', label: 'Select', key: 'V' },
@@ -228,6 +264,16 @@ export function Editor({ project, onBack }) {
   const commandStackRef = useRef([])
   const [commandCount, setCommandCount] = useState(0)
   const colorRef = useRef('#ffffff')
+  // recipes (saved custom tasks) + self-learning stats — all local
+  const [recipes, setRecipes] = useState(loadRecipes)
+  const recipesRef = useRef(loadRecipes())
+  useEffect(() => { recipesRef.current = recipes }, [recipes])
+  const statsRef = useRef(loadStats())
+  const [statsVer, setStatsVer] = useState(0)
+  const recentRef = useRef([]) // [{key,label}] steps executed this session (max 40)
+  const [recipeBuilderOpen, setRecipeBuilderOpen] = useState(false)
+  const [recipeDraft, setRecipeDraft] = useState(null) // recipe being built/edited
+  const recipeGuardRef = useRef(false) // suppress per-step history pushes during a recipe run
   // selection engine
   const [selMask, setSelMask] = useState(null) // {w,h,data:Uint8Array} natural res
   const selRef = useRef(null)
@@ -711,7 +757,7 @@ export function Editor({ project, onBack }) {
   })
 
   const pushHistory = useCallback(() => {
-    if (skipHistRef.current) return
+    if (skipHistRef.current || recipeGuardRef.current) return
     if (histRef.current.length === 0) return // baseline not established yet
     const arr = histRef.current.slice(0, histPosRef.current + 1)
     arr.push(snapshot())
@@ -1674,6 +1720,7 @@ export function Editor({ project, onBack }) {
       motionbg: () => runBeautyFilter('motion'),
       restore: () => runRestore('restore'),
       crease: () => runRestore('crease'),
+      repaircrease: () => runRestore('crease'),
       colorbw: () => runRestore('bw'),
       halftone: () => runFilter('halftone'),
       filmgrain: () => runFilter('filmGrain'),
@@ -1706,8 +1753,15 @@ export function Editor({ project, onBack }) {
       despeckle: () => runFilter('median'),
       dehaze: () => runPxAction('Dehaze'),
     }
-    if (map[id]) map[id]()
-    else showToast('This action needs more work — hidden for now', 'info')
+    const a = ACTIONS.find((x) => x.id === id)
+    const label = a ? a.name : id
+    if (map[id]) {
+      const before = snapshot()
+      commandStackRef.current.push({ phrase: label, before })
+      setCommandCount(commandStackRef.current.length)
+      recordRecent(id, label)
+      map[id]()
+    } else showToast('This action needs more work — hidden for now', 'info')
   }
 
   /* ------------------- intelligent region select + enhance ------------- */
@@ -1971,6 +2025,205 @@ export function Editor({ project, onBack }) {
     } catch { setBusy(null); showToast('Filter failed', 'close') }
   }
 
+  /* ------------------------------- Recipes ---------------------------------- */
+  // Save repeated steps as named one-click tasks. Fully local (localStorage).
+  // A step is { key, label }; key maps into RECIPE_RUNNERS below (free/local
+  // operations that need no extra input). Prompt-parsed steps are mapped here
+  // so the command bar feeds the same capture pipeline.
+  const promptToRecipeKey = (m) => {
+    if (!m) return null
+    if (m.action === 'propose' && m.payload) return { key: RECIPE_SAFE_KEYS.has(m.payload.fnKey) ? m.payload.fnKey : null, label: m.payload.label }
+    const direct = {
+      enhance: ['enhance', 'Auto Enhance'],
+      cropsquare: ['crop-square', 'Crop to Square'],
+      cropportrait: ['crop-portrait', 'Crop to Portrait'],
+      removebg: ['remove-bg', 'Remove Background'],
+      teeth: ['teeth', 'Whiten Teeth'],
+      wrinkles: ['wrinkles', 'Reduce Wrinkles'],
+      pimples: ['pimples', 'Remove Pimples'],
+      glamour: ['glamour', 'Glamour'],
+      motionbg: ['motionbg', 'Motion Blur BG'],
+      sparkle: ['sparkle', 'Add Sparkle'],
+      slim: ['slim', 'Slim Body'],
+      chinlift: ['chin', 'Chin Lift'],
+      restore: ['restore', 'Restore Old Photo'],
+      crease: ['crease', 'Repair Creases'],
+      bwcolor: ['colorbw', 'B&W Tint'],
+      refineedge: ['refineedge', 'Refine Edge'],
+    }
+    if (direct[m.action]) { const [k, l] = direct[m.action]; return { key: k, label: l } }
+    if (m.action === 'fx') {
+      const p = m.payload || {}
+      if (p.bw) return { key: 'bw', label: 'Black & White' }
+      if (p.sepia) return { key: 'sepia', label: 'Sepia' }
+      if (p.pixelate) return { key: 'pixelate', label: 'Pixelate' }
+      return null
+    }
+    if (m.action === 'filters') {
+      const p = m.payload || {}
+      if (p.temperature > 0) return { key: 'warm', label: 'Warm Up' }
+      if (p.temperature < 0) return { key: 'cool', label: 'Cool Down' }
+      if (p.brightness > 100) return { key: 'brighten', label: 'Brighten' }
+      if (p.brightness < 100) return { key: 'darken', label: 'Darken' }
+      if (p.contrast) return { key: 'contrast', label: 'More Contrast' }
+      if (p.saturation > 100) return { key: 'saturate', label: 'More Color' }
+      if (p.saturation < 100) return { key: 'desaturate', label: 'Less Color' }
+      return null
+    }
+    return null
+  }
+
+  // Remember an executed step for the Recipes tab + self-learning stats.
+  const recordRecent = useCallback((key, label) => {
+    const safe = key && RECIPE_SAFE_KEYS.has(key)
+    if (safe) {
+      statsRef.current = bumpUsage(statsRef.current, key)
+      saveStats(statsRef.current)
+    }
+    const arr = recentRef.current
+    arr.push({ key: safe ? key : null, label: label || '' })
+    if (arr.length > 40) arr.splice(0, arr.length - 40)
+    setStatsVer((v) => v + 1) // re-render Recipes tab (reads stats + recent)
+  }, [])
+
+  const persistRecipes = useCallback((list) => {
+    saveRecipes(list)
+    setRecipes(list)
+    recipesRef.current = list
+  }, [])
+
+  // Direct runners for every safe step key (deterministic, no modal, no input).
+  // Mirrors the runAction map + one-touch prompt extras.
+  const RECIPE_RUNNERS = {
+    teeth: () => runBeautyFilter('teeth'),
+    pimples: () => runBeautyFilter('pimples'),
+    wrinkles: () => runBeautyFilter('wrinkles'),
+    glamour: () => runBeautyFilter('glamour'),
+    chin: () => runBodyWarp('chin'),
+    slim: () => runBodyWarp('slim'),
+    motionbg: () => runBeautyFilter('motion'),
+    sparkle: () => runBeautyFilter('sparkle'),
+    restore: () => runRestore('restore'),
+    crease: () => runRestore('crease'),
+    repaircrease: () => runRestore('crease'),
+    colorbw: () => runRestore('bw'),
+    halftone: () => runFilter('halftone'),
+    filmgrain: () => runFilter('filmGrain'),
+    tilt: () => runFilter('tiltShift'),
+    vignette: () => runPxAction('Vignette'),
+    sepia: () => setFx((f) => ({ ...f, sepia: true })),
+    posterize: () => runPxAction('Posterize'),
+    glitch: () => runPxAction('Glitch'),
+    mirror: () => setFx((f) => ({ ...f, flipX: !f.flipX })),
+    kaleido: () => runPxAction('Kaleidoscope'),
+    duotone: () => runPxAction('Duotone'),
+    splittone: () => runPxAction('Split Tone'),
+    goldenhour: () => commitFilters({ ...filtersRef.current, temperature: 55, saturation: 110 }),
+    hdr: () => commitFilters({ ...filtersRef.current, contrast: 122, saturation: 118 }),
+    faded: () => commitFilters({ ...filtersRef.current, contrast: 82, saturation: 92 }),
+    instant: () => { setFx((f) => ({ ...f, vintage: true })); commitFilters({ ...filtersRef.current, contrast: 90, saturation: 88 }) },
+    aged: () => { setFx((f) => ({ ...f, sepia: true })); commitFilters({ ...filtersRef.current, temperature: 35 }) },
+    vintagebw: () => setFx((f) => ({ ...f, bw: true, sepia: true })),
+    pop: () => { setFx((f) => ({ ...f, bw: false, sepia: false })); commitFilters({ ...filtersRef.current, saturation: 150, contrast: 120 }) },
+    pixelate: () => setFx((f) => ({ ...f, pixelate: 8 })),
+    neon: () => runFilter('glowingEdges'),
+    zoomblur: () => runPxAction('Zoom Blur'),
+    grain2: () => runFilter('addNoise'),
+    eyes: () => runPxAction('Eyes'),
+    lipcolor: () => runPxAction('Lips'),
+    sketch: () => runFilter('graphicPen'),
+    charcoal: () => runPxAction('Charcoal'),
+    cutout: () => runFilter('posterize'),
+    bwchannel: () => setFx((f) => ({ ...f, bw: true })),
+    despeckle: () => runFilter('median'),
+    dehaze: () => runPxAction('Dehaze'),
+    // one-touch extras
+    enhance: () => commitFilters({ ...AUTO_ENHANCE_FILTERS }),
+    'crop-square': () => runSmartCrop('1:1'),
+    'crop-portrait': () => runSmartCrop('4:5'),
+    'remove-bg': () => runRemoveBg(),
+    sharpen: () => runFilter('sharpenMore'),
+    'text-color': () => runAutoTextColor(),
+    bw: () => setFx((f) => ({ ...f, bw: true })),
+    warm: () => commitFilters({ ...filtersRef.current, temperature: (filtersRef.current.temperature || 0) + 45 }),
+    cool: () => commitFilters({ ...filtersRef.current, temperature: (filtersRef.current.temperature || 0) - 45 }),
+    brighten: () => commitFilters({ ...filtersRef.current, brightness: Math.min(200, (filtersRef.current.brightness || 100) + 12) }),
+    darken: () => commitFilters({ ...filtersRef.current, brightness: Math.max(0, (filtersRef.current.brightness || 100) - 12) }),
+    contrast: () => commitFilters({ ...filtersRef.current, contrast: Math.min(200, (filtersRef.current.contrast || 100) + 15) }),
+    saturate: () => commitFilters({ ...filtersRef.current, saturation: Math.min(200, (filtersRef.current.saturation || 100) + 20) }),
+    desaturate: () => commitFilters({ ...filtersRef.current, saturation: Math.max(0, (filtersRef.current.saturation || 100) - 20) }),
+  }
+
+  // The full step library shown in the builder (wired gallery actions + extras).
+  const recipeLibrary = [
+    ...ACTIONS.filter((a) => RECIPE_SAFE_KEYS.has(a.id)).map((a) => ({ key: a.id, label: a.name, group: a.cat, desc: a.desc, icon: a.icon })),
+    ...RECIPE_EXTRA,
+  ]
+
+  // Run a saved recipe: every step in order, ONE Undo reverts the whole run.
+  const runRecipe = async (r) => {
+    if (!imageSrcRef.current) { showToast('Start with an image first', 'info'); return }
+    if (!r || !r.steps || !r.steps.length) { showToast('This recipe has no steps yet', 'info'); return }
+    const before = snapshot()
+    pushHistory() // baseline → one Undo reverts the entire recipe
+    recipeGuardRef.current = true
+    try {
+      for (let i = 0; i < r.steps.length; i++) {
+        const s = r.steps[i]
+        const fn = RECIPE_RUNNERS[s.key]
+        if (!fn) { showToast(`Skipped "${s.label}" — needs your input`, 'info'); continue }
+        try { await fn() } catch { showToast(`Step "${s.label}" failed — continuing`, 'close') }
+      }
+    } finally {
+      recipeGuardRef.current = false
+    }
+    const list = recipesRef.current.map((x) => (x.id === r.id ? { ...x, runs: x.runs + 1, lastRun: Date.now(), updated: Date.now() } : x))
+    persistRecipes(list)
+    commandStackRef.current.push({ phrase: '⭐ ' + r.name, before })
+    setCommandCount(commandStackRef.current.length)
+    setConfirmBar({ label: 'Recipe: ' + r.name })
+    showToast(`Recipe "${r.name}" done`, 'check')
+  }
+
+  // Run a single step from the Most-used row / recent chips (1-click).
+  const runStepKey = (key) => {
+    const lib = recipeLibrary.find((x) => x.key === key)
+    recordRecent(key, lib ? lib.label : key)
+    const fn = RECIPE_RUNNERS[key]
+    if (fn) fn()
+    else showToast('This step needs your input', 'info')
+  }
+
+  /* ---- builder (create / edit a recipe) ---- */
+  const openRecipeBuilder = (draft) => {
+    setRecipeDraft(draft)
+    openModal(setRecipeBuilderOpen)
+  }
+  const closeRecipeBuilder = () => {
+    setRecipeBuilderOpen(false)
+    setRecipeDraft(null)
+    setPanelCollapsed(false) // reopen the panel so the Recipes tab is visible again
+  }
+  const saveRecipeDraft = (draft) => {
+    const d = { ...draft, name: (draft.name || '').trim() || 'My Recipe', emoji: draft.emoji || suggestEmoji(draft.steps), updated: Date.now() }
+    const exists = recipesRef.current.some((x) => x.id === d.id)
+    const list = exists ? recipesRef.current.map((x) => (x.id === d.id ? d : x)) : [...recipesRef.current, d]
+    persistRecipes(list)
+    setRecipeBuilderOpen(false)
+    setRecipeDraft(null)
+    setPanelCollapsed(false) // reopen the panel so the saved recipe is visible
+    showToast(d.steps.length ? `Recipe "${d.name}" saved` : 'Recipe saved — add steps later', 'check')
+  }
+  const deleteRecipe = (id) => {
+    persistRecipes(recipesRef.current.filter((x) => x.id !== id))
+    showToast('Recipe deleted', 'trash')
+  }
+  const importStepsToRecipe = (steps) => {
+    const safe = steps.filter((s) => s && s.key)
+    if (!safe.length) { showToast('Those steps need input — they can’t be automated', 'info'); return }
+    openRecipeBuilder(defaultRecipe(safe, suggestName(safe)))
+  }
+
   // Selection tools — marquee / lasso / wand. Sets the active selection tool.
   const startSelectionTool = (tool) => {
     setTool('select')
@@ -2061,6 +2314,8 @@ export function Editor({ project, onBack }) {
         }
         setCommandCount(commandStackRef.current.length)
         onPromptAction(m.action, m.payload)
+        const rk = promptToRecipeKey(m)
+        if (rk) recordRecent(rk.key, rk.label)
         done.push(step)
         await new Promise((r) => setTimeout(r, 260))
       }
@@ -2126,6 +2381,7 @@ export function Editor({ project, onBack }) {
         setCommandCount(commandStackRef.current.length)
         const fn = resolveFn(fnKey)
         if (fn) fn()
+        recordRecent(fnKey, label)
         setConfirmBar({ label })
         return
       }
@@ -2157,8 +2413,9 @@ export function Editor({ project, onBack }) {
     setProposed(null)
     setHighlightTarget(null)
     if (fn) fn()
+    recordRecent(p.fnKey, p.label)
     setConfirmBar({ label: p.label })
-  }, [pushHistory, resolveFn])
+  }, [pushHistory, resolveFn, recordRecent])
 
   const dismissConfirm = useCallback(() => setConfirmBar(null), [])
   const undoConfirm = useCallback(() => {
@@ -2184,6 +2441,22 @@ export function Editor({ project, onBack }) {
       if (action === 'nav') {
         if (payload && payload.tab === 'export') return openModal(setExportOpen)
         if (payload && payload.tab) { setTab(payload.tab); setPanelCollapsed(false) }
+        return
+      }
+      if (action === 'runrecipe' && payload) {
+        const q = String(payload.phrase || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+        const mine = recipesRef.current
+        const plain = /^(run|use|apply|do|execute)\s*(my|the|our)?\s*recipe$/.test(q)
+        if (plain || q.includes('last')) {
+          const last = mine.slice().sort((a, b) => (b.lastRun || 0) - (a.lastRun || 0))[0] || mine[mine.length - 1]
+          if (last) { runRecipe(last); return }
+        }
+        const r = mine.find((x) => {
+          const n = (x.name || '').toLowerCase()
+          return n && (q.includes(n) || (q.length > 2 && n.includes(q)))
+        })
+        if (r) { runRecipe(r); return }
+        showToast('No recipe with that name — check the Recipes tab', 'info')
         return
       }
       if (action === 'propose' && payload) {
@@ -2740,6 +3013,7 @@ export function Editor({ project, onBack }) {
     { id: 'tool-erasebrush', label: 'Erase brush', group: 'Tool', icon: 'eraser', go: () => startErase('alpha') },
     ...HOWTOS.map((h) => ({ id: 'how-' + h.id, label: h.q, group: 'How do I…?', icon: 'sparkle', go: () => { setHowtoOpen(true) } })),
     ...EXPORT_PRESETS.slice(0, 27).map((p) => ({ id: 'preset-' + p.id, label: p.name, group: 'Export size', icon: PLATFORM_ICONS[p.platform], go: () => { openModal(setExportOpen); setPreset(p.id) } })),
+    ...recipes.map((r) => ({ id: 'recipe-' + r.id, label: 'Run recipe: ' + r.name, group: 'Recipes', icon: 'pin', go: () => runRecipe(r) })),
   ]
 
   const gq = globalSearch.trim().toLowerCase()
@@ -2777,6 +3051,22 @@ export function Editor({ project, onBack }) {
           search={globalSearch}
           imageSrc={imageSrc}
           onRun={(id) => runAction(id)}
+        />
+      )
+    }
+    if (tab === 'recipes') {
+      return (
+        <RecipesTab
+          recipes={recipes}
+          library={recipeLibrary}
+          stats={statsRef.current}
+          recent={recentRef.current}
+          onRunRecipe={runRecipe}
+          onRunStep={runStepKey}
+          onNew={() => openRecipeBuilder(defaultRecipe([], ''))}
+          onEdit={(r) => openRecipeBuilder({ ...r })}
+          onDelete={deleteRecipe}
+          onImport={importStepsToRecipe}
         />
       )
     }
@@ -3271,7 +3561,9 @@ export function Editor({ project, onBack }) {
           ) : (
             <>
               <div className="flex items-center justify-between border-b border-line pr-1">
-                <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} className="flex-1" />
+                <div className="no-scrollbar min-w-0 flex-1 overflow-x-auto">
+                  <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} />
+                </div>
                 <IconBtn icon={isDesktop ? 'chevronRight' : 'close'} title="Collapse panel" onClick={() => setPanelCollapsed(true)} />
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">{renderPanel()}</div>
@@ -3744,6 +4036,16 @@ export function Editor({ project, onBack }) {
         )}
       </Modal>
 
+      {/* recipe builder — create / edit a custom one-click task */}
+      <RecipeBuilderModal
+        open={recipeBuilderOpen}
+        draft={recipeDraft}
+        library={recipeLibrary}
+        onClose={closeRecipeBuilder}
+        onChange={setRecipeDraft}
+        onSave={saveRecipeDraft}
+      />
+
       {/* done → OK / Undo bar */}
       {confirmBar && (
         <div className="fixed bottom-16 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-3 rounded-ink bg-white px-4 py-2 text-xs font-semibold text-black shadow-2xl">
@@ -4016,6 +4318,246 @@ function ActionsTab({ search = '', imageSrc, onRun }) {
         })}
       </div>
     </div>
+  )
+}
+
+/* ------------------------------ tab: Recipes -------------------- */
+// Saved custom tasks: 1-click re-run of a named step sequence, plus
+// self-learning stats (most-used) and capture of your last steps.
+function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, onNew, onEdit, onDelete, onImport }) {
+  const top = mostUsed(stats, 6)
+  const libByKey = {}
+  library.forEach((l) => { libByKey[l.key] = l })
+  const recentList = recent.slice(-12).reverse()
+  const [sel, setSel] = useState({})
+  const checkedSteps = recentList.filter((s) => s.key && sel[s.key]).map((s) => ({ key: s.key, label: s.label }))
+
+  return (
+    <div className="p-4">
+      <p className="mb-3 text-[10px] leading-relaxed text-mute">
+        Save the steps you repeat as a named one-click task. Everything is learned on this device — nothing leaves your browser.
+      </p>
+
+      {/* Most used (self-learning) */}
+      {top.length > 0 && (
+        <>
+          <div className="label-xs mb-1.5 text-dim">Most used</div>
+          <div className="mb-3 flex flex-wrap gap-1">
+            {top.map((k) => {
+              const l = libByKey[k]
+              const st = stats[k] || { n: 0 }
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => onRunStep(k)}
+                  title={l ? l.desc : 'Re-run this step'}
+                  className="flex items-center gap-1.5 rounded-ink border border-line bg-surface-2 px-2 py-1.5 transition-colors hover:border-white"
+                >
+                  <span className="text-mute"><Icon name={l ? l.icon : 'sparkle'} size={11} /></span>
+                  <span className="text-[10px] font-semibold text-fg">{l ? l.label : k}</span>
+                  <span className="rounded-full bg-white/10 px-1.5 text-[8px] font-bold text-white">{st.n}</span>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Your recipes */}
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="label-xs text-dim">Your recipes · {recipes.length}</span>
+        <Button variant="secondary" size="sm" icon="plus" onClick={onNew}>New</Button>
+      </div>
+      {recipes.length === 0 ? (
+        <div className="mb-3 rounded-ink border border-dashed border-line px-3 py-4 text-center">
+          <p className="text-[10px] text-mute">No recipes yet. Do a few steps, then save them here — or build one now.</p>
+        </div>
+      ) : (
+        <div className="mb-3 flex flex-col gap-1.5">
+          {recipes.map((r) => (
+            <div key={r.id} className="rounded-ink border border-line bg-surface-2/50 p-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm leading-none">{r.emoji || '⭐'}</span>
+                    <span className="truncate text-[11px] font-bold text-fg">{r.name}</span>
+                    {r.runs > 0 && <span className="label-xxs shrink-0 text-mute">{r.runs}× run</span>}
+                  </div>
+                  <p className="mt-1 truncate text-[9px] text-mute">{r.steps.length} step{r.steps.length === 1 ? '' : 's'} · {stepSummary(r.steps)}</p>
+                </div>
+                <Button variant="primary" size="sm" icon="play" className="shrink-0" onClick={() => onRunRecipe(r)}>Run</Button>
+              </div>
+              <div className="mt-1.5 flex items-center justify-between">
+                <span className="label-xxs text-mute">{r.lastRun ? 'Last run ' + new Date(r.lastRun).toLocaleString([], { month: 'short', day: 'numeric' }) : 'Never run'}</span>
+                <div className="flex items-center gap-0.5">
+                  <IconBtn icon="pencil" size={12} title="Edit recipe" onClick={() => onEdit(r)} className="h-6 w-6" />
+                  <IconBtn icon="trash" size={12} title="Delete recipe" onClick={() => onDelete(r.id)} className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* From your last steps → save as recipe */}
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="label-xs text-dim">From your last steps</span>
+        <Button variant="ghost" size="sm" disabled={!checkedSteps.length} onClick={() => onImport(checkedSteps)}>
+          Save checked as recipe
+        </Button>
+      </div>
+      {recentList.length === 0 ? (
+        <p className="text-[10px] leading-relaxed text-mute">Steps you run will appear here — click one to re-run it, tick a few and save them as a recipe.</p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {recentList.map((s, i) => {
+            const l = s.key ? libByKey[s.key] : null
+            return (
+              <div key={i} className="flex items-center gap-2 rounded-ink border border-line px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  disabled={!s.key}
+                  checked={!!sel[s.key]}
+                  onChange={(e) => setSel((prev) => ({ ...prev, [s.key]: e.target.checked }))}
+                  title={s.key ? 'Include in recipe' : 'Needs your input — can’t be automated'}
+                  className="h-3.5 w-3.5 shrink-0 accent-white"
+                />
+                <button
+                  type="button"
+                  disabled={!s.key}
+                  onClick={() => s.key && onRunStep(s.key)}
+                  title={s.key ? 'Click to re-run this step' : ''}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                >
+                  <span className="shrink-0 text-mute"><Icon name={l ? l.icon : 'info'} size={11} /></span>
+                  <span className={cn('truncate text-[10px] font-medium', s.key ? 'text-fg' : 'text-mute line-through')}>{s.label}</span>
+                  {!s.key && <span className="label-xxs shrink-0 text-mute">needs input</span>}
+                </button>
+                {s.key && <IconBtn icon="play" size={11} title="Re-run this step" onClick={() => onRunStep(s.key)} className="h-6 w-6" />}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ------------------------- recipe builder modal --------------------------- */
+// Name it, order the steps, save — then the Recipes tab runs it in one click.
+function RecipeBuilderModal({ open, draft, library, onClose, onChange, onSave }) {
+  const [q, setQ] = useState('')
+  const [cat, setCat] = useState('all')
+  const groups = ['all', ...Array.from(new Set(library.map((l) => l.group)))]
+  const ql = q.trim().toLowerCase()
+  const visible = library.filter((l) => {
+    if (cat !== 'all' && l.group !== cat) return false
+    if (ql && !(l.label + ' ' + l.desc + ' ' + l.group).toLowerCase().includes(ql)) return false
+    return true
+  })
+  if (!draft) return null
+  const steps = draft.steps || []
+  const add = (l) => onChange({ ...draft, steps: [...steps, { key: l.key, label: l.label }] })
+  const remove = (i) => onChange({ ...draft, steps: steps.filter((_, j) => j !== i) })
+  const move = (i, dir) => {
+    const j = i + dir
+    if (j < 0 || j >= steps.length) return
+    const s = steps.slice()
+    const tmp = s[i]; s[i] = s[j]; s[j] = tmp
+    onChange({ ...draft, steps: s })
+  }
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={steps.length ? `Recipe — ${draft.name || 'unnamed'}` : 'New Recipe'}
+      subtitle="Steps run top-to-bottom — one click runs them all, one Undo reverts them all"
+      width="max-w-lg"
+    >
+      <div className="flex flex-col gap-3">
+        <div>
+          <label className="label-xs text-dim">Name (make it recognizable)</label>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              value={draft.emoji || '⭐'}
+              onChange={(e) => onChange({ ...draft, emoji: e.target.value.slice(0, 2) || '⭐' })}
+              title="Emoji"
+              className="w-11 rounded-ink border border-line bg-surface px-2 py-1.5 text-center text-sm"
+            />
+            <input
+              value={draft.name || ''}
+              onChange={(e) => onChange({ ...draft, name: e.target.value })}
+              placeholder="e.g. Social Square Boost"
+              autoFocus
+              className="flex-1 rounded-ink border border-line bg-surface px-2.5 py-1.5 text-xs text-fg focus:border-white focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="label-xs text-dim">Steps ({steps.length})</label>
+          {steps.length === 0 ? (
+            <p className="mt-1 rounded-ink border border-dashed border-line px-3 py-2 text-[10px] text-mute">No steps yet — add some below.</p>
+          ) : (
+            <div className="mt-1 flex flex-col gap-1">
+              {steps.map((s, i) => (
+                <div key={i} className="flex items-center gap-1.5 rounded-ink border border-line bg-surface-2 px-2 py-1.5">
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-white">{i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-fg">{s.label}</span>
+                  <IconBtn icon="chevronUp" size={12} title="Move up" onClick={() => move(i, -1)} className="h-6 w-6" />
+                  <IconBtn icon="chevronDown" size={12} title="Move down" onClick={() => move(i, 1)} className="h-6 w-6" />
+                  <IconBtn icon="close" size={12} title="Remove step" onClick={() => remove(i)} className="h-6 w-6" />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="label-xs text-dim">Add a step</label>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search steps… e.g. sharpen, crop, teeth"
+            className="mt-1 w-full rounded-ink border border-line bg-surface px-2.5 py-1.5 text-xs text-fg focus:border-white focus:outline-none"
+          />
+          <div className="no-scrollbar mt-1.5 flex gap-1 overflow-x-auto pb-1">
+            {groups.map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setCat(g)}
+                className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
+              >
+                {g === 'all' ? 'All' : g}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 grid max-h-44 grid-cols-2 gap-1 overflow-y-auto pr-0.5 scrollbar-thin">
+            {visible.map((l) => (
+              <button
+                key={l.key}
+                type="button"
+                onClick={() => add(l)}
+                title={l.desc}
+                className="flex items-center gap-1.5 rounded-ink border border-line px-2 py-1.5 text-left transition-colors hover:border-white"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center text-mute"><Icon name={l.icon} size={11} /></span>
+                <span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-fg">{l.label}</span>
+                <Icon name="plus" size={10} className="shrink-0 text-mute" />
+              </button>
+            ))}
+            {visible.length === 0 && <p className="col-span-2 py-2 text-center text-[10px] text-mute">No steps match “{q}”</p>}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" icon="check" onClick={() => onSave(draft)}>Save Recipe</Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

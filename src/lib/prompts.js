@@ -80,6 +80,12 @@ export function matchPrompt(raw) {
   if (has('zoom out')) return { action: 'zoom', payload: { dir: 'out' } }
   if (has('fit') && has('screen')) return { action: 'zoom', payload: { dir: 'fit' } }
 
+  // ---- run a saved recipe (one-click custom task) ----
+  if (has('recipe') && (has('run') || has('use') || has('apply') || has('execute')))
+    return { action: 'runrecipe', payload: { phrase: raw } }
+  if ((has('run') || has('do')) && has('my') && (has('edit') || has('look') || has('task') || has('action')))
+    return { action: 'runrecipe', payload: { phrase: raw } }
+
   // ---- diagonal crop ----
   if (has('crop') && (has('diagonal') || has('diag') || has('corner'))) {
     if (has('bottom') && has('left') || has('bl')) return { action: 'diagcrop', payload: { corner: 'bl' } }
@@ -261,5 +267,6 @@ export const PROMPT_SUGGESTIONS = [
   'Crop to square',
   'Upscale 4×',
   'Open quick menu',
+  'Run my recipe',
   'Undo last',
 ]

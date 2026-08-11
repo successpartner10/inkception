@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.21
+> **Version**: v0.16.1
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.21)
+> **Updated**: 2026-08-11 (v0.16.1)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -97,6 +97,25 @@ input; applies live to selected text and to new text.
   YouTube tutorial link + one-tap Open tool
 - Everything is also findable via the global search bar (tools, how-tos,
   export presets, collage sizes — one box, click to jump)
+
+## 4c. Recipes — save your steps as one-click tasks
+
+- **Recipes tab** (pin icon in the dock): your saved tasks, each with a name,
+  emoji, step list and run count
+- **Capture**: every action you run — from the Actions grid, guided prompts,
+  or command chains — is recorded in "From your last steps"; tick a few and
+  save as a recipe (auto-named + auto-emoji)
+- **Builder**: searchable library of 40+ free/local operations (gallery
+  actions + one-touch: Auto Enhance, Crop to Square/Portrait, Remove
+  Background, Sharpen, Auto Text Color, B&W, Warm/Cool, Brighten/Darken,
+  Contrast, Saturate/Desaturate) — reorder, remove, rename
+- **Run**: one click replays the whole sequence; the ✓ bar's Undo reverts the
+  entire recipe in one step
+- **Self-learning**: "Most used" row (per-key counts + recency) stored in
+  localStorage — the foundation for pattern nudges & next-step prediction
+- **Command bar**: "run my recipe" / "run <name> recipe" / "run my edit"
+- Honest limits: steps that need input (brushes, region clicks, model-only
+  AI) are marked "needs input" and excluded from recipes
 
 ## 5. AI Suite (17 capabilities, all on-device)
 
@@ -335,3 +354,22 @@ layers, quick actions, AI suite, collage, versioning all present.
   subject-mask union; then "enhance this region" applies enhance only inside
   the selection
 - Beauty/edge/diagonal-crop from v0.15.21 included
+
+### v0.16.1 — Recipes: save your steps as one-click custom tasks
+- **Recipes tab** in the dock (pin icon): named, emoji-labeled custom tasks
+  that replay a whole step sequence with one click
+- **Capture from what you just did**: every action run (Actions grid, guided
+  prompts, command chains) is remembered locally — tick a few in "From your
+  last steps" and save them as a recipe (auto-named + auto-emoji)
+- **Manual builder**: searchable step library (40+ free/local operations —
+  gallery actions + one-touch steps like Auto Enhance, Crop to Square,
+  Remove Background, Sharpen, B&W, Warm/Cool/Brighten) with reorder/remove
+- **1-click run, 1-click undo**: Run replays steps in order; the ✓ bar's Undo
+  reverts the entire recipe (snapshot before start)
+- **Self-learning (local stats)**: "Most used" row surfaces your frequent
+  actions with run counts; usage stats persist per device (localStorage —
+  nothing leaves the browser)
+- **Command bar**: "run my recipe", "run <name> recipe", "run my edit" —
+  runs the latest or named recipe
+- **Search dropdown**: each recipe appears as "Run recipe: <name>"
+- Repaired creases action now wired from the Actions grid
