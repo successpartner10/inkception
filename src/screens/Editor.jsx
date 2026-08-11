@@ -669,6 +669,26 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     c.on('selection:updated', syncTextSelection)
     c.on('selection:cleared', () => setActiveText(false))
 
+    // Circle Inset: keep the white ring frame glued to its circular photo
+    // when the user drags/scales/rotates the photo (manual manipulation).
+    const centerOf = (o) => (o.originX === 'center' && o.originY === 'center' ? { x: o.left, y: o.top } : { x: o.left + (o.width * o.scaleX) / 2, y: o.top + (o.height * o.scaleY) / 2 })
+    const setCenter = (o, x, y) => {
+      if (o.originX === 'center' && o.originY === 'center') o.set({ left: x, top: y })
+      else o.set({ left: x - (o.width * o.scaleX) / 2, top: y - (o.height * o.scaleY) / 2 })
+    }
+    const syncRing = (e) => {
+      const o = e.target
+      if (!o || !o.circleGroup) return
+      const partner = c.getObjects().find((x) => x.circleGroup === o.circleGroup && x !== o)
+      if (!partner) return
+      const cen = centerOf(o)
+      setCenter(partner, cen.x, cen.y)
+      c.requestRenderAll()
+    }
+    c.on('object:moving', syncRing)
+    c.on('object:scaling', syncRing)
+    c.on('object:rotating', syncRing)
+
     return () => {
       c.dispose()
       fabricRef.current = null
@@ -1168,7 +1188,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       const c = fabricRef.current
       if (!c || !urls.length) return
       setCollageOpen(false)
-      const { placement = 'current', size, append = false } = opts
+      const { placement = 'current', size, append = false, circlePos = 'br' } = opts
 
       let W = fit.w
       let H = fit.h
@@ -1205,10 +1225,16 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       try {
         // cap photos at the layout's max so a too-large selection still builds
         const meta = COLLAGE_LAYOUTS.find((l) => l.id === layoutId)
+        // new canvas from a template → adopt the template's name (export
+        // filename) and its recommended export size by default
+        if (meta && placement === 'new') {
+          if (meta.preset) setPreset(meta.preset)
+          onRename(`${meta.name} Collage`)
+        }
         let used = meta ? urls.slice(0, meta.max) : urls
         // Circle Inset with a single photo → reuse it in the circle too
         if (layoutId === 'circleinset' && used.length === 1) used = [used[0], used[0]]
-        const slots = computeSlots(layoutId, used.length, W, H)
+        const slots = computeSlots(layoutId, used.length, W, H, { circlePos })
         const rot =
           layoutId === 'polaroid'
             ? [-6, 6, 5, -5, 4]
@@ -1266,6 +1292,10 @@ export function Editor({ project, onBack, onRename = () => {} }) {
               selectable: false,
               evented: false,
             })
+            // group the photo + ring so dragging the photo moves the frame too
+            const gid = `ring-${Date.now()}-${i}`
+            img.set('circleGroup', gid)
+            ring.circleGroup = gid
             c.add(ring)
           }
           decompRef.current.push({ id: `col-${Date.now()}-${i}`, img, name: `Photo ${i + 1}`, type: 'Collage', dataUrl: used[i], visible: true })
@@ -1288,7 +1318,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         showToast('Collage failed', 'close')
       }
     },
-    [fit.w, fit.h, calcFitFor, fitPhotoToSlot, showToast],
+    [fit.w, fit.h, calcFitFor, fitPhotoToSlot, setPreset, onRename, showToast],
   )
 
   /* ------------------------------ AI pipeline ------------------------------ */
@@ -6028,10 +6058,10 @@ function BatchBody({ onRun, result, onClear }) {
 /* ------------------------- collage layout preview ------------------------- */
 // White slots (clear at a glance) + live photo thumbnails once you've chosen
 // enough photos + a "needs N more" badge when the layout needs more.
-function LayoutPreview({ layoutId, active, photos = [], need = 0 }) {
+function LayoutPreview({ layoutId, active, photos = [], need = 0, circlePos = 'br' }) {
   const meta = COLLAGE_LAYOUTS.find((l) => l.id === layoutId)
   const count = Math.max(meta.min, Math.min(meta.max, photos.length))
-  const slots = computeSlots(layoutId, count, 1, 1)
+  const slots = computeSlots(layoutId, count, 1, 1, { circlePos })
   return (
     <div className={cn('relative aspect-[4/3] w-full overflow-hidden rounded-[4px]', meta.whiteBack ? 'bg-white' : 'bg-white/15')}>
       {slots.map((s, i) => {
@@ -6334,14 +6364,25 @@ function CollageBody({ onBuild, showToast, search = '' }) {
   const [collagePreset, setCollagePreset] = useState('ig-square')
   const [collageGroup, setCollageGroup] = useState('all')
   const [append, setAppend] = useState(false)
+  const [circlePos, setCirclePos] = useState('br') // br|bl|tr|tl|c — Circle Inset frame position
+  const userPickedLayout = useRef(false) // user chose a template → don't auto-override
   const inputRef = useRef(null)
 
   const addFiles = (files) => {
     const add = [...files].slice(0, 12 - photos.length).map((f) => ({ url: URL.createObjectURL(f), name: f.name }))
     const next = [...photos, ...add]
     setPhotos(next)
-    const fits = COLLAGE_LAYOUTS.find((l) => next.length >= l.min && next.length <= l.max)
-    if (fits) setLayout(fits.id)
+    // auto-pick a fitting layout only if the user hasn't chosen one (or the
+    // current choice no longer fits the photo count)
+    const cur = COLLAGE_LAYOUTS.find((l) => l.id === layout)
+    const curFits = cur && next.length >= cur.min && next.length <= cur.max
+    if (!userPickedLayout.current || !curFits) {
+      const fits = COLLAGE_LAYOUTS.find((l) => next.length >= l.min && next.length <= l.max)
+      if (fits) {
+        setLayout(fits.id)
+        if (fits.preset) setCollagePreset(fits.preset)
+      }
+    }
   }
 
   const current = COLLAGE_LAYOUTS.find((l) => l.id === layout)
@@ -6354,6 +6395,7 @@ function CollageBody({ onBuild, showToast, search = '' }) {
       placement,
       size: placement === 'new' ? { w: size.w, h: size.h } : null,
       append: placement === 'current' && append,
+      circlePos,
     })
   }
 
@@ -6504,30 +6546,34 @@ function CollageBody({ onBuild, showToast, search = '' }) {
               key={l.id}
               type="button"
               onClick={() => {
+                // always select the template (pick first, import after)
+                setLayout(l.id)
+                userPickedLayout.current = true
+                // the template's recommended export size becomes the default
+                if (l.preset) setCollagePreset(l.preset)
                 if (photos.length < l.min) {
-                  showToast(`Add ${l.min - photos.length} more photo${l.min - photos.length === 1 ? '' : 's'} for ${l.name}`, 'info')
-                  return
-                }
-                if (photos.length > l.max) {
+                  showToast(`${l.name} selected — add ${l.min - photos.length} more photo${l.min - photos.length === 1 ? '' : 's'}`, 'info')
+                } else if (photos.length > l.max) {
                   showToast(`${l.name} fits up to ${l.max} — building with the first ${l.max}`, 'info')
                 }
-                setLayout(l.id)
               }}
               title={ok ? l.name : `${l.name} needs ${l.min}–${l.max} photos`}
               className={cn(
                 'group rounded-ink border p-1.5 transition-colors',
-                layout === l.id && ok
-                  ? 'border-white bg-surface-2'
+                layout === l.id
+                  ? ok
+                    ? 'border-white bg-surface-2'
+                    : 'border-white/60 bg-surface-2/60'
                   : ok
                     ? 'border-line hover:border-line-2'
                     : 'border-line opacity-70 hover:border-line-2',
               )}
             >
-              <LayoutPreview layoutId={l.id} active={layout === l.id && ok} photos={photos} need={need} />
+              <LayoutPreview layoutId={l.id} active={layout === l.id && ok} photos={photos} need={need} circlePos={circlePos} />
               <span
                 className={cn(
                   'mt-1 block truncate text-center text-[9px] font-bold uppercase tracking-[0.04em]',
-                  layout === l.id && ok ? 'text-white' : 'text-dim',
+                  layout === l.id ? 'text-white' : 'text-dim',
                 )}
               >
                 <Highlight text={l.name} query={search} />
@@ -6546,6 +6592,28 @@ function CollageBody({ onBuild, showToast, search = '' }) {
         {photos.length} photo{photos.length === 1 ? '' : 's'} selected · {current ? `${current.min}–${current.max} for ${current.name}` : 'pick a template'}
         {photos.length > 0 && current && photos.length < current.min ? ` · add ${current.min - photos.length} more` : ''}
       </p>
+
+      {/* Circle Inset → choose where the circular frame sits */}
+      {current && current.id === 'circleinset' && (
+        <div className="mt-4">
+          <label className="label-xs text-dim">Circle position</label>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {[
+              ['tl', 'Top-left'], ['tr', 'Top-right'], ['bl', 'Bottom-left'], ['br', 'Bottom-right'], ['c', 'Center'],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setCirclePos(id)}
+                className={cn('rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', circlePos === id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[9px] text-mute">After building, drag the photo (or circle) anywhere on the canvas — the ring follows. Photos auto-fit to their slot; grab a corner to resize.</p>
+        </div>
+      )}
 
       <div className="mt-5 flex items-center justify-between gap-3">
         <span className="text-[10px] text-mute">

@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.5
+> **Version**: v0.17.6
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.5)
+> **Updated**: 2026-08-11 (v0.17.6)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -546,3 +546,21 @@ layers, quick actions, AI suite, collage, versioning all present.
 - Template preview shows the white backdrop + round slot; verified on-canvas:
   white 64% / main photo 31% / circle 4%, zero errors; standard grid collages
   still clip + gutter correctly
+
+### v0.17.6 — Collage templates = default size + name; photos auto-fit & stay movable
+- **Each template now sets its default export size + name**: picking a
+  template (e.g. Circle Inset → **1080×1080**, Hero → **Facebook Cover**,
+  Horizontal → **YouTube Thumbnail**) auto-selects that size in the New
+  Image picker, and creating a canvas from a template renames the project
+  to the template name (e.g. "Circle Inset Collage") — so the export
+  filename matches the template out of the box
+- **Pick first, import after**: a template can be selected before photos are
+  added (it highlights with "add N more"), and imported photos auto-fit
+  into its slots when you build
+- **Manual manipulation**: every collage photo stays draggable/resizable on
+  the canvas; the Circle Inset frame (photo + white ring) moves as one —
+  drag the circle photo anywhere and the ring follows exactly (verified:
+  ring position === photo center)
+- 12-step audit passes (template→size auto-select, project rename, auto-fit,
+  circle clip, ring-follow-drag, single-file export, standard grid, no
+  console errors)
