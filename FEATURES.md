@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.15.20
+> **Version**: v0.15.21
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-10 (v0.15.20)
+> **Updated**: 2026-08-10 (v0.15.21)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -306,3 +306,32 @@ layers, quick actions, AI suite, collage, versioning all present.
   results), with free-workaround steps
 - **Autosave**: session (image + filters + fx) saved to localStorage every
   15s + on unload; restored when reopening the project
+
+
+### v0.15.21 — beauty, diagonal crop, edge refine, 40-tools plan
+- **Beauty (free, local)**: whiten teeth, reduce wrinkles, remove pimples,
+  glamour look (soft skin + warm + vignette), motion-blur background (car
+  moving; subject kept sharp via segmentation), add sparkle (glints)
+- **Diagonal crop**: cut a corner corner-to-corner (TL/TR/BL/BR, soft
+  band) — via command "crop diagonal top right" or the Smart Crop modal
+- **Refine Edge**: cleans untidy cutout edges after Remove Background
+  (despeckle + shrink halo + feather)
+- **Honest**: "add more hair" / "remove sunglasses" / "blue eyes" explain
+  generative-only limits with free workarounds
+- **TOOLS-40-MORE.md**: 40 researched recommendations (✅ local vs ⚠️
+  needs AI/free-tier) + free daily AI-quota proposal
+
+
+### v0.16.0 — Actions library, old-photo restore, intelligent region select
+- **Actions tab** replaces Quick/More-filters: 42 free one-click actions from
+  the techniques docs (Artistic, Portrait, Color, Vintage, Texture, Restore,
+  Digital, Motion) with a Free/All toggle (AI/composite actions hidden by
+  default and discardable), category chips, search
+- **Old photo restore** (real, local): crease/scratch detection + inpaint +
+  despeckle + faded-tone fix · "restore this old photo", "repair creases"
+- **B&W → color**: honest tint presets (warm/cool/teal/violet) — labeled as
+  tint, not true colorization (that needs a model, shown in All)
+- **Intelligent region select**: click a region (no circles) — magic-wand +
+  subject-mask union; then "enhance this region" applies enhance only inside
+  the selection
+- Beauty/edge/diagonal-crop from v0.15.21 included

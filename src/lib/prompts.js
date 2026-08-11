@@ -80,6 +80,17 @@ export function matchPrompt(raw) {
   if (has('zoom out')) return { action: 'zoom', payload: { dir: 'out' } }
   if (has('fit') && has('screen')) return { action: 'zoom', payload: { dir: 'fit' } }
 
+  // ---- diagonal crop ----
+  if (has('crop') && (has('diagonal') || has('diag') || has('corner'))) {
+    if (has('bottom') && has('left') || has('bl')) return { action: 'diagcrop', payload: { corner: 'bl' } }
+    if (has('bottom') && has('right') || has('br')) return { action: 'diagcrop', payload: { corner: 'br' } }
+    if (has('top') && has('left') || has('tl')) return { action: 'diagcrop', payload: { corner: 'tl' } }
+    return { action: 'diagcrop', payload: { corner: 'tr' } }
+  }
+  if (has('diagonal') && has('crop')) return { action: 'diagcrop', payload: { corner: 'tr' } }
+  if (has('refine') && has('edge')) return { action: 'refineedge' }
+  if ((has('clean') || has('improve') || has('fix')) && has('edge')) return { action: 'refineedge' }
+
   // ---- crop amounts ----
   if (has('crop') && has('square')) return { action: 'cropsquare' }
   if (has('crop') && has('portrait')) return { action: 'cropportrait' }
@@ -89,6 +100,29 @@ export function matchPrompt(raw) {
     return { action: 'cropamt', payload: { amt: -50 } }
   if (has('crop') && has('less')) return { action: 'cropamt', payload: { amt: -15 } }
   if (has('crop')) return { action: 'opentool', payload: { tool: 'crop' } }
+
+  // ---- beauty / glamour / motion / sparkle ----
+  if ((has('white') || has('whiten') || has('brighten')) && has('teeth')) return { action: 'teeth' }
+  if (has('teeth')) return { action: 'teeth' }
+  if (has('wrinkle') || (has('reduce') && has('wrinkle'))) return { action: 'wrinkles' }
+  if (has('pimple') || has('acne') || has('spot') && has('remove')) return { action: 'pimples' }
+  if (has('glamour') || (has('glam') && has('look'))) return { action: 'glamour' }
+  if (has('bald') || has('baldness') || has('more hair')) return { action: 'genonly', payload: { phrase: 'add hair' } }
+  if (has('sparkle') || (has('glint') || has('shine')) && (has('glass') || has('jewel') || has('ring'))) return { action: 'sparkle' }
+  if ((has('car') || has('motion') || has('moving')) && has('background')) return { action: 'motionbg' }
+
+  // ---- restore / repair ----
+  if ((has('restore') || has('repair')) && (has('photo') || has('old') || has('crease') || has('scratch') || has('damage')))
+    return { action: 'restore' }
+  if (has('crease') || has('scratch') || has('fold')) return { action: 'crease' }
+  if (has('colorize') || (has('black') && has('white') && has('color')) || (has('color') && has('bw')))
+    return { action: 'bwcolor' }
+  if (has('bw') && has('color')) return { action: 'bwcolor' }
+
+  // ---- intelligent region select + enhance ----
+  if (has('select') && (has('region') || has('area') || has('inset') || has('part'))) return { action: 'regionselect' }
+  if (has('enhance') && (has('region') || has('area') || has('inset') || has('part') || has('portion')))
+    return { action: 'enhanceregion' }
 
   // ---- body warps (free, local) — before vague goals ----
   if ((has('slim') || has('slimmer') || has('thinner') || has('slim down')) && (has('body') || has('me') || has('down') || has('slightly') || has('a bit')))

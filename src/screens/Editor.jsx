@@ -36,6 +36,7 @@ import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../
 import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas } from '../lib/encode'
 import * as PX from '../lib/pxengine'
 import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
+import { ACTION_CATS, ACTIONS } from '../lib/actions'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
@@ -46,11 +47,10 @@ import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMe
 
 const TAB_ITEMS = [
   { id: 'adjust', label: 'Adjust', icon: 'sliders' },
-  { id: 'quick', label: 'Quick', icon: 'sparkle' },
+  { id: 'actions', label: 'Actions', icon: 'sparkle' },
   { id: 'ai', label: 'AI', icon: 'sparkle' },
   { id: 'layers', label: 'Layers', icon: 'layers' },
   { id: 'text', label: 'Text', icon: 'text' },
-  { id: 'more', label: 'More', icon: 'more' },
 ]
 
 export const TOOLS = [
@@ -1662,6 +1662,178 @@ export function Editor({ project, onBack }) {
     else if (action === 'export') openModal(setExportOpen)
   }
 
+  /* Run an action by id — only 'local' ones are wired (ai/composite are hidden/discarded). */
+  const runAction = (id) => {
+    const map = {
+      teeth: () => runBeautyFilter('teeth'),
+      pimples: () => runBeautyFilter('pimples'),
+      wrinkles: () => runBeautyFilter('wrinkles'),
+      glamour: () => runBeautyFilter('glamour'),
+      chin: () => runBodyWarp('chin'),
+      slim: () => runBodyWarp('slim'),
+      motionbg: () => runBeautyFilter('motion'),
+      restore: () => runRestore('restore'),
+      crease: () => runRestore('crease'),
+      colorbw: () => runRestore('bw'),
+      halftone: () => runFilter('halftone'),
+      filmgrain: () => runFilter('filmGrain'),
+      tilt: () => runFilter('tiltShift'),
+      vignette: () => runVignette(),
+      sepia: () => setFx((f) => ({ ...f, sepia: true })),
+      posterize: () => runPxAction('Posterize'),
+      glitch: () => runPxAction('Glitch'),
+      mirror: () => setFx((f) => ({ ...f, flipX: !f.flipX })),
+      kaleido: () => runKaleido(),
+      duotone: () => runDuotone(),
+      splittone: () => runSplitTone(),
+      goldenhour: () => commitFilters({ ...filtersRef.current, temperature: 55, saturation: 110 }),
+      hdr: () => commitFilters({ ...filtersRef.current, contrast: 122, saturation: 118 }),
+      faded: () => commitFilters({ ...filtersRef.current, contrast: 82, saturation: 92 }),
+      instant: () => { setFx((f) => ({ ...f, vintage: true })); commitFilters({ ...filtersRef.current, contrast: 90, saturation: 88 }) },
+      aged: () => { setFx((f) => ({ ...f, sepia: true })); commitFilters({ ...filtersRef.current, temperature: 35 }) },
+      vintagebw: () => setFx((f) => ({ ...f, bw: true, sepia: true })),
+      pop: () => { setFx((f) => ({ ...f, bw: false, sepia: false })); commitFilters({ ...filtersRef.current, saturation: 150, contrast: 120 }) },
+      pixelate: () => setFx((f) => ({ ...f, pixelate: 8 })),
+      neon: () => runFilter('glowingEdges'),
+      zoomblur: () => runPxAction('Zoom Blur'),
+      grain2: () => runFilter('addNoise'),
+      eyes: () => runPxAction('Eyes'),
+      lipcolor: () => runPxAction('Lips'),
+      sketch: () => runFilter('graphicPen'),
+      charcoal: () => runPxAction('Charcoal'),
+      cutout: () => runFilter('posterize'),
+      bwchannel: () => setFx((f) => ({ ...f, bw: true })),
+      despeckle: () => runFilter('median'),
+      dehaze: () => runPxAction('Dehaze'),
+    }
+    if (map[id]) map[id]()
+    else showToast('This action needs more work — hidden for now', 'info')
+  }
+
+  /* ------------------- intelligent region select + enhance ------------- */
+  // Click a region (no circles): magic-wand flood fill from the click, then
+  // optionally union the subject mask if clicked on the subject. Store the
+  // mask so "enhance only that area" applies inside it.
+  const regionMaskRef = useRef(null) // {data,w,h}
+  const [regionActive, setRegionActive] = useState(false)
+
+  const startRegionSelect = () => {
+    setTool('region')
+    regionMaskRef.current = null
+    setRegionActive(true)
+    showToast('Click a region on the image — it selects that area intelligently', 'info')
+  }
+
+  const regionClick = async (e) => {
+    const rect = paintRectRef.current
+    const c = fabricRef.current
+    const src = imageSrcRef.current
+    if (!rect.w || !c || !src) return
+    const p = c.getPointer(e)
+    const nx = Math.round((p.x / fit.w) * naturalRef.current.w)
+    const ny = Math.round((p.y / fit.h) * naturalRef.current.h)
+    setBusy({ kind: 'real', title: 'Smart Select', step: 'Selecting region…', progress: 40 })
+    try {
+      const L = await PX.loadPixels(src, 800)
+      const wand = PX.floodFillMask(L.data.data, L.w, L.h, Math.min(L.w - 1, Math.max(0, Math.round((nx / naturalRef.current.w) * L.w))), Math.min(L.h - 1, Math.max(0, Math.round((ny / naturalRef.current.h) * L.h))), 26)
+      // try to also get the subject mask; if the clicked point is on the subject, union it
+      let finalMask = wand
+      try {
+        const seg = await segmentImage(src, { maxSize: 800 })
+        const sm = seg.mask.data
+        const clickedOnSubject = sm[Math.min(seg.mask.h - 1, Math.round((ny / naturalRef.current.h) * seg.mask.h)) * seg.mask.w + Math.min(seg.mask.w - 1, Math.round((nx / naturalRef.current.w) * seg.mask.w))]
+        if (clickedOnSubject) {
+          // union wand + subject mask
+          const union = new Uint8Array(L.w * L.h)
+          for (let i = 0; i < L.w * L.h; i++) {
+            const sIdx = Math.min(seg.mask.h - 1, Math.round((i / L.w / L.h) * seg.mask.h)) * seg.mask.w + Math.min(seg.mask.w - 1, Math.round(((i % L.w) / L.w) * seg.mask.w))
+            union[i] = wand[i] || sm[sIdx] ? 1 : 0
+          }
+          finalMask = union
+        }
+      } catch { /* no segment — wand only */ }
+      regionMaskRef.current = { data: finalMask, w: L.w, h: L.h }
+      setRegionActive(false)
+      setTool('select')
+      setBusy(null)
+      showToast('Region selected — now say "enhance this region"', 'check')
+    } catch { setBusy(null); showToast('Select failed', 'close') }
+  }
+
+  // Enhance only inside the selected region (intelligent inset).
+  const enhanceRegion = async () => {
+    const src = imageSrcRef.current
+    const mask = regionMaskRef.current
+    if (!src) { showToast('Load an image first', 'info'); return }
+    if (!mask) { showToast('Select a region first — click on the image', 'info'); return }
+    setBusy({ kind: 'real', title: 'Enhance Region', step: 'Enhancing selected area…', progress: 40 })
+    try {
+      const L = await PX.loadPixels(src, 900)
+      // map the region mask to the working size
+      const m = new Uint8Array(L.w * L.h)
+      for (let y = 0; y < L.h; y++) {
+        for (let x = 0; x < L.w; x++) {
+          const sy = Math.min(mask.h - 1, Math.round((y / L.h) * mask.h))
+          const sx = Math.min(mask.w - 1, Math.round((x / L.w) * mask.w))
+          m[y * L.w + x] = mask.data[sy * mask.w + sx]
+        }
+      }
+      const out = PX.enhanceRegion(L.data.data, L.w, L.h, m, 0.6)
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      await loadIntoCanvas(L.toDataUrl())
+      setBusy(null)
+      showToast('Selected region enhanced — ⌘Z to revert', 'check')
+    } catch { setBusy(null); showToast('Enhance region failed', 'close') }
+  }
+
+  /* Run a generic pxengine action by name. */
+  const runPxAction = async (name) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy({ kind: 'real', title: name, step: `Applying ${name.toLowerCase()}…`, progress: 40 })
+    try {
+      const L = await PX.loadPixels(src, 900)
+      let out
+      const fns = {
+        Vignette: PX.vignette, Kaleidoscope: PX.kaleido, Duotone: PX.duotone,
+        'Split Tone': PX.splitTone, Dehaze: PX.dehaze, 'Zoom Blur': PX.zoomBlur,
+        Glitch: PX.glitch, Eyes: PX.eyes, Lips: PX.lips, Charcoal: PX.charcoal,
+        Posterize: PX.posterize || PX.addNoise,
+      }
+      if (fns[name]) out = fns[name](L.data.data, L.w, L.h)
+      if (!out) return
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      await loadIntoCanvas(L.toDataUrl())
+      setBusy(null)
+      showToast(`${name} applied — ⌘Z to revert`, 'check')
+    } catch { setBusy(null); showToast(`${name} failed`, 'close') }
+  }
+  const runVignette = () => runPxAction('Vignette')
+  const runKaleido = () => runPxAction('Kaleidoscope')
+  const runDuotone = () => runPxAction('Duotone')
+  const runSplitTone = () => runPxAction('Split Tone')
+
+  /* Restore old photo + repair creases (real, local). */
+  const runRestore = async (kind) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    const titles = { restore: 'Restore Old Photo', crease: 'Repair Creases', bw: 'B&W Tint' }
+    setBusy({ kind: 'real', title: titles[kind], step: `Applying ${titles[kind].toLowerCase()}…`, progress: 40 })
+    try {
+      const L = await PX.loadPixels(src, 900)
+      let out
+      if (kind === 'restore') out = PX.oldPhotoRestore(L.data.data, L.w, L.h, 0.55)
+      else if (kind === 'crease') {
+        const m = PX.detectCreases(L.data.data, L.w, L.h, 0.6)
+        out = PX.repairCreases(L.data.data, L.w, L.h, m, 0.7)
+      } else out = PX.bwTint(L.data.data, L.w, L.h, 'sepia', 0.6)
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      await loadIntoCanvas(L.toDataUrl())
+      setBusy(null)
+      showToast(`${titles[kind]} applied — ⌘Z to revert`, 'check')
+    } catch { setBusy(null); showToast(`${titles[kind]} failed`, 'close') }
+  }
+
   /* Crop by percentage — trims amt% from each side (cents the image). */
   const runCropAmount = async (amt) => {
     const src = imageSrcRef.current
@@ -1697,6 +1869,77 @@ export function Editor({ project, onBack }) {
       setBusy(null)
       showToast(`${title} applied — Undo (⌘Z) to revert`, 'check')
     } catch { setBusy(null); showToast(`${title} failed`, 'close') }
+  }
+
+  /* Beauty / glamour / motion / sparkle — real local filters. */
+  const runBeautyFilter = async (kind) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    const titles = { teeth: 'Whiten Teeth', wrinkles: 'Reduce Wrinkles', pimples: 'Remove Pimples', glamour: 'Glamour', motion: 'Motion Blur BG', sparkle: 'Add Sparkle' }
+    setBusy({ kind: 'real', title: titles[kind], step: `Applying ${titles[kind].toLowerCase()}…`, progress: 40 })
+    try {
+      const L = await PX.loadPixels(src, 900)
+      let out
+      if (kind === 'teeth') out = PX.whitenTeeth(L.data.data, L.w, L.h, 0.6)
+      else if (kind === 'wrinkles') out = PX.wrinkleReduce(L.data.data, L.w, L.h, 0.5)
+      else if (kind === 'pimples') out = PX.removePimples(L.data.data, L.w, L.h, 0.5)
+      else if (kind === 'glamour') out = PX.glamour(L.data.data, L.w, L.h, 0.5)
+      else if (kind === 'sparkle') out = PX.sparkle(L.data.data, L.w, L.h, 0.5)
+      else if (kind === 'motion') {
+        // subject mask keeps the car sharp; bg streaked
+        let mask = null
+        try {
+          const seg = await segmentImage(src, { maxSize: 900 })
+          mask = seg.mask.data
+        } catch { /* no segmentation — blur all */ }
+        out = PX.motionBlurBg(L.data.data, L.w, L.h, mask, 0.6)
+      }
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      await loadIntoCanvas(L.toDataUrl())
+      setBusy(null)
+      showToast(`${titles[kind]} applied — ⌘Z to revert`, 'check')
+    } catch (err) {
+      console.error('[beauty]', kind, err)
+      setBusy(null)
+      showToast(`${titles[kind]} failed`, 'close')
+    }
+  }
+
+  /* Diagonal crop — cut a corner corner-to-corner with a soft band. */
+  const runDiagonalCrop = async (corner, width = 0.08) => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy({ kind: 'real', title: 'Diagonal Crop', step: 'Cutting corner…', progress: 40 })
+    try {
+      const L = await PX.loadPixels(src, 1000)
+      const out = PX.diagonalCrop(L.data.data, L.w, L.h, corner, width)
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      await loadIntoCanvas(L.toDataUrl())
+      setBusy(null)
+      showToast(`Diagonal crop (${corner}) applied — ⌘Z to revert`, 'crop')
+    } catch { setBusy(null); showToast('Diagonal crop failed', 'close') }
+  }
+
+  /* Edge refinement — clean the cutout edge after Remove Background. */
+  const runRefineEdge = async () => {
+    const src = imageSrcRef.current
+    if (!src || busyRef.current) return
+    setBusy({ kind: 'real', title: 'Refine Edge', step: 'Cleaning cutout edge…', progress: 40 })
+    try {
+      const L = await PX.loadPixels(src, 900)
+      // reuse the segmentation mask if the image is already a cutout
+      let mask = null
+      try {
+        const seg = await segmentImage(src, { maxSize: 900 })
+        mask = seg.mask.data
+      } catch { /* fall back: assume all opaque */ }
+      if (!mask) { setBusy(null); showToast('Run Remove Background first', 'info'); return }
+      const out = PX.refineEdge(L.data.data, L.w, L.h, mask.slice(), 2, true)
+      L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
+      await loadIntoCanvas(L.toDataUrl())
+      setBusy(null)
+      showToast('Edge refined — cleaner cutout', 'scissors')
+    } catch { setBusy(null); showToast('Refine edge failed', 'close') }
   }
 
   /* ------------------ More tab: filters / selection / paint / shapes ---------- */
@@ -1986,6 +2229,19 @@ export function Editor({ project, onBack }) {
       if (action === 'duplicate') { duplicateLayer(); return }
       if (action === 'slim') { runBodyWarp('slim'); return }
       if (action === 'chinlift') { runBodyWarp('chin'); return }
+      if (action === 'teeth') { runBeautyFilter('teeth'); return }
+      if (action === 'wrinkles') { runBeautyFilter('wrinkles'); return }
+      if (action === 'pimples') { runBeautyFilter('pimples'); return }
+      if (action === 'glamour') { runBeautyFilter('glamour'); return }
+      if (action === 'motionbg') { runBeautyFilter('motion'); return }
+      if (action === 'sparkle') { runBeautyFilter('sparkle'); return }
+      if (action === 'diagcrop' && payload) { runDiagonalCrop(payload.corner, payload.width || 0.08); return }
+      if (action === 'refineedge') { runRefineEdge(); return }
+      if (action === 'regionselect') { startRegionSelect(); return }
+      if (action === 'enhanceregion') { enhanceRegion(); return }
+      if (action === 'restore') { runRestore('restore'); return }
+      if (action === 'crease') { runRestore('crease'); return }
+      if (action === 'bwcolor') { runRestore('bw'); return }
       if (action === 'genonly' && payload) {
         setHowtoOpen(true)
         showToast('That edit needs generative AI — see the honest how-to', 'info')
@@ -2515,6 +2771,15 @@ export function Editor({ project, onBack }) {
         />
       )
     }
+    if (tab === 'actions') {
+      return (
+        <ActionsTab
+          search={globalSearch}
+          imageSrc={imageSrc}
+          onRun={(id) => runAction(id)}
+        />
+      )
+    }
     if (tab === 'ai') {
       return aiView === 'vectorize' ? (
         <VectorizePanel src={imageSrc} fileName={slug(project.name)} onBack={() => setAiView('grid')} />
@@ -2831,6 +3096,18 @@ export function Editor({ project, onBack }) {
                 pos={comparePos}
                 onChange={setComparePos}
               />
+            )}
+
+            {tool === 'region' && displayRect && (
+              <div
+                className="absolute z-20 cursor-crosshair touch-none"
+                style={{ left: displayRect.x, top: displayRect.y, width: displayRect.w, height: displayRect.h }}
+                onClick={regionClick}
+              >
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="label-sm rounded-ink border border-white bg-black/60 px-3 py-1.5 text-white">Click a region to select it</span>
+                </div>
+              </div>
             )}
 
             {tool === 'crop' && displayRect && (
@@ -3173,6 +3450,28 @@ export function Editor({ project, onBack }) {
         <p className="mt-4 text-[10px] leading-relaxed text-mute">
           Uses the segmentation model to find the subject; if none is found it falls back to a
           geometric center crop.
+        </p>
+
+        <div className="mt-5 mb-2 flex items-center gap-2">
+          <span className="label-xs text-dim">Diagonal Crop</span>
+          <span className="h-px flex-1 bg-line" />
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {[
+            { c: 'tl', l: '↖ TL' }, { c: 'tr', l: '↗ TR' }, { c: 'bl', l: '↙ BL' }, { c: 'br', l: '↘ BR' },
+          ].map((o) => (
+            <button
+              key={o.c}
+              type="button"
+              onClick={() => { setCropOpen(false); runDiagonalCrop(o.c, 0.08) }}
+              className="rounded-ink border border-line px-2 py-2 text-center text-[10px] font-bold uppercase tracking-[0.05em] text-dim transition-colors hover:border-white hover:text-white"
+            >
+              {o.l}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] text-mute">
+          Cut a corner corner-to-corner (soft band) — try "crop diagonal top right" by voice too.
         </p>
       </Modal>
 
@@ -3645,6 +3944,77 @@ function MoreTab({ search = '', onAsk, onFilter, onSelection, onClone, onHeal, o
         </div>
         )
       })}
+    </div>
+  )
+}
+
+/* ------------------------------ tab: Actions (gallery) -------------------- */
+function ActionsTab({ search = '', imageSrc, onRun }) {
+  const [cat, setCat] = useState('all')
+  const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default
+  const q = String(search || '').trim().toLowerCase()
+  const visible = ACTIONS.filter((a) => {
+    if (q && !(a.name + ' ' + a.desc + ' ' + a.cat).toLowerCase().includes(q)) return false
+    if (cat !== 'all' && a.cat !== cat) return false
+    if (feat === 'local' && a.fe !== 'local') return false
+    return true
+  })
+  const counts = { all: ACTIONS.length, local: ACTIONS.filter((a) => a.fe === 'local').length }
+
+  return (
+    <div className="p-4">
+      {/* feasibility toggle — hide AI/composite by default */}
+      <div className="mb-2 flex items-center gap-1">
+        <button type="button" onClick={() => setFeat('local')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'local' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}>
+          Free ({counts.local})
+        </button>
+        <button type="button" onClick={() => setFeat('all')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}>
+          All ({counts.all})
+        </button>
+        <span className="ml-auto text-[8px] text-mute">{feat === 'local' ? 'AI/needs-model hidden' : 'showing all (AI greyed)'}</span>
+      </div>
+
+      {/* category chips */}
+      <div className="no-scrollbar flex gap-1 overflow-x-auto pb-1">
+        <button type="button" onClick={() => setCat('all')} className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}>All</button>
+        {ACTION_CATS.map((c) => (
+          <button key={c} type="button" onClick={() => setCat(c)} className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === c ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}>{c}</button>
+        ))}
+      </div>
+
+      {visible.length === 0 && <p className="py-6 text-center text-xs text-mute">No actions match “{search}”</p>}
+
+      {/* gallery grid */}
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        {visible.map((a) => {
+          const wired = a.fe === 'local' // only local are runnable
+          return (
+            <button
+              key={a.id}
+              type="button"
+              disabled={!wired}
+              onClick={() => onRun(a.id)}
+              title={`${a.when}${a.fe !== 'local' ? ' — needs a model/composite (hidden from Free)' : ''}`}
+              className={cn(
+                'flex flex-col gap-1 rounded-ink border p-2 text-left transition-colors',
+                wired ? 'border-line hover:border-white' : 'border-line opacity-40',
+              )}
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center text-mute">
+                  <Icon name={a.icon} size={13} />
+                </span>
+                <span className="truncate text-[11px] font-semibold text-fg"><Highlight text={a.name} query={search} /></span>
+              </span>
+              <span className="line-clamp-2 text-[9px] leading-relaxed text-mute">{a.desc}</span>
+              <span className="mt-auto flex items-center justify-between">
+                <span className="label-xxs text-mute">{a.cat}</span>
+                {a.fe !== 'local' && <span className="label-xxs text-mute">🔒 AI</span>}
+              </span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

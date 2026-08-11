@@ -487,3 +487,442 @@ export function chinLift(d, w, h, amt = 0.5) {
   }
   return out
 }
+
+/* ----------------------------- beauty / portrait --------------------------- */
+// Teeth whitening: brighten + desaturate pixels in the teeth hue/luma band.
+export function whitenTeeth(d, w, h, amt = 0.5) {
+  const out = new Uint8ClampedArray(d)
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2]
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2
+    const sat = mx - mn
+    // teeth: warm-tinted light pixels, low-mid saturation
+    const isTooth = l > 150 && l < 235 && sat < 60 && r > b && g > b
+    if (!isTooth) continue
+    const k = amt
+    out[i] = Math.min(255, r + (255 - r) * 0.5 * k)      // brighten R
+    out[i + 1] = Math.min(255, g + (255 - g) * 0.45 * k) // brighten G
+    out[i + 2] = Math.min(255, b * (1 - 0.25 * k))        // reduce blue → whiter
+  }
+  return out
+}
+
+// Wrinkle reduction: gentle skin-mask blur (like retouch but subtler + local).
+export function wrinkleReduce(d, w, h, amt = 0.5) {
+  const blur = CONV_FILTERS.blur3(d, w, h)
+  const blur2 = CONV_FILTERS.blur3(blur, w, h)
+  const out = new Uint8ClampedArray(d)
+  // simple skin detection: warm hue, mid lightness
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2]
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2
+    const sat = mx - mn
+    const isSkin = l > 40 && l < 235 && sat < 120 && r > b && r >= g
+    if (!isSkin) continue
+    const k = Math.min(0.7, amt) * (0.5 + 0.5 * Math.min(1, sat / 80))
+    out[i] = r + (blur2[i] - r) * k
+    out[i + 1] = g + (blur2[i + 1] - g) * k
+    out[i + 2] = b + (blur2[i + 2] - b) * k
+  }
+  return out
+}
+
+// Pimple removal: find high-contrast reddish spots on skin, median-blend them.
+export function removePimples(d, w, h, amt = 0.5) {
+  const out = new Uint8ClampedArray(d)
+  const rad = 1
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = (y * w + x) * 4
+      const r = d[i], g = d[i + 1], b = d[i + 2]
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b)
+      // reddish + bright vs neighbors = likely pimple
+      const redd = r - Math.max(g, b)
+      const localMax = Math.max(
+        d[((y - 1) * w + x) * 4], d[((y + 1) * w + x) * 4],
+        d[(y * w + x - 1) * 4], d[(y * w + x + 1) * 4],
+      )
+      if (redd < 18 || r < localMax - 10) continue
+      // median of 3x3 reds
+      const win = []
+      for (let dy = -rad; dy <= rad; dy++)
+        for (let dx = -rad; dx <= rad; dx++) win.push(d[((y + dy) * w + (x + dx)) * 4])
+      win.sort((a, b) => a - b)
+      const med = win[4]
+      const k = Math.min(0.85, amt)
+      out[i] = r + (med - r) * k
+      out[i + 1] = g + (med - g) * k * 0.8
+      out[i + 2] = b + (med - b) * k * 0.8
+    }
+  }
+  return out
+}
+
+// Glamour: soft skin + subtle glow + warm tint + vignette.
+export function glamour(d, w, h, amt = 0.5) {
+  const blur = CONV_FILTERS.blur3(d, w, h)
+  const blur2 = CONV_FILTERS.blur3(blur, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4
+      const r = d[i], g = d[i + 1], b = d[i + 2]
+      // soft skin: blend toward blurred copy (stronger in midtones)
+      const l = (r + g + b) / 3
+      const soft = Math.min(0.5, amt) * (1 - Math.abs(l - 128) / 160)
+      const sr = r + (blur2[i] - r) * soft
+      const sg = g + (blur2[i + 1] - g) * soft
+      const sb = b + (blur2[i + 2] - b) * soft
+      // warm tint
+      const warm = amt * 6
+      // vignette
+      const nx = (x / w - 0.5) * 2, ny = (y / h - 0.5) * 2
+      const vg = 1 - Math.max(0, Math.hypot(nx, ny) - 0.55) * 0.5 * amt
+      out[i] = Math.min(255, (sr + warm) * vg)
+      out[i + 1] = Math.min(255, (sg + warm * 0.6) * vg)
+      out[i + 2] = Math.min(255, Math.max(0, (sb - warm * 0.4)) * vg)
+      out[i + 3] = 255
+    }
+  }
+  return out
+}
+
+// Motion-blur background (car moving): subject sharp (via mask), bg streaked.
+export function motionBlurBg(d, w, h, mask, amt = 0.6) {
+  const out = new Uint8ClampedArray(d.length)
+  const len = Math.round(6 + amt * 14) // streak length
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4
+      if (mask && mask[y * w + x]) { // subject → keep sharp
+        out[i] = d[i]; out[i + 1] = d[i + 1]; out[i + 2] = d[i + 2]; out[i + 3] = 255
+        continue
+      }
+      let r = 0, g = 0, b = 0, c = 0
+      for (let s = -len; s <= len; s++) {
+        const sx = Math.min(w - 1, Math.max(0, x + s))
+        const j = (y * w + sx) * 4
+        r += d[j]; g += d[j + 1]; b += d[j + 2]; c++
+      }
+      out[i] = r / c; out[i + 1] = g / c; out[i + 2] = b / c; out[i + 3] = 255
+    }
+  }
+  return out
+}
+
+// Sparkle: additive glints on bright specular pixels (glass/jewelry).
+export function sparkle(d, w, h, amt = 0.5) {
+  const out = new Uint8ClampedArray(d)
+  for (let i = 0; i < d.length; i += 4) {
+    const l = (d[i] + d[i + 1] + d[i + 2]) / 3
+    if (l < 200) continue
+    const k = amt * (l - 200) / 55
+    out[i] = Math.min(255, d[i] + 40 * k)
+    out[i + 1] = Math.min(255, d[i + 1] + 40 * k)
+    out[i + 2] = Math.min(255, d[i + 2] + 40 * k)
+  }
+  return out
+}
+
+/* ------------------------------ diagonal crop ------------------------------ */
+// Cut a corner with a straight diagonal line, keeping the other side.
+// corner: 'tl' (keep top-left), 'tr', 'bl', 'br' · width: band width 0..1
+export function diagonalCrop(d, w, h, corner = 'tl', width = 0) {
+  const out = new Uint8ClampedArray(d)
+  const band = Math.max(0, Math.min(0.5, width)) * w
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // normalized position on the diagonal line
+      const diag = (x / w) + (y / h) // 0..2 (BR→TL-ish)
+      let cut = false
+      if (corner === 'tr') cut = x / w + y / h < 1 // top-right side
+      else if (corner === 'bl') cut = x / w + y / h > 1
+      else if (corner === 'tl') cut = x / w > y / h // top-left
+      else cut = x / w < y / h // br
+      if (!cut) continue
+      // soft band: blend alpha across the band
+      const dNorm = Math.abs((x / w) - (y / h))
+      const a = dNorm < band / w ? dNorm / (band / w) : 1
+      const i = (y * w + x) * 4
+      out[i + 3] = Math.round(out[i + 3] * a)
+    }
+  }
+  return out
+}
+
+/* --------------------------- edge refinement ------------------------------- */
+// Clean the cutout edge: feather harsh 1px jaggies, shrink+despeckle the mask.
+export function refineEdge(d, w, h, mask, feather = 2, despeckle = true) {
+  const out = new Uint8ClampedArray(d)
+  // 1) despeckle: isolated mask pixels (single) → remove
+  if (despeckle) {
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x
+        if (!mask[i]) continue
+        let n = 0
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++)
+            if (mask[(y + dy) * w + (x + dx)]) n++
+        if (n <= 1) mask[i] = 0 // isolated speckle
+      }
+    }
+  }
+  // 2) shrink mask by 1px to remove halos (sample inward)
+  const shrunk = new Uint8Array(w * h)
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      if (!mask[y * w + x]) continue
+      let ok = true
+      for (let dy = -1; dy <= 1 && ok; dy++)
+        for (let dx = -1; dx <= 1 && ok; dx++)
+          if (!mask[(y + dy) * w + (x + dx)]) ok = false
+      shrunk[y * w + x] = ok ? 1 : 0
+    }
+  }
+  // 3) apply shrunk mask + feather alpha near boundary
+  for (let i = 0; i < w * h; i++) {
+    if (!shrunk[i]) out[i * 4 + 3] = 0
+    else {
+      // feather: check if near the (shrunk) boundary
+      let near = 0
+      for (let dy = -feather; dy <= feather; dy++) {
+        for (let dx = -feather; dx <= feather; dx++) {
+          const nx = (i % w) + dx, ny = ((i / w) | 0) + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) { near = 1; break }
+          if (!shrunk[ny * w + nx]) { near = 1; break }
+        }
+        if (near) break
+      }
+      if (near) out[i * 4 + 3] = Math.round(out[i * 4 + 3] * 0.5)
+    }
+  }
+  return out
+}
+
+/* ------------------------- old-photo restore ------------------------------- */
+// Detect crease/scratch lines: long thin runs where luminance deviates sharply
+// from a blurred local average. Returns a mask (creased=1).
+export function detectCreases(d, w, h, strength = 0.5) {
+  const blur = CONV_FILTERS.blur3(d, w, h)
+  const blur2 = CONV_FILTERS.blur3(blur, w, h) // heavy blur = local average
+  const mask = new Uint8Array(w * h)
+  const thresh = 26 + (1 - strength) * 30
+  for (let i = 0; i < w * h; i++) {
+    const l = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3
+    const avg = (blur2[i * 4] + blur2[i * 4 + 1] + blur2[i * 4 + 2]) / 3
+    const dev = Math.abs(l - avg)
+    // creases = strong deviation from surroundings, not a global tone shift
+    if (dev > thresh && l < 235) mask[i] = 1
+  }
+  return mask
+}
+
+// Repair creases: inpaint masked pixels from surrounding average + despeckle.
+export function repairCreases(d, w, h, mask, strength = 0.5) {
+  const out = new Uint8ClampedArray(d)
+  // multiple inward-diffusion passes over the crease mask
+  const passes = 40
+  let cur = new Uint8ClampedArray(d)
+  let next = new Uint8ClampedArray(d.length)
+  for (let p = 0; p < passes; p++) {
+    next.set(cur)
+    let changed = 0
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x
+        if (!mask[i]) continue
+        let r = 0, g = 0, b = 0, c = 0
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const j = ((y + dy) * w + (x + dx)) * 4
+            if (!mask[(y + dy) * w + (x + dx)]) { r += cur[j]; g += cur[j + 1]; b += cur[j + 2]; c++ }
+          }
+        }
+        if (c > 0) { next[i * 4] = r / c; next[i * 4 + 1] = g / c; next[i * 4 + 2] = b / c; changed++ }
+      }
+    }
+    ;[cur, next] = [next, cur]
+    if (changed === 0) break
+  }
+  const k = strength
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i]) continue
+    out[i * 4] = d[i * 4] + (cur[i * 4] - d[i * 4]) * k
+    out[i * 4 + 1] = d[i * 4 + 1] + (cur[i * 4 + 1] - d[i * 4 + 1]) * k
+    out[i * 4 + 2] = d[i * 4 + 2] + (cur[i * 4 + 2] - d[i * 4 + 2]) * k
+  }
+  return out
+}
+
+// Full old-photo restore: crease repair + despeckle + faded-tone correction.
+export function oldPhotoRestore(d, w, h, strength = 0.5) {
+  let out = new Uint8ClampedArray(d)
+  const creaseMask = detectCreases(d, w, h, strength)
+  out = repairCreases(out, w, h, creaseMask, strength)
+  // despeckle (dust)
+  out = medianFilter(out, w, h, 1)
+  // faded tone: stretch contrast a bit + reduce yellow cast
+  const lut = new Array(256)
+  const lo = 8, hi = 248
+  for (let v = 0; v < 256; v++) lut[v] = Math.round(Math.min(255, Math.max(0, (v - lo) * (255 / (hi - lo)))))
+  for (let i = 0; i < out.length; i += 4) {
+    out[i] = lut[out[i]]
+    out[i + 1] = lut[out[i + 1]]
+    const b = lut[out[i + 2]]
+    // reduce yellow cast (pull blue up a touch)
+    out[i + 2] = Math.min(255, Math.round(b + 4 * strength))
+  }
+  return out
+}
+
+// B&W → color: honest tint presets (not true colorization — labeled).
+export function bwTint(d, w, h, mode = 'sepia', amt = 0.5) {
+  const out = new Uint8ClampedArray(d)
+  const presets = {
+    sepia: [1.1, 1.0, 0.8],
+    warm: [1.15, 0.98, 0.82],
+    cool: [0.85, 0.97, 1.12],
+    teal: [0.82, 1.0, 1.05],
+    violet: [0.95, 0.85, 1.1],
+  }
+  const [rr, gg, bb] = presets[mode] || presets.sepia
+  for (let i = 0; i < d.length; i += 4) {
+    const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+    const k = amt
+    out[i] = Math.min(255, l * (1 + (rr - 1) * k))
+    out[i + 1] = Math.min(255, l * (1 + (gg - 1) * k))
+    out[i + 2] = Math.min(255, l * (1 + (bb - 1) * k))
+    out[i + 3] = 255
+  }
+  return out
+}
+
+// Enhance only inside a mask (intelligent selection): blend adjusted+original.
+export function enhanceRegion(d, w, h, mask, amount = 0.6) {
+  const out = new Uint8ClampedArray(d)
+  for (let i = 0; i < w * h; i++) {
+    const a = mask ? mask[i] : 1
+    if (!a) { const j = i * 4; out[j] = d[j]; out[j + 1] = d[j + 1]; out[j + 2] = d[j + 2]; out[j + 3] = 255; continue }
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    // gentle contrast + saturation + brightness inside the mask
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const c = 1 + amount * 0.18
+    const nr = Math.min(255, Math.max(0, (r - 128) * c + 128 + amount * 10))
+    const ng = Math.min(255, Math.max(0, (g - 128) * c + 128 + amount * 10))
+    const nb = Math.min(255, Math.max(0, (b - 128) * c + 128 + amount * 10))
+    // saturate
+    const avg = (nr + ng + nb) / 3
+    const sat = 1 + amount * 0.35
+    out[j] = Math.min(255, Math.max(0, avg + (nr - avg) * sat))
+    out[j + 1] = Math.min(255, Math.max(0, avg + (ng - avg) * sat))
+    out[j + 2] = Math.min(255, Math.max(0, avg + (nb - avg) * sat))
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* --- extra action engines --- */
+export function kaleido(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  const seg = w / 8
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let sx = x % seg
+      let sy = y
+      // fold into one wedge, mirror vertically in each strip
+      sx = seg - 1 - sx
+      const i = (y * w + x) * 4
+      const j = (sy * w + sx) * 4
+      out[i] = d[j]; out[i + 1] = d[j + 1]; out[i + 2] = d[j + 2]; out[i + 3] = 255
+    }
+  }
+  return out
+}
+export function duotone(d, w, h, hi = [235, 225, 210], lo = [25, 30, 55]) {
+  const out = new Uint8ClampedArray(d)
+  for (let i = 0; i < d.length; i += 4) {
+    const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255
+    out[i] = lo[0] + (hi[0] - lo[0]) * l
+    out[i + 1] = lo[1] + (hi[1] - lo[1]) * l
+    out[i + 2] = lo[2] + (hi[2] - lo[2]) * l
+  }
+  return out
+}
+export function splitTone(d, w, h) {
+  const out = new Uint8ClampedArray(d)
+  for (let i = 0; i < d.length; i += 4) {
+    const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255
+    out[i] = Math.min(255, d[i] + (l > 0.5 ? 14 : -10))
+    out[i + 1] = Math.min(255, Math.max(0, d[i + 1] + (l > 0.5 ? 4 : -6)))
+    out[i + 2] = Math.min(255, Math.max(0, d[i + 2] + (l > 0.5 ? -8 : 16)))
+  }
+  return out
+}
+export function vignette(d, w, h, amt = 0.4) {
+  const out = new Uint8ClampedArray(d)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const nx = (x / w - 0.5) * 2, ny = (y / h - 0.5) * 2
+      const k = 1 - Math.max(0, Math.hypot(nx, ny) - 0.5) * 0.7 * amt
+      const i = (y * w + x) * 4
+      out[i] = d[i] * k; out[i + 1] = d[i + 1] * k; out[i + 2] = d[i + 2] * k; out[i + 3] = 255
+    }
+  }
+  return out
+}
+export function dehaze(d, w, h, amt = 0.5) {
+  const blur = CONV_FILTERS.blur3(d, w, h)
+  const out = new Uint8ClampedArray(d)
+  for (let i = 0; i < d.length; i += 4) {
+    const k = amt
+    out[i] = Math.min(255, Math.max(0, d[i] + (d[i] - blur[i]) * k))
+    out[i + 1] = Math.min(255, Math.max(0, d[i + 1] + (d[i + 1] - blur[i + 1]) * k))
+    out[i + 2] = Math.min(255, Math.max(0, d[i + 2] + (d[i + 2] - blur[i + 2]) * k))
+    out[i + 3] = 255
+  }
+  return out
+}
+export function zoomBlur(d, w, h, amt = 0.4) {
+  const cx = (w - 1) / 2, cy = (h - 1) / 2
+  const out = new Uint8ClampedArray(d)
+  const steps = 6
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let r = 0, g = 0, b = 0
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps * amt
+        const sx = cx + (x - cx) * (1 - t)
+        const sy = cy + (y - cy) * (1 - t)
+        const [rr, gg, bb] = bilinear(d, w, h, sx, sy)
+        r += rr; g += gg; b += bb
+      }
+      const i = (y * w + x) * 4
+      out[i] = r / steps; out[i + 1] = g / steps; out[i + 2] = b / steps; out[i + 3] = 255
+    }
+  }
+  return out
+}
+export function glitch(d, w, h, amt = 0.4) {
+  const out = new Uint8ClampedArray(d)
+  const bands = 6
+  for (let b = 0; b < bands; b++) {
+    const y0 = Math.floor(Math.random() * h)
+    const bh = Math.floor(h / bands) + Math.floor(Math.random() * 8)
+    const off = Math.floor((Math.random() - 0.5) * w * 0.3 * amt)
+    for (let y = y0; y < Math.min(h, y0 + bh); y++) {
+      for (let x = 0; x < w; x++) {
+        const sx = (x + off + w) % w
+        const i = (y * w + x) * 4
+        const j = (y * w + sx) * 4
+        // RGB split
+        out[i] = d[j]; out[i + 1] = d[j + 1]; out[i + 2] = d[j + 2]; out[i + 3] = 255
+      }
+    }
+  }
+  return out
+}
+export function eyes(d, w, h) { return glamour(d, w, h, 0.3) }
+export function lips(d, w, h) { return bwTint(d, w, h, 'warm', 0.4) }
+export function charcoal(d, w, h) { return graphicPen(d, w, h, 0.7) }
