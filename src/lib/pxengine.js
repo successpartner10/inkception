@@ -1213,3 +1213,297 @@ export function blueprint(d, w, h) {
   }
   return out
 }
+
+/* --------------- commercial / product / interior grades (v0.17.8) ---------- */
+
+/** Brighten speculars (highlights) only — makes shine pop. */
+export function highlightBoost(d, w, h, amt = 0.45) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const t = Math.max(0, (l - 150) / 105)
+    const k = 1 + t * amt
+    out[j] = Math.min(255, r * k); out[j + 1] = Math.min(255, g * k); out[j + 2] = Math.min(255, b * k); out[j + 3] = 255
+  }
+  return out
+}
+
+/** Matte finish — lifted blacks, muted color, capped highlights. */
+export function matteFinish(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const m = l * 0.78 + 42
+    out[j] = Math.min(255, m + (r - l) * 0.55)
+    out[j + 1] = Math.min(255, m + (g - l) * 0.55)
+    out[j + 2] = Math.min(255, m + (b - l) * 0.55)
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Luxury grade — warm, rich, contrast + soft vignette. */
+export function luxuryGrade(d, w, h) {
+  const cx = (w - 1) / 2, cy = (h - 1) / 2, R = Math.hypot(cx, cy)
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const j = (y * w + x) * 4
+      const r = d[j], g = d[j + 1], b = d[j + 2]
+      const l = 0.299 * r + 0.587 * g + 0.114 * b
+      const c = 1.13
+      let nr = Math.min(255, (r - 128) * c + 128 + 10)
+      let ng = Math.min(255, (g - 128) * c + 128 + 4)
+      let nb = Math.min(255, Math.max(0, (b - 128) * c + 128 - 8))
+      const avg = (nr + ng + nb) / 3
+      const sat = 1.1
+      nr = Math.min(255, avg + (nr - avg) * sat); ng = Math.min(255, avg + (ng - avg) * sat); nb = Math.min(255, avg + (nb - avg) * sat)
+      const dist = Math.hypot(x - cx, y - cy) / R
+      const v = 1 - Math.max(0, dist - 0.55) * 0.42
+      out[j] = nr * v; out[j + 1] = ng * v; out[j + 2] = nb * v; out[j + 3] = 255
+    }
+  }
+  return out
+}
+
+/** Brand-new product clean — despeckle + dehaze + gentle contrast. */
+export function productClean(d, w, h) {
+  const m = medianFilter(d, w, h, 1)
+  const out = dehaze(m, w, h, 0.45)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = Math.min(255, (out[j] - 128) * 1.08 + 128)
+    out[j + 1] = Math.min(255, (out[j + 1] - 128) * 1.08 + 128)
+    out[j + 2] = Math.min(255, (out[j + 2] - 128) * 1.08 + 128)
+  }
+  return out
+}
+
+/** Scratch / dust remover — stronger median. */
+export function scratchRemove(d, w, h) { return medianFilter(d, w, h, 2) }
+
+/** Fabric texture enhance — unsharp + a touch of color. */
+export function fabricEnhance(d, w, h) {
+  const blur = CONV_FILTERS.blur3(d, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    for (let k = 0; k < 3; k++) out[j + k] = Math.min(255, Math.max(0, d[j + k] + (d[j + k] - blur[j + k]) * 1.15))
+    const r = out[j], g = out[j + 1], b = out[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    out[j] = Math.min(255, l + (r - l) * 1.06)
+    out[j + 1] = Math.min(255, l + (g - l) * 1.06)
+    out[j + 2] = Math.min(255, l + (b - l) * 1.06)
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Denim pop — contrast + saturation. */
+export function denimPop(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    let r = (d[j] - 128) * 1.18 + 128
+    let g = (d[j + 1] - 128) * 1.18 + 128
+    let b = (d[j + 2] - 128) * 1.18 + 128
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    r = l + (r - l) * 1.25; g = l + (g - l) * 1.25; b = l + (b - l) * 1.25
+    out[j] = Math.min(255, Math.max(0, r)); out[j + 1] = Math.min(255, Math.max(0, g)); out[j + 2] = Math.min(255, Math.max(0, b)); out[j + 3] = 255
+  }
+  return out
+}
+
+/** Silk sheen — soft, satiny highlights. */
+export function silkSheen(d, w, h) {
+  const blur = CONV_FILTERS.blur3(d, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    let r = d[j] * 0.45 + blur[j] * 0.55
+    let g = d[j + 1] * 0.45 + blur[j + 1] * 0.55
+    let b = d[j + 2] * 0.45 + blur[j + 2] * 0.55
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    r = l + (r - l) * 1.12; g = l + (g - l) * 1.12; b = l + (b - l) * 1.12
+    out[j] = Math.min(255, r); out[j + 1] = Math.min(255, g); out[j + 2] = Math.min(255, b); out[j + 3] = 255
+  }
+  return highlightBoost(out, w, h, 0.35)
+}
+
+/** Metal shine — punchy contrast, bright speculars, slightly cool. */
+export function metalShine(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    let r = (d[j] - 128) * 1.16 + 128 - 4
+    let g = (d[j + 1] - 128) * 1.16 + 128 + 1
+    let b = (d[j + 2] - 128) * 1.16 + 128 + 8
+    out[j] = Math.min(255, Math.max(0, r)); out[j + 1] = Math.min(255, Math.max(0, g)); out[j + 2] = Math.min(255, Math.max(0, b)); out[j + 3] = 255
+  }
+  return highlightBoost(out, w, h, 0.5)
+}
+
+/** Diamond sparkle — sparkle + highlight lift. */
+export function diamondSparkle(d, w, h) {
+  return highlightBoost(sparkle(d, w, h, 0.5), w, h, 0.5)
+}
+
+/** Rich gold — warm metallic tone, saturated, glowing. */
+export function goldRich(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    let nr = Math.min(255, r * 1.06 + 14)
+    let ng = Math.min(255, g * 1.02 + 6)
+    let nb = Math.max(0, b * 0.9 - 8)
+    const l = 0.299 * nr + 0.587 * ng + 0.114 * nb
+    const sat = 1.18
+    nr = l + (nr - l) * sat; ng = l + (ng - l) * sat; nb = l + (nb - l) * sat
+    out[j] = Math.min(255, nr); out[j + 1] = Math.min(255, ng); out[j + 2] = Math.min(255, nb); out[j + 3] = 255
+  }
+  return highlightBoost(out, w, h, 0.45)
+}
+
+/** Bright silver — cool, clean, desaturated highlights. */
+export function silverBright(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    let v = l * 1.08
+    out[j] = Math.min(255, v * 0.92 + 8)
+    out[j + 1] = Math.min(255, v * 0.97 + 6)
+    out[j + 2] = Math.min(255, v * 1.04 + 6)
+    out[j + 3] = 255
+  }
+  return highlightBoost(out, w, h, 0.4)
+}
+
+/** Gemstone vibrance — rich saturation + contrast. */
+export function gemVibrance(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    let r = (d[j] - 128) * 1.1 + 128
+    let g = (d[j + 1] - 128) * 1.1 + 128
+    let b = (d[j + 2] - 128) * 1.1 + 128
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    r = l + (r - l) * 1.35; g = l + (g - l) * 1.35; b = l + (b - l) * 1.35
+    out[j] = Math.min(255, Math.max(0, r)); out[j + 1] = Math.min(255, Math.max(0, g)); out[j + 2] = Math.min(255, Math.max(0, b)); out[j + 3] = 255
+  }
+  return out
+}
+
+/** Glass gloss — bright speculars, slightly desaturated body. */
+export function glassGloss(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    out[j] = Math.min(255, l + (r - l) * 0.92)
+    out[j + 1] = Math.min(255, l + (g - l) * 0.92)
+    out[j + 2] = Math.min(255, l + (b - l) * 0.92)
+    out[j + 3] = 255
+  }
+  return highlightBoost(out, w, h, 0.6)
+}
+
+/** Room brighten — lift exposure + clear haze, natural. */
+export function roomBrighten(d, w, h) {
+  const out = dehaze(d, w, h, 0.4)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = Math.min(255, out[j] * 1.14)
+    out[j + 1] = Math.min(255, out[j + 1] * 1.14)
+    out[j + 2] = Math.min(255, out[j + 2] * 1.14)
+  }
+  return out
+}
+
+/** Window light — brightens the upper part with a warm glow. */
+export function windowLight(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    const t = 1 - y / h // 1 at top
+    const k = 1 + t * 0.28
+    for (let x = 0; x < w; x++) {
+      const j = (y * w + x) * 4
+      out[j] = Math.min(255, d[j] * k + t * 14)
+      out[j + 1] = Math.min(255, d[j + 1] * k + t * 6)
+      out[j + 2] = Math.min(255, d[j + 2] * k)
+      out[j + 3] = 255
+    }
+  }
+  return out
+}
+
+/** Floor clean — despeckle + brighten. */
+export function floorClean(d, w, h) {
+  const m = medianFilter(d, w, h, 1)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = Math.min(255, m[j] * 1.08)
+    out[j + 1] = Math.min(255, m[j + 1] * 1.08)
+    out[j + 2] = Math.min(255, m[j + 2] * 1.08)
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Luxury interior — warm grade + deeper vignette. */
+export function interiorLux(d, w, h) {
+  return vignette(luxuryGrade(d, w, h), w, h, 0.3)
+}
+
+/** Catalog / advertising grade — matte + sharpen + contrast. */
+export function adGrade(d, w, h) {
+  const m = matteFinish(d, w, h)
+  const s = CONV_FILTERS.sharpenMore(m, w, h)
+  const out = new Uint8ClampedArray(s.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = Math.min(255, (s[j] - 128) * 1.08 + 128)
+    out[j + 1] = Math.min(255, (s[j + 1] - 128) * 1.08 + 128)
+    out[j + 2] = Math.min(255, (s[j + 2] - 128) * 1.08 + 128)
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Smooth fabric — gentle blur + median for garment creases/lint. */
+export function clothSmooth(d, w, h) {
+  const m = medianFilter(d, w, h, 1)
+  const blur = CONV_FILTERS.blur3(m, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = m[j] * 0.72 + blur[j] * 0.28
+    out[j + 1] = m[j + 1] * 0.72 + blur[j + 1] * 0.28
+    out[j + 2] = m[j + 2] * 0.72 + blur[j + 2] * 0.28
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Spot/stain cleaner — median + light soften. */
+export function spotCleaner(d, w, h) {
+  const m = medianFilter(d, w, h, 2)
+  const blur = CONV_FILTERS.blur3(m, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = m[j] * 0.8 + blur[j] * 0.2
+    out[j + 1] = m[j + 1] * 0.8 + blur[j + 1] * 0.2
+    out[j + 2] = m[j + 2] * 0.8 + blur[j + 2] * 0.2
+    out[j + 3] = 255
+  }
+  return out
+}

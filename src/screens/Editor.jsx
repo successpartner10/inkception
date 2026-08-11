@@ -39,6 +39,7 @@ import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
 import { ACTION_CATS, ACTIONS } from '../lib/actions'
 import { bumpUsage, bumpTransition, defaultRecipe, detectChain, loadRecipes, loadStats, mostUsed, predictNext, saveRecipes, saveStats, stepSummary, suggestEmoji, suggestName, uid } from '../lib/recipes'
 import { buildGalleryThumbs } from '../lib/gallery'
+import { classifyImage, PHOTO_TYPES, TYPE_LABEL } from '../lib/classify'
 import { getTheme, setTheme as persistTheme, THEME_OPTIONS } from '../lib/theme'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
@@ -88,6 +89,9 @@ const RECIPE_SAFE_KEYS = new Set([
   'lipcolor', 'sketch', 'charcoal', 'cutout', 'bwchannel', 'despeckle', 'dehaze', 'canvas',
   'cyanotype', 'tealorange', 'crossprocess', 'infrared', 'colorpop', 'ice', 'sunset', 'matte',
   'noir', 'bleach', 'lomo', 'pastel', 'scanlines', 'dither', 'blueprint',
+  'luxury', 'catalog', 'brandnew', 'productsharp', 'mattefinish', 'diamond', 'goldrich',
+  'silverbright', 'gemstone', 'metalshine', 'glassgloss', 'fabricrich', 'denim', 'silksheen',
+  'dewrinkle', 'scratchoff', 'spotclean', 'interiorbright', 'interiorlux', 'windowlight', 'floorclean',
   // one-touch extras
   'enhance', 'crop-square', 'crop-portrait', 'remove-bg', 'sharpen', 'text-color',
   'bw', 'warm', 'cool', 'brighten', 'darken', 'contrast', 'saturate', 'desaturate',
@@ -1975,6 +1979,27 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       scanlines: () => runPxAction('Scanlines'),
       dither: () => runPxAction('Dither'),
       blueprint: () => runPxAction('Blueprint'),
+      luxury: () => runPxAction('Luxury Grade'),
+      catalog: () => runPxAction('Catalog Look'),
+      brandnew: () => runPxAction('Brand New'),
+      productsharp: () => runPxAction('Product Sharpen'),
+      mattefinish: () => runPxAction('Matte Finish'),
+      diamond: () => runPxAction('Diamond Sparkle'),
+      goldrich: () => runPxAction('Rich Gold'),
+      silverbright: () => runPxAction('Bright Silver'),
+      gemstone: () => runPxAction('Gemstone Vibrance'),
+      metalshine: () => runPxAction('Metal Shine'),
+      glassgloss: () => runPxAction('Glass Gloss'),
+      fabricrich: () => runPxAction('Fabric Rich'),
+      denim: () => runPxAction('Denim Pop'),
+      silksheen: () => runPxAction('Silk Sheen'),
+      dewrinkle: () => runPxAction('Smooth Fabric'),
+      scratchoff: () => runPxAction('Scratch Remover'),
+      spotclean: () => runPxAction('Spot Clean'),
+      interiorbright: () => runPxAction('Room Brighten'),
+      interiorlux: () => runPxAction('Luxury Interior'),
+      windowlight: () => runPxAction('Window Light'),
+      floorclean: () => runPxAction('Floor Clean'),
     }
     const a = ACTIONS.find((x) => x.id === id)
     const label = a ? a.name : id
@@ -2089,6 +2114,13 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         Infrared: PX.infrared, 'Red Pop': PX.colorPop, 'Ice Blue': PX.ice, 'Sunset Glow': PX.sunset,
         'Flat Matte': PX.matte, Noir: PX.noir, 'Bleach Bypass': PX.bleach, Lomo: PX.lomo,
         Pastel: PX.pastel, Scanlines: PX.scanlines, Dither: PX.dither, Blueprint: PX.blueprint,
+        'Luxury Grade': PX.luxuryGrade, 'Catalog Look': PX.adGrade, 'Brand New': PX.productClean,
+        'Product Sharpen': PX.sharpenMore, 'Matte Finish': PX.matteFinish, 'Diamond Sparkle': PX.diamondSparkle,
+        'Rich Gold': PX.goldRich, 'Bright Silver': PX.silverBright, 'Gemstone Vibrance': PX.gemVibrance,
+        'Metal Shine': PX.metalShine, 'Glass Gloss': PX.glassGloss, 'Fabric Rich': PX.fabricEnhance,
+        'Denim Pop': PX.denimPop, 'Silk Sheen': PX.silkSheen, 'Smooth Fabric': PX.clothSmooth,
+        'Scratch Remover': PX.scratchRemove, 'Spot Clean': PX.spotCleaner, 'Room Brighten': PX.roomBrighten,
+        'Luxury Interior': PX.interiorLux, 'Window Light': PX.windowLight, 'Floor Clean': PX.floorClean,
       }
       if (fns[name]) out = fns[name](L.data.data, L.w, L.h)
       if (!out) return
@@ -2392,6 +2424,27 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     scanlines: () => runPxAction('Scanlines'),
     dither: () => runPxAction('Dither'),
     blueprint: () => runPxAction('Blueprint'),
+    luxury: () => runPxAction('Luxury Grade'),
+    catalog: () => runPxAction('Catalog Look'),
+    brandnew: () => runPxAction('Brand New'),
+    productsharp: () => runPxAction('Product Sharpen'),
+    mattefinish: () => runPxAction('Matte Finish'),
+    diamond: () => runPxAction('Diamond Sparkle'),
+    goldrich: () => runPxAction('Rich Gold'),
+    silverbright: () => runPxAction('Bright Silver'),
+    gemstone: () => runPxAction('Gemstone Vibrance'),
+    metalshine: () => runPxAction('Metal Shine'),
+    glassgloss: () => runPxAction('Glass Gloss'),
+    fabricrich: () => runPxAction('Fabric Rich'),
+    denim: () => runPxAction('Denim Pop'),
+    silksheen: () => runPxAction('Silk Sheen'),
+    dewrinkle: () => runPxAction('Smooth Fabric'),
+    scratchoff: () => runPxAction('Scratch Remover'),
+    spotclean: () => runPxAction('Spot Clean'),
+    interiorbright: () => runPxAction('Room Brighten'),
+    interiorlux: () => runPxAction('Luxury Interior'),
+    windowlight: () => runPxAction('Window Light'),
+    floorclean: () => runPxAction('Floor Clean'),
     // one-touch extras
     enhance: () => commitFilters({ ...AUTO_ENHANCE_FILTERS }),
     'crop-square': () => runSmartCrop('1:1'),
@@ -4656,11 +4709,36 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
 function ActionsTab({ search = '', imageSrc, onRun, onGallery }) {
   const [cat, setCat] = useState('all')
   const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default
+  const [type, setType] = useState('auto') // auto-detected photo type filter
+  const [detected, setDetected] = useState(null) // {type,label,conf}
+  // detect what's in the photo so only applicable actions show
+  useEffect(() => {
+    let alive = true
+    if (imageSrc && type === 'auto') {
+      setDetected({ loading: true })
+      classifyImage(imageSrc)
+        .then((r) => { if (alive) setDetected({ type: r.type, label: r.label, conf: Math.round(r.skinRatio * 100) }) })
+        .catch(() => { if (alive) setDetected(null) })
+    } else if (imageSrc && type !== 'auto') {
+      setDetected({ type, label: TYPE_LABEL[type] || type, manual: true })
+    } else {
+      setDetected(null)
+    }
+    return () => { alive = false }
+  }, [imageSrc, type])
+
   const q = String(search || '').trim().toLowerCase()
+  const applies = (a) => {
+    // auto/all/generic → show everything (only filter when we're confident)
+    const t = type === 'auto' && detected ? detected.type : type
+    if (t === 'all' || t === 'auto' || t === 'generic' || !t) return true
+    return a.applies === '*' || (Array.isArray(a.applies) && a.applies.includes(t)) || a.applies === t
+  }
   const visible = ACTIONS.filter((a) => {
     if (q && !(a.name + ' ' + a.desc + ' ' + a.cat).toLowerCase().includes(q)) return false
     if (cat !== 'all' && a.cat !== cat) return false
     if (feat === 'local' && a.fe !== 'local') return false
+    if (!applies(a)) return false
     return true
   })
   const counts = { all: ACTIONS.length, local: ACTIONS.filter((a) => a.fe === 'local').length }
@@ -4685,6 +4763,23 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery }) {
             <Icon name="grid" size={11} /> Gallery
           </button>
         )}
+      </div>
+
+      {/* photo-type filter — shows only applicable actions */}
+      <div className="mb-2 flex items-center gap-1">
+        {PHOTO_TYPES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setType(t.id)}
+            className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', type === t.id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+          >
+            {t.label}
+          </button>
+        ))}
+        <span className="ml-auto text-[8px] text-mute">
+          {detected && !detected.loading ? (detected.manual ? `${detected.label} (manual)` : `Detected: ${detected.label}`) : ''}
+        </span>
       </div>
 
       {/* category chips */}

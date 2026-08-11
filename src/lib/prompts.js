@@ -229,6 +229,28 @@ export function matchPrompt(raw) {
   if (has('scanline') || (has('crt') || has('retro screen'))) return { action: 'runaction', payload: { key: 'scanlines' } }
   if (has('dither') || has('dithered')) return { action: 'runaction', payload: { key: 'dither' } }
   if (has('blueprint')) return { action: 'runaction', payload: { key: 'blueprint' } }
+  // ---- commercial / product / interior (v0.17.8) ----
+  if ((has('luxurious') || has('luxury')) && (has('look') || has('grade') || has('feel'))) return { action: 'runaction', payload: { key: 'luxury' } }
+  if (has('catalog') || (has('ad') && has('look')) || (has('commercial') && has('look'))) return { action: 'runaction', payload: { key: 'catalog' } }
+  if ((has('brand') && has('new')) || (has('make it') && has('new'))) return { action: 'runaction', payload: { key: 'brandnew' } }
+  if (has('product') && (has('sharpen') || has('crisp') || has('sharper'))) return { action: 'runaction', payload: { key: 'productsharp' } }
+  if ((has('matte') && (has('finish') || has('look'))) || has('reduce') && has('glare')) return { action: 'runaction', payload: { key: 'mattefinish' } }
+  if (has('diamond') || has('sparkle')) return { action: 'runaction', payload: { key: 'diamond' } }
+  if (has('gold') && (has('rich') || has('richer'))) return { action: 'runaction', payload: { key: 'goldrich' } }
+  if (has('silver') && (has('bright') || has('brighter'))) return { action: 'runaction', payload: { key: 'silverbright' } }
+  if (has('gem') || (has('stone') && has('color'))) return { action: 'runaction', payload: { key: 'gemstone' } }
+  if ((has('metal') || has('hardware')) && (has('shine') || has('shiny'))) return { action: 'runaction', payload: { key: 'metalshine' } }
+  if ((has('glass') || has('bottle')) && has('shine')) return { action: 'runaction', payload: { key: 'glassgloss' } }
+  if (has('fabric') && (has('rich') || has('better') || has('texture'))) return { action: 'runaction', payload: { key: 'fabricrich' } }
+  if (has('denim')) return { action: 'runaction', payload: { key: 'denim' } }
+  if (has('silk')) return { action: 'runaction', payload: { key: 'silksheen' } }
+  if ((has('wrinkle') || has('crease')) && (has('cloth') || has('fabric') || has('shirt') || has('outfit'))) return { action: 'runaction', payload: { key: 'dewrinkle' } }
+  if (has('scratch') && (has('remove') || has('repair') || has('fix'))) return { action: 'runaction', payload: { key: 'scratchoff' } }
+  if ((has('spot') || has('stain') || has('lint') || has('dust')) && has('remove')) return { action: 'runaction', payload: { key: 'spotclean' } }
+  if ((has('room') || has('interior')) && (has('bright') || has('brighter') || has('dark'))) return { action: 'runaction', payload: { key: 'interiorbright' } }
+  if ((has('interior') || has('room')) && has('luxury')) return { action: 'runaction', payload: { key: 'interiorlux' } }
+  if (has('window') && (has('light') || has('bright'))) return { action: 'runaction', payload: { key: 'windowlight' } }
+  if (has('floor') && (has('clean') || has('cleaner'))) return { action: 'runaction', payload: { key: 'floorclean' } }
 
   // ---- adjust ----
   if (has('warm')) return { action: 'filters', payload: { temperature: 45 } }

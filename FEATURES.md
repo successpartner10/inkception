@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.7
+> **Version**: v0.17.8
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.7)
+> **Updated**: 2026-08-11 (v0.17.8)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -578,3 +578,23 @@ layers, quick actions, AI suite, collage, versioning all present.
 - 16-step audit passes (template → Add Photo fills canvas with no collage
   jump, 1-photo Place Photo, 2-photo grid still clips, single-file export,
   zero console errors)
+
+### v0.17.8 — 21 commercial/interior Actions + smart photo-type filter
+- **21 new one-click Actions** (78 free / 86 total) from the commercial
+  action library: **Commercial** — Luxury Grade, Catalog Look, Brand New,
+  Product Sharpen, Matte Finish, Diamond Sparkle, Rich Gold, Bright Silver,
+  Gemstone Vibrance, Metal Shine, Glass Gloss, Fabric Rich, Denim Pop,
+  Silk Sheen, Smooth Fabric; **Restore** — Scratch Remover, Spot Clean;
+  **Interior** — Room Brighten, Luxury Interior, Window Light, Floor Clean.
+  All wired into the Actions grid, Recipes, Effects Gallery and
+  plain-English commands ("make it look luxurious", "remove scratches",
+  "clean the floor"…)
+- **Smart photo-type filter (on-device)**: the Actions tab now detects what
+  is in your photo (Portrait / Product / Scene / Document / General) and
+  shows only the actions that apply — e.g. no bottle-rotating or floor
+  actions on a face. Detection is honest & conservative: it filters only
+  when confident, otherwise shows everything; a manual Auto/Portrait/
+  Product/Scene/Document/All chip row lets you override
+- 18-step audit passes (78 free actions render, type chips, portrait-only
+  actions hidden for products, prompt phrases, gallery previews, collage,
+  single-file export, zero console errors)
