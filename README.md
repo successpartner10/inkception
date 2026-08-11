@@ -25,6 +25,46 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
 - **Interface themes** — Dark (default) / Light / Auto, plus Settings hub
 - Works offline: `inkception-standalone.html` (fonts + samples embedded)
 
+## Use it on your laptop — fully offline
+
+No GitHub, no internet, no account needed. Two files are shipped with each
+release (in the workspace root):
+
+| File | What it is |
+|---|---|
+| `inkception-standalone.html` | The **whole app in one file** (~7 MB) — 15 fonts + sample images embedded |
+| `inkception-offline.zip` | Same app + the `mediapipe/` AI model folder + `README.txt` (~9 MB) |
+
+**Setup (one time):**
+1. Copy `inkception-offline.zip` to your laptop and extract it into a folder
+   (keep `inkception.html` and `mediapipe/` side by side).
+2. Double-click `inkception.html` — the editor opens in your browser.
+   Everything works offline: 42 Actions, recipes, collage, filters, all
+   exports (PNG/JPG/WebP/GIF/PDF/PSD/SVG), themes.
+3. **Only** the AI-segmentation features (Remove Background, Replace
+   Background, Magic Eraser, Smart Crop, Decompose, Motion Blur BG) need a
+   tiny local server because browsers block file-to-file reads:
+   - in that folder run `python -m http.server`, then open
+     `http://localhost:8000/` (Windows: install Python, same command; or use
+     VS Code → Live Server).
+
+## Going private on GitHub — what changes, what doesn't
+
+You can make the repo **private** anytime (Settings → Danger Zone). Effects:
+
+- ✅ **Laptop offline version keeps working** — it never touches GitHub.
+- ✅ **Your code is hidden** from everyone except invited collaborators.
+- ⚠️ **The public site `successpartner10.github.io/inkception/` goes offline**
+  — GitHub Pages on the free plan only serves public repos. That is expected;
+  your offline copy replaces it.
+- ✅ **Pushes still work** — commit + `bash deploy-inkception.sh "msg"` pushes
+  fine to a private repo; the deploy workflow automatically **skips** the
+  Pages step (no red ❌ runs). Flip the repo back to public and the site
+  resumes deploying on its own.
+- Note: the *published site* can never be password-gated on the free plan —
+  if you need login-restricted access for a small circle, that requires the
+  Cloudflare Access route (see `CLOUDFLARE_ACCESS_SETUP.md`).
+
 ## Stack
 
 - **React 19** + **Vite 6**

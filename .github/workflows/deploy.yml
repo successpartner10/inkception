@@ -43,6 +43,12 @@ jobs:
 
   deploy:
     needs: build
+    # GitHub Pages on the free plan only serves PUBLIC repos. When this repo is
+    # private (or made private), the site is unpublished anyway — so skip the
+    # deploy step instead of failing every push. Flip the repo back to public
+    # and deployments resume automatically. (The laptop/offline version does
+    # not depend on GitHub at all.)
+    if: ${{ github.event_name == 'push' && github.event.repository.visibility == 'public' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

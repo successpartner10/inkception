@@ -207,7 +207,11 @@ background removal, replace background, upscale, export…) that executes on tap
   Keep the folder next to the HTML. If Remove BG / Smart Crop fail from a
   file, run `python -m http.server` in the folder.
 - Everything (editing, crop, filters, collage, all 8 export formats) works
-  fully offline.
+  fully offline — verified by automated test via `file://` with no server.
+- **Private-repo safe**: the offline copy never touches GitHub, so you can
+  make the repo private anytime. The deploy workflow auto-skips the Pages
+  step on a private repo (no failing runs) and resumes automatically if the
+  repo goes public again.
 
 ## 8. Versioning & Cache-Busting
 
