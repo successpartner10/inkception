@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.2
+> **Version**: v0.17.3
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.2)
+> **Updated**: 2026-08-11 (v0.17.3)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -516,3 +516,11 @@ layers, quick actions, AI suite, collage, versioning all present.
   re-exports
 - 26-step audit passes (new actions run, prompt phrases, 1-file direct
   download, 2-file individual downloads, opt-in zip, zero console errors)
+
+### v0.17.3 — Icon set clarified
+- **Export** now has its own glyph (box with up-arrow "share") — no longer
+  identical to **Download** (arrow into a tray), which is used for actual
+  file downloads
+- **AI tab** gets a chip/processor icon (Actions keeps the sparkle) ·
+  **Settings** gets a gear · **Recipes** gets a bookmark
+- Distinct icons verified in the DOM (share ≠ tray ≠ up-arrow), no errors

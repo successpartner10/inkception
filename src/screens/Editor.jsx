@@ -51,8 +51,8 @@ import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMe
 const TAB_ITEMS = [
   { id: 'adjust', label: 'Adjust', icon: 'sliders' },
   { id: 'actions', label: 'Actions', icon: 'sparkle' },
-  { id: 'recipes', label: 'Recipes', icon: 'pin' },
-  { id: 'ai', label: 'AI', icon: 'sparkle' },
+  { id: 'recipes', label: 'Recipes', icon: 'bookmark' },
+  { id: 'ai', label: 'AI', icon: 'ai' },
   { id: 'layers', label: 'Layers', icon: 'layers' },
   { id: 'text', label: 'Text', icon: 'text' },
 ]
@@ -3298,7 +3298,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     { id: 'tool-sharpenedges', label: 'Sharpen Edges', group: 'Filter', icon: 'focus', go: () => runFilter('sharpenEdges') },
     ...HOWTOS.map((h) => ({ id: 'how-' + h.id, label: h.q, group: 'How do I…?', icon: 'sparkle', go: () => { setHowtoOpen(true) } })),
     ...EXPORT_PRESETS.slice(0, 27).map((p) => ({ id: 'preset-' + p.id, label: p.name, group: 'Export size', icon: PLATFORM_ICONS[p.platform], go: () => { openModal(setExportOpen); setPreset(p.id) } })),
-    ...recipes.map((r) => ({ id: 'recipe-' + r.id, label: 'Run recipe: ' + r.name, group: 'Recipes', icon: 'pin', go: () => runRecipe(r) })),
+    ...recipes.map((r) => ({ id: 'recipe-' + r.id, label: 'Run recipe: ' + r.name, group: 'Recipes', icon: 'bookmark', go: () => runRecipe(r) })),
   ]
 
   const gq = globalSearch.trim().toLowerCase()
@@ -3528,7 +3528,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           <Button variant="secondary" size="sm" icon="export" onClick={() => openModal(setExportOpen)}>
             Export
           </Button>
-          <IconBtn icon="sliders" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
+          <IconBtn icon="gear" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
         </div>
         <div className="flex items-center gap-0.5 lg:hidden">
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
@@ -3536,7 +3536,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
           <IconBtn icon="folder" title="Open file" onClick={() => fileRef.current && fileRef.current.click()} />
           <IconBtn icon="export" title="Export (⌘E)" onClick={() => openModal(setExportOpen)} />
-          <IconBtn icon="sliders" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
+          <IconBtn icon="gear" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
         </div>
       </header>
 
@@ -3917,7 +3917,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           <IconBtn icon="fit" title="Fit screen" onClick={zoomFit} />
           <div className="mx-1.5 h-5 w-px bg-line" />
           <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
-          <IconBtn icon="sparkle" title="AI Suite" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
+          <IconBtn icon="ai" title="AI Suite" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
           <IconBtn icon="layers" title="Layers" active={tab === 'layers'} onClick={() => openTab('layers')} />
         </div>
         {/* font controls appear between rows when the text tool is active */}
