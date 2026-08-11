@@ -37,7 +37,8 @@ import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas, zipFiles } from 
 import * as PX from '../lib/pxengine'
 import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
 import { ACTION_CATS, ACTIONS } from '../lib/actions'
-import { bumpUsage, defaultRecipe, loadRecipes, loadStats, mostUsed, saveRecipes, saveStats, stepSummary, suggestEmoji, suggestName, uid } from '../lib/recipes'
+import { bumpUsage, bumpTransition, defaultRecipe, detectChain, loadRecipes, loadStats, mostUsed, predictNext, saveRecipes, saveStats, stepSummary, suggestEmoji, suggestName, uid } from '../lib/recipes'
+import { buildGalleryThumbs } from '../lib/gallery'
 import { getTheme, setTheme as persistTheme, THEME_OPTIONS } from '../lib/theme'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
@@ -84,7 +85,7 @@ const RECIPE_SAFE_KEYS = new Set([
   'teeth', 'pimples', 'wrinkles', 'glamour', 'chin', 'slim', 'motionbg', 'restore', 'crease', 'repaircrease', 'colorbw',
   'halftone', 'filmgrain', 'tilt', 'vignette', 'sepia', 'posterize', 'glitch', 'mirror', 'kaleido', 'duotone', 'splittone',
   'goldenhour', 'hdr', 'faded', 'instant', 'aged', 'vintagebw', 'pop', 'pixelate', 'neon', 'zoomblur', 'grain2', 'eyes',
-  'lipcolor', 'sketch', 'charcoal', 'cutout', 'bwchannel', 'despeckle', 'dehaze',
+  'lipcolor', 'sketch', 'charcoal', 'cutout', 'bwchannel', 'despeckle', 'dehaze', 'canvas',
   // one-touch extras
   'enhance', 'crop-square', 'crop-portrait', 'remove-bg', 'sharpen', 'text-color',
   'bw', 'warm', 'cool', 'brighten', 'darken', 'contrast', 'saturate', 'desaturate',
@@ -274,6 +275,7 @@ export function Editor({ project, onBack }) {
   const statsRef = useRef(loadStats())
   const [statsVer, setStatsVer] = useState(0)
   const recentRef = useRef([]) // [{key,label}] steps executed this session (max 40)
+  const prevKeyRef = useRef(null) // for next-step transition learning
   const [recipeBuilderOpen, setRecipeBuilderOpen] = useState(false)
   const [recipeDraft, setRecipeDraft] = useState(null) // recipe being built/edited
   const recipeGuardRef = useRef(false) // suppress per-step history pushes during a recipe run
@@ -281,6 +283,12 @@ export function Editor({ project, onBack }) {
   const [theme, setThemeState] = useState(getTheme)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const changeTheme = (t) => { persistTheme(t); setThemeState(t) }
+  // enhance strength + reduce chips (Auto Enhance is tunable, never too strong)
+  const [enhanceOpen, setEnhanceOpen] = useState(false)
+  const [enhanceAmt, setEnhanceAmt] = useState(60)
+  const [enhanceRedux, setEnhanceRedux] = useState({ sat: false, warm: false, bright: false })
+  // effects gallery — every Action previewed on YOUR image
+  const [galleryOpen, setGalleryOpen] = useState(false)
   // selection engine
   const [selMask, setSelMask] = useState(null) // {w,h,data:Uint8Array} natural res
   const selRef = useRef(null)
@@ -1217,13 +1225,27 @@ export function Editor({ project, onBack }) {
     }
   }
 
+  // Auto Enhance strength: interpolate DEFAULT → AUTO by enhanceAmt (0–100),
+  // then apply the "Reduce" chips so it's never too strong.
+  const scaledEnhanceFilters = useCallback(() => {
+    const a = Math.max(0, Math.min(100, enhanceAmt)) / 100
+    const f = {}
+    for (const k of Object.keys(DEFAULT_FILTERS)) {
+      f[k] = DEFAULT_FILTERS[k] + (AUTO_ENHANCE_FILTERS[k] - DEFAULT_FILTERS[k]) * a
+    }
+    if (enhanceRedux.sat) f.saturation = DEFAULT_FILTERS.saturation
+    if (enhanceRedux.warm) f.temperature = 0
+    if (enhanceRedux.bright) f.brightness = DEFAULT_FILTERS.brightness
+    return f
+  }, [enhanceAmt, enhanceRedux])
+
   const AI_PIPELINES = {
     enhance: {
       title: 'Auto Enhance',
       steps: ['Analyzing histogram', 'Balancing exposure', 'Correcting color', 'Applying preset'],
       finalize: () => {
-        commitFilters({ ...AUTO_ENHANCE_FILTERS })
-        showToast('Auto enhance applied')
+        commitFilters(scaledEnhanceFilters())
+        showToast(`Auto enhance applied (strength ${enhanceAmt}%)`)
       },
     },
     vectorize: {
@@ -1277,6 +1299,12 @@ export function Editor({ project, onBack }) {
     }
   }
 
+  // busy overlay "skip" — tap anywhere to skip the staged animation
+  const skipAi = () => {
+    clearInterval(busyTimerRef.current)
+    setBusy(null)
+  }
+
   const runAi = (kind) => {
     if (busyRef.current) return
     const pipe = AI_PIPELINES[kind]
@@ -1299,10 +1327,6 @@ export function Editor({ project, onBack }) {
     }, 620)
   }
 
-  const skipAi = () => {
-    clearInterval(busyTimerRef.current)
-    setBusy(null)
-  }
 
   /* --------------------- AI capability handlers (audit #6–#19) ---------------- */
   const busyJob = (title) => ({
@@ -1759,6 +1783,7 @@ export function Editor({ project, onBack }) {
       bwchannel: () => setFx((f) => ({ ...f, bw: true })),
       despeckle: () => runFilter('median'),
       dehaze: () => runPxAction('Dehaze'),
+      canvas: () => runFilter('canvasWeave'),
     }
     const a = ACTIONS.find((x) => x.id === id)
     const label = a ? a.name : id
@@ -1769,6 +1794,15 @@ export function Editor({ project, onBack }) {
       recordRecent(id, label)
       map[id]()
     } else showToast('This action needs more work — hidden for now', 'info')
+  }
+
+  // Effects gallery: apply the chosen look to the full image + OK/Undo bar.
+  const applyGalleryAction = (id) => {
+    const a = ACTIONS.find((x) => x.id === id)
+    if (!a) return
+    runAction(id)
+    setConfirmBar({ label: a.name })
+    setGalleryOpen(false)
   }
 
   /* ------------------- intelligent region select + enhance ------------- */
@@ -1839,7 +1873,7 @@ export function Editor({ project, onBack }) {
           m[y * L.w + x] = mask.data[sy * mask.w + sx]
         }
       }
-      const out = PX.enhanceRegion(L.data.data, L.w, L.h, m, 0.6)
+      const out = PX.enhanceRegion(L.data.data, L.w, L.h, m, enhanceAmt / 100)
       L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
       await loadIntoCanvas(L.toDataUrl())
       setBusy(null)
@@ -2020,6 +2054,7 @@ export function Editor({ project, onBack }) {
       else if (name === 'graphicPen') out = PX.graphicPen(L.data.data, L.w, L.h)
       else if (name === 'halftone') out = PX.halftone(L.data.data, L.w, L.h)
       else if (name === 'tiltShift') out = PX.tiltShift(L.data.data, L.w, L.h)
+      else if (name === 'canvasWeave') out = PX.canvasWeave(L.data.data, L.w, L.h)
       else {
         const fn = PX.PX_FILTERS[name] || PX.CONV_FILTERS[name] || PX.EDGE_FILTERS[name]
         if (!fn) return
@@ -2085,6 +2120,8 @@ export function Editor({ project, onBack }) {
     const safe = key && RECIPE_SAFE_KEYS.has(key)
     if (safe) {
       statsRef.current = bumpUsage(statsRef.current, key)
+      if (prevKeyRef.current) statsRef.current = bumpTransition(statsRef.current, prevKeyRef.current, key)
+      prevKeyRef.current = key
       saveStats(statsRef.current)
     }
     const arr = recentRef.current
@@ -2144,6 +2181,7 @@ export function Editor({ project, onBack }) {
     bwchannel: () => setFx((f) => ({ ...f, bw: true })),
     despeckle: () => runFilter('median'),
     dehaze: () => runPxAction('Dehaze'),
+    canvas: () => runFilter('canvasWeave'),
     // one-touch extras
     enhance: () => commitFilters({ ...AUTO_ENHANCE_FILTERS }),
     'crop-square': () => runSmartCrop('1:1'),
@@ -3094,7 +3132,6 @@ export function Editor({ project, onBack }) {
     setTab(t)
     setPanelCollapsed(false) // always reveal the panel when opening a tab
   }
-  const stub = () => showToast('Preview build — tool stub', 'info')
   const onFile = async (e) => {
     const f = e.target.files && e.target.files[0]
     if (f) {
@@ -3134,7 +3171,7 @@ export function Editor({ project, onBack }) {
 
   /* ------------------------------ panel renderer ----------------------------- */
   const renderPanel = () => {
-    if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => runAi('enhance'), resetAll, isDefault: isDefaultFilters(filters), busy, highlightTarget }} />
+    if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => openModal(setEnhanceOpen), resetAll, isDefault: isDefaultFilters(filters), busy, highlightTarget }} />
     if (tab === 'quick') {
       return (
         <QuickTab
@@ -3156,6 +3193,7 @@ export function Editor({ project, onBack }) {
           search={globalSearch}
           imageSrc={imageSrc}
           onRun={(id) => runAction(id)}
+          onGallery={() => openModal(setGalleryOpen)}
         />
       )
     }
@@ -3183,7 +3221,7 @@ export function Editor({ project, onBack }) {
           busy={busy}
           onRemoveBg={() => runRemoveBg()}
           onReplaceBg={() => openModal(setReplaceOpen)}
-          onEnhance={() => runAi('enhance')}
+          onEnhance={() => openModal(setEnhanceOpen)}
           onUpscale={() => runAi('upscale')}
           onVectorize={() => runAi('vectorize')}
           onRetouch={() => openModal(setRetouchOpen)}
@@ -3295,7 +3333,7 @@ export function Editor({ project, onBack }) {
       : null
 
   return (
-    <div className="flex h-full flex-col bg-ink">
+    <div className="flex h-full flex-col overflow-x-hidden bg-ink">
       {/* ------------------------------- top bar ------------------------------ */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-3 sm:px-4">
         <IconBtn icon="chevronLeft" title="Back to gallery" onClick={onBack} />
@@ -3689,7 +3727,7 @@ export function Editor({ project, onBack }) {
           always visible, canvas is never covered. */}
       <footer className="flex shrink-0 flex-col items-center gap-1 border-t border-line px-2 py-1.5">
         {/* Row 1 — draw tools */}
-        <div className="flex items-center gap-0.5">
+        <div className="flex flex-wrap items-center justify-center gap-0.5">
           <IconBtn icon="move" title="Select / Move (V)" active={tool === 'select'} onClick={() => setTool('select')} />
           <IconBtn icon="shape" title="Rectangle (R)" active={tool === 'rect'} onClick={() => setTool('rect')} />
           <IconBtn icon="circle" title="Ellipse (E)" active={tool === 'ellipse'} onClick={() => setTool('ellipse')} />
@@ -3716,7 +3754,7 @@ export function Editor({ project, onBack }) {
           <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => openModal(setCropOpen)} />
         </div>
         {/* Row 2 — utility tools */}
-        <div className="flex items-center gap-0.5">
+        <div className="flex flex-wrap items-center justify-center gap-0.5">
           <IconBtn icon="zoomOut" title="Zoom out" onClick={() => zoomBy(1 / 1.25)} />
           <div className="relative">
             <button
@@ -3752,7 +3790,7 @@ export function Editor({ project, onBack }) {
         </div>
         {/* font controls appear between rows when the text tool is active */}
         {(tool === 'text' || activeText) && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center justify-center gap-1.5">
             <select
               value={textFont}
               onChange={(e) => applyTextFont(e.target.value)}
@@ -4225,6 +4263,42 @@ export function Editor({ project, onBack }) {
         onClose={() => setSettingsOpen(false)}
       />
 
+      {/* enhance — strength slider + reduce chips + region */}
+      <EnhanceModal
+        open={enhanceOpen}
+        onClose={() => setEnhanceOpen(false)}
+        amt={enhanceAmt}
+        setAmt={setEnhanceAmt}
+        redux={enhanceRedux}
+        setRedux={setEnhanceRedux}
+        onApply={() => {
+          setEnhanceOpen(false)
+          pushHistory()
+          commandStackRef.current.push({ phrase: 'Auto Enhance', before: snapshot() })
+          setCommandCount(commandStackRef.current.length)
+          recordRecent('enhance', 'Auto Enhance')
+          runAi('enhance')
+          setConfirmBar({ label: 'Auto Enhance' })
+        }}
+        onApplyRegion={() => {
+          setEnhanceOpen(false)
+          pushHistory()
+          commandStackRef.current.push({ phrase: 'Enhance Region', before: snapshot() })
+          setCommandCount(commandStackRef.current.length)
+          enhanceRegion()
+          setConfirmBar({ label: 'Enhance Region' })
+        }}
+        hasRegion={!!regionMaskRef.current}
+      />
+
+      {/* effects gallery — every action on YOUR photo */}
+      <EffectsGalleryModal
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        src={imageSrcRef.current}
+        onPick={applyGalleryAction}
+      />
+
       {/* done → OK / Undo bar */}
       {confirmBar && (
         <div className="fixed bottom-16 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-3 rounded-ink bg-white px-4 py-2 text-xs font-semibold text-black shadow-2xl">
@@ -4437,7 +4511,7 @@ function MoreTab({ search = '', onAsk, onFilter, onSelection, onClone, onHeal, o
 }
 
 /* ------------------------------ tab: Actions (gallery) -------------------- */
-function ActionsTab({ search = '', imageSrc, onRun }) {
+function ActionsTab({ search = '', imageSrc, onRun, onGallery }) {
   const [cat, setCat] = useState('all')
   const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default
   const q = String(search || '').trim().toLowerCase()
@@ -4459,7 +4533,16 @@ function ActionsTab({ search = '', imageSrc, onRun }) {
         <button type="button" onClick={() => setFeat('all')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
           All ({counts.all})
         </button>
-        <span className="ml-auto text-[8px] text-mute">{feat === 'local' ? 'AI/needs-model hidden' : 'showing all (AI greyed)'}</span>
+        {onGallery && (
+          <button
+            type="button"
+            onClick={onGallery}
+            className="ml-auto flex items-center gap-1 rounded-ink border border-line px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-fg"
+            title="See every effect on YOUR photo, then pick"
+          >
+            <Icon name="grid" size={11} /> Gallery
+          </button>
+        )}
       </div>
 
       {/* category chips */}
@@ -4516,13 +4599,56 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
   library.forEach((l) => { libByKey[l.key] = l })
   const recentList = recent.slice(-12).reverse()
   const [sel, setSel] = useState({})
+  const [dismissedNudges, setDismissedNudges] = useState({})
   const checkedSteps = recentList.filter((s) => s.key && sel[s.key]).map((s) => ({ key: s.key, label: s.label }))
+
+  // self-learning: next-step prediction + repeated-chain nudge
+  const keyHistory = recent.map((r) => r.key).filter(Boolean)
+  const lastKey = keyHistory.length ? keyHistory[keyHistory.length - 1] : null
+  const pred = lastKey ? predictNext(stats, lastKey) : null
+  const chain = detectChain(keyHistory, 2, 3)
+  const chainId = chain ? chain.steps.join('>') : null
 
   return (
     <div className="p-4">
       <p className="mb-3 text-[10px] leading-relaxed text-mute">
         Save the steps you repeat as a named one-click task. Everything is learned on this device — nothing leaves your browser.
       </p>
+
+      {/* pattern nudge — you keep doing the same chain */}
+      {chain && !dismissedNudges[chainId] && (() => {
+        const labels = chain.steps.map((k) => (libByKey[k] ? libByKey[k].label : k)).join(' → ')
+        return (
+          <div className="mb-3 rounded-ink border border-white/25 bg-surface-2 px-3 py-2">
+            <p className="text-[10px] font-semibold text-fg">
+              You've repeated <span className="text-white">{labels}</span> {chain.times}×
+            </p>
+            <p className="mt-0.5 text-[9px] text-mute">Save it as a one-click recipe?</p>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <Button variant="primary" size="sm" icon="plus" onClick={() => onImport(chain.steps.map((k) => ({ key: k, label: libByKey[k] ? libByKey[k].label : k })))}>
+                Save as recipe
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setDismissedNudges((d) => ({ ...d, [chainId]: true }))}>
+                Later
+              </Button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* next-step prediction */}
+      {pred && pred.key !== lastKey && (() => {
+        const l = libByKey[pred.key]
+        return (
+          <div className="mb-3 flex items-center gap-2 rounded-ink border border-dashed border-line px-2.5 py-1.5">
+            <span className="text-mute"><Icon name="sparkle" size={11} /></span>
+            <span className="min-w-0 flex-1 truncate text-[10px] text-dim">
+              Usually next: <b className="text-fg">{l ? l.label : pred.key}</b> <span className="text-mute">({pred.count}× after this)</span>
+            </span>
+            <Button variant="secondary" size="sm" icon="play" onClick={() => onRunStep(pred.key)}>Run</Button>
+          </div>
+        )
+      })()}
 
       {/* Most used (self-learning) */}
       {top.length > 0 && (
@@ -4801,6 +4927,147 @@ function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose })
         </div>
       </div>
     </Modal>
+  )
+}
+
+/* ------------------------- enhance settings modal -------------------------- */
+// Auto Enhance with a strength slider + Reduce chips — so it's never too
+// strong, and it can be limited to a selected region.
+function EnhanceModal({ open, onClose, amt, setAmt, redux, setRedux, onApply, onApplyRegion, hasRegion }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Auto Enhance" subtitle="Balance light + color — at a strength you control" width="max-w-sm">
+      <div className="flex flex-col gap-4">
+        <div>
+          <Slider label="Strength" value={amt} min={0} max={100} defaultValue={60} format={(v) => `${Math.round(v)}%`} onChange={setAmt} />
+          <p className="mt-1 text-[9px] text-mute">
+            {amt < 25 ? 'Very gentle — barely changes anything' : amt < 70 ? 'Balanced (default 60%)' : 'Strong — watch the highlights'}
+          </p>
+        </div>
+        <div>
+          <label className="label-xs text-dim">Reduce</label>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {[['sat', '− Saturation'], ['warm', '− Warmth'], ['bright', '− Brightness']].map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setRedux({ ...redux, [k]: !redux[k] })}
+                className={cn('rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', redux[k] ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[9px] text-mute">Each chip keeps that part at its original value.</p>
+        </div>
+        {hasRegion && (
+          <p className="rounded-ink border border-line bg-surface-2/50 px-3 py-2 text-[9px] leading-relaxed text-mute">
+            A region is selected — you can enhance <b className="text-dim">just that area</b>.
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          {hasRegion && <Button variant="secondary" icon="focus" onClick={onApplyRegion}>Region only</Button>}
+          <Button variant="primary" icon="sparkle" onClick={onApply}>Enhance</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* --------------------------- effects gallery modal -------------------------- */
+// Every local Action rendered as a live thumbnail of YOUR photo. Hover = wipe
+// between original and effect; click = apply to the full image (undoable).
+function EffectsGalleryModal({ open, onClose, src, onPick }) {
+  const [thumbs, setThumbs] = useState([])
+  const [origUrl, setOrigUrl] = useState(null)
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [pos, setPos] = useState(null) // { id, pos }
+  const [err, setErr] = useState(null)
+
+  useEffect(() => {
+    if (!open || !src) return
+    let alive = true
+    setThumbs([])
+    setProgress({ done: 0, total: 0 })
+    setErr(null)
+    setOrigUrl(null)
+    // original thumbnail for the comparison wipe
+    const im = new Image()
+    im.onload = () => {
+      const cv = document.createElement('canvas')
+      const s = Math.min(1, 150 / Math.max(im.naturalWidth, im.naturalHeight))
+      cv.width = Math.max(2, Math.round(im.naturalWidth * s))
+      cv.height = Math.max(2, Math.round(im.naturalHeight * s))
+      cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height)
+      if (alive) setOrigUrl(cv.toDataURL('image/jpeg', 0.82))
+    }
+    im.src = src
+    const list = ACTIONS.filter((a) => a.fe === 'local').map((a) => ({ id: a.id, name: a.name, icon: a.icon, cat: a.cat }))
+    buildGalleryThumbs(list, src, 150, (done, total) => alive && setProgress({ done, total }))
+      .then((t) => { if (alive) { setThumbs(t); setProgress({ done: t.length, total: t.length }) } })
+      .catch(() => alive && setErr('Could not render previews for this image'))
+    return () => { alive = false }
+  }, [open, src])
+
+  const building = progress.total > 0 && progress.done < progress.total
+
+  return (
+    <Modal open={open} onClose={onClose} title="Effects Gallery" subtitle="Every local effect on YOUR photo — hover to compare, click to apply" width="max-w-3xl">
+      {building && (
+        <div className="mb-3">
+          <div className="mb-1 flex justify-between text-[9px] text-mute">
+            <span>Rendering {progress.done}/{progress.total} previews…</span>
+            <span>{Math.round((progress.done / progress.total) * 100)}%</span>
+          </div>
+          <div className="h-1 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full bg-white transition-all" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+          </div>
+        </div>
+      )}
+      {err && <p className="py-4 text-center text-xs text-mute">{err}</p>}
+      {thumbs.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {thumbs.map((t) => (
+            <GalleryCard key={t.id} t={t} orig={origUrl} pos={pos} setPos={setPos} onPick={onPick} />
+          ))}
+        </div>
+      )}
+      <p className="mt-3 text-[9px] leading-relaxed text-mute">
+        Move your pointer across a tile to compare before/after. Tap applies it to your full image — Undo (⌘Z) reverts.
+      </p>
+    </Modal>
+  )
+}
+
+function GalleryCard({ t, orig, pos, setPos, onPick }) {
+  const p = pos && pos.id === t.id ? pos.pos : 100
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(t.id)}
+      className="group relative aspect-square w-full overflow-hidden rounded-ink border border-line transition-colors hover:border-white"
+      onPointerMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect()
+        if (!r.width) return
+        setPos({ id: t.id, pos: Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100)) })
+      }}
+      onPointerLeave={() => setPos(null)}
+    >
+      <img src={t.url} alt={t.name} draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+      {orig && (
+        <div className="absolute inset-0" style={{ clipPath: `inset(0 ${100 - p}% 0 0)` }}>
+          <img src={orig} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-y-0 border-l border-white/80" style={{ left: `${p}%` }} />
+        </div>
+      )}
+      <span className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1 pt-4">
+        <span className="flex min-w-0 items-center gap-1">
+          <Icon name={t.icon} size={10} className="shrink-0 text-white/80" />
+          <span className="truncate text-[9px] font-bold text-white">{t.name}</span>
+        </span>
+        <span className="label-xxs shrink-0 text-white/60">{t.cat}</span>
+      </span>
+    </button>
   )
 }
 
@@ -5724,23 +5991,40 @@ function BatchBody({ onRun, result, onClear }) {
 }
 
 /* ------------------------- collage layout preview ------------------------- */
-function LayoutPreview({ layoutId, active }) {
+// White slots (clear at a glance) + live photo thumbnails once you've chosen
+// enough photos + a "needs N more" badge when the layout needs more.
+function LayoutPreview({ layoutId, active, photos = [], need = 0 }) {
   const meta = COLLAGE_LAYOUTS.find((l) => l.id === layoutId)
-  const slots = computeSlots(layoutId, meta.max, 1, 1)
+  const count = Math.max(meta.min, Math.min(meta.max, photos.length))
+  const slots = computeSlots(layoutId, count, 1, 1)
   return (
-    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[4px] bg-surface-2">
-      {slots.map((s, i) => (
-        <span
-          key={i}
-          className={cn('absolute rounded-[2px]', active ? 'bg-white' : 'bg-line-2')}
-          style={{
-            left: `${s.x * 100}%`,
-            top: `${s.y * 100}%`,
-            width: `${s.w * 100}%`,
-            height: `${s.h * 100}%`,
-          }}
-        />
-      ))}
+    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[4px] bg-white/15">
+      {slots.map((s, i) => {
+        const photo = photos[i]
+        return (
+          <span
+            key={i}
+            className="absolute overflow-hidden rounded-[2px]"
+            style={{
+              left: `${s.x * 100}%`,
+              top: `${s.y * 100}%`,
+              width: `${s.w * 100}%`,
+              height: `${s.h * 100}%`,
+            }}
+          >
+            {photo ? (
+              <img src={photo.url} alt="" draggable={false} className="h-full w-full object-cover" />
+            ) : (
+              <span className={cn('block h-full w-full', active ? 'bg-white' : 'bg-white/70')} />
+            )}
+          </span>
+        )
+      })}
+      {need > 0 && (
+        <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/70 px-1.5 py-0.5 text-[8px] font-bold text-white">
+          needs {need} more
+        </span>
+      )}
     </div>
   )
 }
@@ -6178,6 +6462,7 @@ function CollageBody({ onBuild, showToast, search = '' }) {
       <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
         {COLLAGE_LAYOUTS.filter((l) => !q || l.name.toLowerCase().includes(q)).map((l) => {
           const ok = photos.length >= l.min && photos.length <= l.max
+          const need = Math.max(0, l.min - photos.length)
           return (
             <button
               key={l.id}
@@ -6199,10 +6484,10 @@ function CollageBody({ onBuild, showToast, search = '' }) {
                   ? 'border-white bg-surface-2'
                   : ok
                     ? 'border-line hover:border-line-2'
-                    : 'border-line opacity-60 hover:border-line-2',
+                    : 'border-line opacity-70 hover:border-line-2',
               )}
             >
-              <LayoutPreview layoutId={l.id} active={layout === l.id && ok} />
+              <LayoutPreview layoutId={l.id} active={layout === l.id && ok} photos={photos} need={need} />
               <span
                 className={cn(
                   'mt-1 block truncate text-center text-[9px] font-bold uppercase tracking-[0.04em]',
@@ -6210,6 +6495,9 @@ function CollageBody({ onBuild, showToast, search = '' }) {
                 )}
               >
                 <Highlight text={l.name} query={search} />
+              </span>
+              <span className={cn('mt-0.5 block text-center text-[8px]', need > 0 ? 'text-danger' : 'text-mute')}>
+                {need > 0 ? `${need} more photo${need === 1 ? '' : 's'}` : `${l.min}–${l.max} photos`}
               </span>
             </button>
           )

@@ -926,3 +926,46 @@ export function glitch(d, w, h, amt = 0.4) {
 export function eyes(d, w, h) { return glamour(d, w, h, 0.3) }
 export function lips(d, w, h) { return bwTint(d, w, h, 'warm', 0.4) }
 export function charcoal(d, w, h) { return graphicPen(d, w, h, 0.7) }
+
+/* Canvas-weave texture — lifts the weave pattern of stretched canvas. */
+export function canvasWeave(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4
+      // woven thread pattern (two interleaved sine grids)
+      const t = (Math.sin(x * 0.22) + Math.sin(y * 0.22)) * 0.5
+      const weave = 1 + t * 0.045
+      out[i] = Math.min(255, d[i] * weave)
+      out[i + 1] = Math.min(255, d[i + 1] * weave)
+      out[i + 2] = Math.min(255, d[i + 2] * weave)
+      out[i + 3] = 255
+    }
+  }
+  return out
+}
+
+/* Blocky mosaic on raw pixel data (used by the effects gallery thumbnails). */
+export function pixelateData(d, w, h, size = 8) {
+  const out = new Uint8ClampedArray(d.length)
+  const s = Math.max(2, Math.round(size))
+  for (let y = 0; y < h; y += s) {
+    for (let x = 0; x < w; x += s) {
+      let r = 0, g = 0, b = 0, n = 0
+      for (let yy = y; yy < Math.min(h, y + s); yy++) {
+        for (let xx = x; xx < Math.min(w, x + s); xx++) {
+          const j = (yy * w + xx) * 4
+          r += d[j]; g += d[j + 1]; b += d[j + 2]; n++
+        }
+      }
+      r = r / n; g = g / n; b = b / n
+      for (let yy = y; yy < Math.min(h, y + s); yy++) {
+        for (let xx = x; xx < Math.min(w, x + s); xx++) {
+          const j = (yy * w + xx) * 4
+          out[j] = r; out[j + 1] = g; out[j + 2] = b; out[j + 3] = 255
+        }
+      }
+    }
+  }
+  return out
+}

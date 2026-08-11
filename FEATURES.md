@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.16.2
+> **Version**: v0.17.0
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.16.2)
+> **Updated**: 2026-08-11 (v0.17.0)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -111,11 +111,22 @@ input; applies live to selected text and to new text.
   Contrast, Saturate/Desaturate) — reorder, remove, rename
 - **Run**: one click replays the whole sequence; the ✓ bar's Undo reverts the
   entire recipe in one step
-- **Self-learning**: "Most used" row (per-key counts + recency) stored in
-  localStorage — the foundation for pattern nudges & next-step prediction
+- **Self-learning**: "Most used" row (per-key counts + recency), **next-step
+  prediction** ("Usually next: Sharpen · 8× after this"), and a **pattern
+  nudge** when a 2–4-step chain repeats 3× ("Save as recipe?"). All stats in
+  localStorage, nothing leaves the device
 - **Command bar**: "run my recipe" / "run <name> recipe" / "run my edit"
 - Honest limits: steps that need input (brushes, region clicks, model-only
   AI) are marked "needs input" and excluded from recipes
+
+## 4e. Effects Gallery & tunable Enhance
+
+- **Effects Gallery** (Actions tab → Gallery): ~40 local effects rendered as
+  live thumbnails of your photo; hover/drag wipes original ↔ effect; click
+  applies to the full image with an Undo bar
+- **Auto Enhance settings** (Enhance modal): strength 0–100 (default 60),
+  Reduce chips (−Saturation / −Warmth / −Brightness), and "Region only"
+  when a region is selected
 
 ## 4d. Settings & interface themes
 
@@ -212,6 +223,9 @@ background removal, replace background, upscale, export…) that executes on tap
   make the repo private anytime. The deploy workflow auto-skips the Pages
   step on a private repo (no failing runs) and resumes automatically if the
   repo goes public again.
+- **PWA**: `manifest.webmanifest` + icons + network-first service worker —
+  the hosted site installs like an app and works offline after the first
+  visit. (Not used by the standalone file, which is offline by design.)
 
 ## 8. Versioning & Cache-Busting
 
@@ -416,3 +430,31 @@ layers, quick actions, AI suite, collage, versioning all present.
   check icons stay readable on light surfaces.
 - 18-step automated audit passes (home → editor → theme → recipes →
   multi-export → mobile, no console errors).
+
+### v0.17.0 — Tunable Enhance · Effects Gallery · PWA · smarter learning
+- **Auto Enhance is now tunable** (Enhance modal, opened from the AI tab or
+  Adjust tab): **strength slider 0–100** (default 60 — gentle by default),
+  **Reduce chips** (−Saturation / −Warmth / −Brightness keep those at their
+  original values), and **"Region only"** applies the enhance inside your
+  selected region at the same strength. Apply gives the ✓ Undo bar.
+- **Effects Gallery** (Actions tab → **Gallery**): every local effect is
+  rendered as a live thumbnail of YOUR photo (~150px, ~40 previews) —
+  hover/drag to wipe between original and effect, click to apply to the
+  full image (undoable). All on-device.
+- **PWA — installable + offline**: `manifest.webmanifest`, app icons
+  (192/512/maskable/apple-touch from the brand mark), and a network-first
+  service worker → after the first visit the hosted site works offline and
+  can be installed like a native app (phone/laptop). Skipped on `file://`
+  (the standalone file needs no SW).
+- **Smarter self-learning** (Recipes tab): **next-step prediction**
+  ("Usually next: Sharpen · 8× after this — Run") from observed
+  transitions, and a **pattern nudge** banner when you repeat the same
+  2–4-step chain 3× ("You've repeated Sepia → Vignette 3× — save as a
+  recipe?"). Stats stay in localStorage.
+- **Collage templates polished**: white slots (clear at a glance), live
+  photo thumbnails inside the preview slots once you pick photos, a
+  "needs N more" badge and per-layout "N–M photos" hints.
+- **Cleanup/QA**: fixed the mobile horizontal overflow (tool dock rows now
+  wrap — 390px viewport clean), wired the **Canvas texture** Action,
+  removed dead code; 22-step audit passes (incl. theme, recipes,
+  multi-export, PWA, mobile) with no console errors.

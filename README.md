@@ -19,10 +19,16 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
 - **42 one-click Actions** + real on-device AI (subject matting, inpainting,
   smart crop) — honest about what needs a paid model
 - **Recipes** — save any repeated steps as a named one-click task; the app
-  learns your "most used" and captures your last steps
+  learns your "most used", predicts your next step, and nudges you to save
+  repeated chains as recipes
+- **Effects Gallery** — see every effect as a live thumbnail of YOUR photo,
+  wipe-compare, click to apply
+- **Tunable Enhance** — strength slider + Reduce chips + region-only, so
+  it's never too strong
 - **Multi-size export** — tick the platform sizes you need → one
   `project-<ts>.zip` with every size at once (27 presets × 8 formats)
 - **Interface themes** — Dark (default) / Light / Auto, plus Settings hub
+- **PWA** — installable like an app; works offline after first visit
 - Works offline: `inkception-standalone.html` (fonts + samples embedded)
 
 ## Use it on your laptop — fully offline

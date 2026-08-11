@@ -93,6 +93,49 @@ export function mostUsed(stats, limit = 6) {
     .map(([k]) => k)
 }
 
+/* --------------- self-learning: transitions + pattern detection ------------ */
+// stats.t = { prevKey: { nextKey: count } } — who follows whom.
+
+export function bumpTransition(stats, prev, next) {
+  if (!prev || !next || prev === next) return stats
+  stats.t = stats.t || {}
+  stats.t[prev] = stats.t[prev] || {}
+  stats.t[prev][next] = (stats.t[prev][next] || 0) + 1
+  return stats
+}
+
+/** Most-likely next step after `key` (by observed transitions). */
+export function predictNext(stats, key) {
+  const t = (stats && stats.t && stats.t[key]) || {}
+  const entries = Object.entries(t).sort((a, b) => b[1] - a[1])
+  if (!entries.length) return null
+  return { key: entries[0][0], count: entries[0][1] }
+}
+
+/**
+ * Find a repeated ordered chain (minLen..maxLen) in the recent key list that
+ * happened >= minTimes. Returns { steps, times } or null.
+ */
+export function detectChain(keys, minLen = 2, minTimes = 3, maxLen = 4) {
+  const n = keys.length
+  if (n < minLen * minTimes) return null
+  for (let len = Math.min(maxLen, Math.floor(n / minTimes)); len >= minLen; len--) {
+    const counts = new Map()
+    for (let i = 0; i + len <= n; i++) {
+      const chain = keys.slice(i, i + len).join('|')
+      counts.set(chain, (counts.get(chain) || 0) + 1)
+    }
+    let best = null
+    for (const [chain, times] of counts) {
+      if (times >= minTimes && (!best || times > best.times)) best = { chain, times }
+    }
+    if (best) {
+      return { steps: best.chain.split('|'), times: best.times }
+    }
+  }
+  return null
+}
+
 export function stepSummary(steps) {
   const labels = (steps || []).map((s) => s.label || s.key).filter(Boolean).slice(0, 3)
   const s = labels.join(' → ')
