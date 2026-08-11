@@ -547,6 +547,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       preserveObjectStacking: true,
     })
     fabricRef.current = c
+    window.__fabricCanvas = c // debug/automation hook
 
     // brush
     const brush = new PencilBrush(c)
@@ -1160,7 +1161,10 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           const slot = slots[i]
           const img = await FabricImage.fromURL(used[i])
           const px = { x: slot.x * W, y: slot.y * H, w: slot.w * W, h: slot.h * H }
-          const s = Math.min(px.w / img.width, px.h / img.height)
+          // cover — scale up so the photo fills its whole grid slot (crops
+          // overflow). This is the collage default; "contain" is available
+          // per-photo from the Layers tab (Fit photo).
+          const s = Math.max(px.w / img.width, px.h / img.height)
           img.set({
             left: px.x + (px.w - img.width * s) / 2,
             top: px.y + (px.h - img.height * s) / 2,

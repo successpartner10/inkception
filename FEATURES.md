@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.3
+> **Version**: v0.17.4
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.3)
+> **Updated**: 2026-08-11 (v0.17.4)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -524,3 +524,12 @@ layers, quick actions, AI suite, collage, versioning all present.
 - **AI tab** gets a chip/processor icon (Actions keeps the sparkle) ·
   **Settings** gets a gear · **Recipes** gets a bookmark
 - Distinct icons verified in the DOM (share ≠ tray ≠ up-arrow), no errors
+
+### v0.17.4 — Collage photos auto-fill their grid slots
+- Collage photos now **scale up to fill their whole grid cell** (cover) —
+  no more small/letterboxed images in the grid. Overflow is cropped
+  automatically, so a wide or tall photo fills a square slot edge to edge
+- The per-photo **Fit** toggle in Layers still offers "contain" (photo fit
+  inside the slot) when you want the smaller look
+- Verified with extreme aspect ratios (16:4 wide + 4:16 tall photos both
+  fill their slots, no gaps)
