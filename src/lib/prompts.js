@@ -213,6 +213,23 @@ export function matchPrompt(raw) {
   if (has('flip') || has('mirror')) return { action: 'fx', payload: { flipX: true } }
   if (has('rotate')) return { action: 'fx', payload: { angle: 90 } }
 
+  // ---- named looks (v0.17.2) ----
+  if (has('cyanotype')) return { action: 'runaction', payload: { key: 'cyanotype' } }
+  if (has('teal') && (has('orange') || has('orange grade'))) return { action: 'runaction', payload: { key: 'tealorange' } }
+  if (has('cross process') || has('crossprocess')) return { action: 'runaction', payload: { key: 'crossprocess' } }
+  if (has('infrared') || has('ir look')) return { action: 'runaction', payload: { key: 'infrared' } }
+  if (has('color pop') || has('red pop') || (has('selective') && has('color')) || (has('keep') && has('red'))) return { action: 'runaction', payload: { key: 'colorpop' } }
+  if (has('ice') || has('icy') || (has('cool') && has('blue'))) return { action: 'runaction', payload: { key: 'ice' } }
+  if (has('sunset') && (has('glow') || has('warm') || has('look'))) return { action: 'runaction', payload: { key: 'sunset' } }
+  if (has('flat matte') || (has('matte') && has('film')) || (has('film') && has('still'))) return { action: 'runaction', payload: { key: 'matte' } }
+  if (has('noir') || has('film noir')) return { action: 'runaction', payload: { key: 'noir' } }
+  if (has('bleach bypass') || (has('bleach') && has('look'))) return { action: 'runaction', payload: { key: 'bleach' } }
+  if (has('lomo') || (has('toy') && has('camera'))) return { action: 'runaction', payload: { key: 'lomo' } }
+  if (has('pastel')) return { action: 'runaction', payload: { key: 'pastel' } }
+  if (has('scanline') || (has('crt') || has('retro screen'))) return { action: 'runaction', payload: { key: 'scanlines' } }
+  if (has('dither') || has('dithered')) return { action: 'runaction', payload: { key: 'dither' } }
+  if (has('blueprint')) return { action: 'runaction', payload: { key: 'blueprint' } }
+
   // ---- adjust ----
   if (has('warm')) return { action: 'filters', payload: { temperature: 45 } }
   if (has('cool') || has('cold')) return { action: 'filters', payload: { temperature: -45 } }

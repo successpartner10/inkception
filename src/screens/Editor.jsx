@@ -86,6 +86,8 @@ const RECIPE_SAFE_KEYS = new Set([
   'halftone', 'filmgrain', 'tilt', 'vignette', 'sepia', 'posterize', 'glitch', 'mirror', 'kaleido', 'duotone', 'splittone',
   'goldenhour', 'hdr', 'faded', 'instant', 'aged', 'vintagebw', 'pop', 'pixelate', 'neon', 'zoomblur', 'grain2', 'eyes',
   'lipcolor', 'sketch', 'charcoal', 'cutout', 'bwchannel', 'despeckle', 'dehaze', 'canvas',
+  'cyanotype', 'tealorange', 'crossprocess', 'infrared', 'colorpop', 'ice', 'sunset', 'matte',
+  'noir', 'bleach', 'lomo', 'pastel', 'scanlines', 'dither', 'blueprint',
   // one-touch extras
   'enhance', 'crop-square', 'crop-portrait', 'remove-bg', 'sharpen', 'text-color',
   'bw', 'warm', 'cool', 'brighten', 'darken', 'contrast', 'saturate', 'desaturate',
@@ -1818,6 +1820,21 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       despeckle: () => runFilter('median'),
       dehaze: () => runPxAction('Dehaze'),
       canvas: () => runFilter('canvasWeave'),
+      cyanotype: () => runPxAction('Cyanotype'),
+      tealorange: () => runPxAction('Teal & Orange'),
+      crossprocess: () => runPxAction('Cross Process'),
+      infrared: () => runPxAction('Infrared'),
+      colorpop: () => runPxAction('Red Pop'),
+      ice: () => runPxAction('Ice Blue'),
+      sunset: () => runPxAction('Sunset Glow'),
+      matte: () => runPxAction('Flat Matte'),
+      noir: () => runPxAction('Noir'),
+      bleach: () => runPxAction('Bleach Bypass'),
+      lomo: () => runPxAction('Lomo'),
+      pastel: () => runPxAction('Pastel'),
+      scanlines: () => runPxAction('Scanlines'),
+      dither: () => runPxAction('Dither'),
+      blueprint: () => runPxAction('Blueprint'),
     }
     const a = ACTIONS.find((x) => x.id === id)
     const label = a ? a.name : id
@@ -1928,6 +1945,10 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         'Split Tone': PX.splitTone, Dehaze: PX.dehaze, 'Zoom Blur': PX.zoomBlur,
         Glitch: PX.glitch, Eyes: PX.eyes, Lips: PX.lips, Charcoal: PX.charcoal,
         Posterize: PX.posterize || PX.addNoise,
+        Cyanotype: PX.cyanotype, 'Teal & Orange': PX.tealOrange, 'Cross Process': PX.crossProcess,
+        Infrared: PX.infrared, 'Red Pop': PX.colorPop, 'Ice Blue': PX.ice, 'Sunset Glow': PX.sunset,
+        'Flat Matte': PX.matte, Noir: PX.noir, 'Bleach Bypass': PX.bleach, Lomo: PX.lomo,
+        Pastel: PX.pastel, Scanlines: PX.scanlines, Dither: PX.dither, Blueprint: PX.blueprint,
       }
       if (fns[name]) out = fns[name](L.data.data, L.w, L.h)
       if (!out) return
@@ -2216,6 +2237,21 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     despeckle: () => runFilter('median'),
     dehaze: () => runPxAction('Dehaze'),
     canvas: () => runFilter('canvasWeave'),
+    cyanotype: () => runPxAction('Cyanotype'),
+    tealorange: () => runPxAction('Teal & Orange'),
+    crossprocess: () => runPxAction('Cross Process'),
+    infrared: () => runPxAction('Infrared'),
+    colorpop: () => runPxAction('Red Pop'),
+    ice: () => runPxAction('Ice Blue'),
+    sunset: () => runPxAction('Sunset Glow'),
+    matte: () => runPxAction('Flat Matte'),
+    noir: () => runPxAction('Noir'),
+    bleach: () => runPxAction('Bleach Bypass'),
+    lomo: () => runPxAction('Lomo'),
+    pastel: () => runPxAction('Pastel'),
+    scanlines: () => runPxAction('Scanlines'),
+    dither: () => runPxAction('Dither'),
+    blueprint: () => runPxAction('Blueprint'),
     // one-touch extras
     enhance: () => commitFilters({ ...AUTO_ENHANCE_FILTERS }),
     'crop-square': () => runSmartCrop('1:1'),
@@ -2573,6 +2609,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         if (map[payload.key]) map[payload.key]()
         return
       }
+      if (action === 'runaction' && payload) { runAction(payload.key); return }
       if (action === 'export') { openModal(setExportOpen); return }
       if (action === 'reorder' && payload) { reorderImage(payload.dir); return }
       if (action === 'duplicate') { duplicateLayer(); return }
@@ -3145,11 +3182,19 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         entries.push({ name: `${pf}-${p.w}x${p.h}-${base}-${ts}.${ext}`, data: blob })
       }
       if (!entries.length) throw new Error('nothing rendered')
-      const zip = await zipFiles(entries)
-      downloadBlob(zip, `${base}-${ts}.zip`)
-      setBusy(null)
-      setExportOpen(false)
-      showToast(`Exported ${entries.length} size${entries.length === 1 ? '' : 's'} → ${base}-${ts}.zip`, 'download')
+      if (entries.length === 1) {
+        // one size → download the file directly (no zip unless it's a batch)
+        downloadBlob(entries[0].data, entries[0].name)
+        setBusy(null)
+        setExportOpen(false)
+        showToast(`Exported ${entries[0].name.split('-').slice(0, 2).join('-')} ${format.toUpperCase()}`, 'download')
+      } else {
+        const zip = await zipFiles(entries)
+        downloadBlob(zip, `${base}-${ts}.zip`)
+        setBusy(null)
+        setExportOpen(false)
+        showToast(`Exported ${entries.length} sizes → ${base}-${ts}.zip`, 'download')
+      }
     } catch {
       setBusy(null)
       showToast('Export failed', 'close')
@@ -4283,7 +4328,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
 
         {isImageExport && (
           <p className="mt-4 rounded-ink border border-dashed border-line px-3 py-2 text-[10px] leading-relaxed text-mute">
-            Check the sizes you need (1 or more) — they render together into <b className="text-dim">one .zip folder</b>.
+            Check the sizes you need — one size downloads as a file, 2+ combine into <b className="text-dim">one .zip folder</b>.
           </p>
         )}
 
@@ -4293,7 +4338,11 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           </Button>
           {isImageExport && selPresets.length > 0 ? (
             <Button variant="primary" icon="export" onClick={doExportMany} disabled={exporting}>
-              {exporting ? 'Rendering…' : `Export ${selPresets.length} size${selPresets.length === 1 ? '' : 's'} (.zip)`}
+              {exporting
+                ? 'Rendering…'
+                : selPresets.length === 1
+                  ? `Export ${format.toUpperCase()}`
+                  : `Export ${selPresets.length} sizes (.zip)`}
             </Button>
           ) : (
             <Button variant="primary" icon="export" onClick={doExport} disabled={exporting}>

@@ -35,6 +35,18 @@ export const ACTIONS = [
   { id: 'faded', name: 'Faded Film', cat: 'Color', desc: 'Low-contrast washed look', when: 'Instagram aesthetic', fe: 'local', icon: 'archive' },
   { id: 'bwchannel', name: 'B&W Channel Mix', cat: 'Color', desc: 'Per-channel B&W control', when: 'Dramatic B&W', fe: 'local', icon: 'image' },
   { id: 'colorbw', name: 'B&W → Color (tint)', cat: 'Color', desc: 'Warm/cool tint (not true colorize)', when: 'Approx. old-photo color', fe: 'local', icon: 'droplet' },
+  { id: 'cyanotype', name: 'Cyanotype', cat: 'Color', desc: 'Classic blue print process', when: 'Fine-art prints, posters', fe: 'local', icon: 'image' },
+  { id: 'tealorange', name: 'Teal & Orange', cat: 'Color', desc: 'Blockbuster cinematic split', when: 'Film stills, drama', fe: 'local', icon: 'layers' },
+  { id: 'crossprocess', name: 'Cross Process', cat: 'Color', desc: 'E-6 chemistry remix', when: 'Punchy retro color', fe: 'local', icon: 'layers' },
+  { id: 'infrared', name: 'Infrared', cat: 'Color', desc: 'Channel-swap dream look', when: 'Foliage, surreal', fe: 'local', icon: 'eye' },
+  { id: 'colorpop', name: 'Red Pop', cat: 'Color', desc: 'B&W except strong reds', when: 'Selective-color shots', fe: 'local', icon: 'droplet' },
+  { id: 'ice', name: 'Ice Blue', cat: 'Color', desc: 'Cool arctic grade', when: 'Winter, product, tech', fe: 'local', icon: 'moon' },
+  { id: 'sunset', name: 'Sunset Glow', cat: 'Color', desc: 'Warm golden light', when: 'Outdoor, golden hour', fe: 'local', icon: 'sun' },
+  { id: 'matte', name: 'Flat Matte', cat: 'Color', desc: 'Lifted blacks, muted tone', when: 'Film stills, fashion', fe: 'local', icon: 'image' },
+  { id: 'noir', name: 'Noir', cat: 'Color', desc: 'Hard contrasty B&W', when: 'Dramatic, moody', fe: 'local', icon: 'moon' },
+  { id: 'bleach', name: 'Bleach Bypass', cat: 'Color', desc: 'Silver-halide contrast', when: 'Gritty, editorial', fe: 'local', icon: 'sparkle' },
+  { id: 'lomo', name: 'Lomo', cat: 'Color', desc: 'Toy-camera saturation + vignette', when: 'Snapshot nostalgia', fe: 'local', icon: 'focus' },
+  { id: 'pastel', name: 'Pastel', cat: 'Color', desc: 'Soft light muted wash', when: 'Dreamy, invites', fe: 'local', icon: 'droplet' },
 
   /* ---- Vintage & Retro ---- */
   { id: 'sepia', name: 'Sepia', cat: 'Vintage', desc: 'Classic warm-brown', when: 'Old-photo feel', fe: 'local', icon: 'clock' },
@@ -47,6 +59,9 @@ export const ACTIONS = [
   { id: 'canvas', name: 'Canvas', cat: 'Texture', desc: 'Canvas-weave texture', when: 'Painting feel', fe: 'local', icon: 'grid' },
   { id: 'glitch', name: 'Glitch', cat: 'Texture', desc: 'Digital glitch bands', when: 'Music, tech art', fe: 'local', icon: 'wind' },
   { id: 'grain2', name: 'Heavy Grain', cat: 'Texture', desc: 'Strong noise texture', when: 'Vintage, moody', fe: 'local', icon: 'sparkle' },
+  { id: 'scanlines', name: 'Scanlines', cat: 'Texture', desc: 'Retro CRT screen', when: 'Retro, screens', fe: 'local', icon: 'grid' },
+  { id: 'dither', name: 'Dither', cat: 'Texture', desc: 'Ordered 4-level newsprint', when: 'Print, pixel art', fe: 'local', icon: 'grid' },
+  { id: 'blueprint', name: 'Blueprint', cat: 'Texture', desc: 'White edges on deep blue', when: 'Drafts, technical art', fe: 'local', icon: 'penTool' },
 
   /* ---- Restore & Repair ---- */
   { id: 'restore', name: 'Restore Old Photo', cat: 'Restore', desc: 'Creases + dust + faded tone', when: 'Scanned old photos', fe: 'local', icon: 'refresh' },

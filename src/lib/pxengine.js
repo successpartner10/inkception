@@ -969,3 +969,247 @@ export function pixelateData(d, w, h, size = 8) {
   }
   return out
 }
+
+/* -------------------- cinematic + print grades (v0.17.2) ------------------- */
+
+/* Cyanotype — the classic blue alternative-process print. */
+export function cyanotype(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const l = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]
+    out[j] = Math.min(255, l * 0.18)
+    out[j + 1] = Math.min(255, l * 0.42 + 18)
+    out[j + 2] = Math.min(255, l * 0.85 + 40)
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Teal & Orange — blockbuster cinematic split: teal shadows, warm highlights. */
+export function tealOrange(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const s = 1 - l / 255 // shadow weight
+    const hg = l / 255 // highlight weight
+    out[j] = Math.min(255, Math.max(0, r + hg * 26 - s * 18))
+    out[j + 1] = Math.min(255, Math.max(0, g + hg * 8 - s * 4))
+    out[j + 2] = Math.min(255, Math.max(0, b + s * 34 - hg * 26))
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Cross Process — E-6 chemistry remix: cool shadows, warm highlights. */
+export function crossProcess(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    out[j] = Math.min(255, Math.max(0, r * 1.06 + g * 0.12 - b * 0.06))
+    out[j + 1] = Math.min(255, Math.max(0, g * 0.92 + b * 0.1))
+    out[j + 2] = Math.min(255, Math.max(0, b * 1.18 - r * 0.08))
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Infrared — channel-swap dream: blues become warm, foliage glows. */
+export function infrared(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    out[j] = Math.min(255, b * 1.15 + g * 0.1)
+    out[j + 1] = Math.min(255, g * 0.85 + b * 0.2)
+    out[j + 2] = Math.min(255, Math.max(0, r * 0.9 - 8))
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Red Pop / selective color — B&W except strong reds. */
+export function colorPop(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const isRed = r > 90 && r > g * 1.35 && r > b * 1.35
+    if (isRed) {
+      out[j] = r; out[j + 1] = g; out[j + 2] = b; out[j + 3] = 255
+    } else {
+      const l = 0.299 * r + 0.587 * g + 0.114 * b
+      out[j] = l; out[j + 1] = l; out[j + 2] = l; out[j + 3] = 255
+    }
+  }
+  return out
+}
+
+/* Ice Blue — cool arctic grade. */
+export function ice(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = Math.max(0, d[j] - 22)
+    out[j + 1] = Math.max(0, d[j + 1] - 8)
+    out[j + 2] = Math.min(255, d[j + 2] + 26)
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Sunset Glow — warm golden light. */
+export function sunset(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const l = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]
+    out[j] = Math.min(255, d[j] * 1.08 + 16)
+    out[j + 1] = Math.min(255, d[j + 1] * 1.03 + 6)
+    out[j + 2] = Math.min(255, Math.max(0, d[j + 2] - 14 + l * 0.05))
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Flat Matte — lifted blacks, muted colors (film still). */
+export function matte(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const m = l * 0.72 + 48
+    out[j] = m + (r - l) * 0.25
+    out[j + 1] = m + (g - l) * 0.25
+    out[j + 2] = m + (b - l) * 0.25
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Noir — hard, contrasty black & white. */
+export function noir(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const l = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]
+    const c = Math.min(255, Math.max(0, (l - 118) * 1.55 + 128))
+    out[j] = c; out[j + 1] = c; out[j + 2] = c; out[j + 3] = 255
+  }
+  return out
+}
+
+/* Bleach Bypass — silver halide: desaturated + high contrast + lifted. */
+export function bleach(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const c = Math.min(255, Math.max(0, (l - 108) * 1.32 + 122))
+    out[j] = c + (r - l) * 0.22
+    out[j + 1] = c + (g - l) * 0.22
+    out[j + 2] = c + (b - l) * 0.22
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Lomo / Toy Camera — saturated, vignetted, slightly warm. */
+export function lomo(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  const cx = (w - 1) / 2, cy = (h - 1) / 2
+  const R = Math.hypot(cx, cy)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const j = (y * w + x) * 4
+      const r = d[j], g = d[j + 1], b = d[j + 2]
+      // saturate 1.25
+      const l = 0.299 * r + 0.587 * g + 0.114 * b
+      const sat = 1.22
+      let nr = Math.min(255, l + (r - l) * sat)
+      let ng = Math.min(255, l + (g - l) * sat)
+      let nb = Math.min(255, l + (b - l) * sat)
+      // warm
+      nr = Math.min(255, nr * 1.04 + 8)
+      nb = Math.max(0, nb - 8)
+      // vignette
+      const dist = Math.hypot(x - cx, y - cy) / R
+      const v = 1 - Math.max(0, dist - 0.45) * 0.55
+      out[j] = nr * v; out[j + 1] = ng * v; out[j + 2] = nb * v; out[j + 3] = 255
+    }
+  }
+  return out
+}
+
+/* Pastel — soft, light, low saturation. */
+export function pastel(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const m = l * 0.55 + 92
+    out[j] = m + (r - l) * 0.18
+    out[j + 1] = m + (g - l) * 0.18
+    out[j + 2] = m + (b - l) * 0.18
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/* Scanlines — retro CRT screen. */
+export function scanlines(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    const line = (y % 2 === 0) ? 0.78 : 1
+    for (let x = 0; x < w; x++) {
+      const j = (y * w + x) * 4
+      out[j] = d[j] * line
+      out[j + 1] = d[j + 1] * line
+      out[j + 2] = d[j + 2] * line
+      out[j + 3] = 255
+    }
+  }
+  return out
+}
+
+/* Ordered dithering — 4-level Bayer, newsprint-style. */
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+export function dither(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const j = (y * w + x) * 4
+      const l = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]
+      const t = (l / 255) * 4
+      const lo = Math.min(3, Math.floor(t))
+      const frac = t - lo
+      const thr = (BAYER4[(y % 4) * 4 + (x % 4)] + 0.5) / 16
+      const level = frac > thr ? Math.min(3, lo + 1) : lo
+      const v = Math.round((level / 3) * 255)
+      out[j] = v; out[j + 1] = v; out[j + 2] = v; out[j + 3] = 255
+    }
+  }
+  return out
+}
+
+/* Blueprint — white edge lines on deep blue (cyanotype × edges). */
+export function blueprint(d, w, h) {
+  const e = sobel(d, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const edge = e[j] // sobel output is grayscale
+    if (edge > 88) {
+      out[j] = 235; out[j + 1] = 240; out[j + 2] = 255; out[j + 3] = 255
+    } else {
+      out[j] = 18; out[j + 1] = 58; out[j + 2] = 138; out[j + 3] = 255
+    }
+  }
+  return out
+}

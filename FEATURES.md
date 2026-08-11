@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.1
+> **Version**: v0.17.2
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.1)
+> **Updated**: 2026-08-11 (v0.17.2)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -498,3 +498,19 @@ layers, quick actions, AI suite, collage, versioning all present.
     contrast fixes
 - 26-step automated audit passes (all 10 items + full regression + offline
   standalone + on-demand AI loading, no console errors)
+
+### v0.17.2 — 15 new Actions + smarter single-file export
+- **15 new one-click Actions** (57 total, all free/local): cinematic + print
+  grades — **Cyanotype**, **Teal & Orange**, **Cross Process**, **Infrared**,
+  **Red Pop** (B&W except reds), **Ice Blue**, **Sunset Glow**, **Flat
+  Matte**, **Noir**, **Bleach Bypass**, **Lomo**, **Pastel**, plus **Scanlines**
+  (CRT), **Dither** (ordered Bayer newsprint) and **Blueprint** (white edges
+  on deep blue). All wired into: Actions grid, Recipes (safe keys + one-touch
+  runner), the **Effects Gallery**, and plain-English commands
+  ("make it noir", "teal and orange", "cyanotype", "scanlines"…)
+- **Smarter single-file export**: when exactly **one** size is checked the
+  file downloads directly (no zip wrapper); **2+ checked** still bundle into
+  one `project-<ts>.zip`. Button label matches ("Export PNG" vs
+  "Export 3 sizes (.zip)"); selection still persists for quick re-exports
+- 17-step audit passes (new actions run, prompt phrases, 1-file direct
+  download, 2-file zip, zero console errors)
