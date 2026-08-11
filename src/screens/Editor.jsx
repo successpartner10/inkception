@@ -218,6 +218,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   const [exportGroup, setExportGroup] = useState('all')
   // multi-size export: checked presets → one zip ("pick the sizes you need")
   const [selPresets, setSelPresets] = useState([])
+  const [zipRequested, setZipRequested] = useState(false) // bundle multi-size into one .zip only if asked
   // global search — one query filters AI, Quick, Export, Templates, Layers
   const [globalSearch, setGlobalSearch] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
@@ -3183,17 +3184,24 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       }
       if (!entries.length) throw new Error('nothing rendered')
       if (entries.length === 1) {
-        // one size → download the file directly (no zip unless it's a batch)
+        // one size → download the file directly (never a zip for a single file)
         downloadBlob(entries[0].data, entries[0].name)
         setBusy(null)
         setExportOpen(false)
-        showToast(`Exported ${entries[0].name.split('-').slice(0, 2).join('-')} ${format.toUpperCase()}`, 'download')
-      } else {
+        showToast(`Exported ${format.toUpperCase()} — ${entries[0].name}`, 'download')
+      } else if (zipRequested) {
+        // 2+ sizes + zip asked → bundle into one .zip
         const zip = await zipFiles(entries)
         downloadBlob(zip, `${base}-${ts}.zip`)
         setBusy(null)
         setExportOpen(false)
         showToast(`Exported ${entries.length} sizes → ${base}-${ts}.zip`, 'download')
+      } else {
+        // 2+ sizes, no zip → download every file individually
+        for (const e of entries) downloadBlob(e.data, e.name)
+        setBusy(null)
+        setExportOpen(false)
+        showToast(`Downloaded ${entries.length} ${format.toUpperCase()} files`, 'download')
       }
     } catch {
       setBusy(null)
@@ -3203,6 +3211,9 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     }
   }
 
+  /* ------------------- export ONE file in ANY format (no zip) --------------- */
+  // Shared with "All formats": render a single preset at the chosen format
+  // and return { blob, name } without downloading.
   /* --------------------------------- helpers -------------------------------- */
   const commitRename = () => {
     const name = (nameDraft || '').trim()
@@ -4328,11 +4339,24 @@ export function Editor({ project, onBack, onRename = () => {} }) {
 
         {isImageExport && (
           <p className="mt-4 rounded-ink border border-dashed border-line px-3 py-2 text-[10px] leading-relaxed text-mute">
-            Check the sizes you need — one size downloads as a file, 2+ combine into <b className="text-dim">one .zip folder</b>.
+            Check the sizes you need — each downloads as its own file. Tick <b className="text-dim">Bundle as .zip</b> only if you want them combined into one folder.
           </p>
         )}
 
-        <div className="mt-5 flex items-center justify-end gap-3">
+        <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
+          <div className="mr-auto flex items-center gap-2">
+            {isImageExport && selPresets.length > 1 && (
+              <label className="flex cursor-pointer items-center gap-1.5 rounded-ink border border-line px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white">
+                <input
+                  type="checkbox"
+                  checked={zipRequested}
+                  onChange={(e) => setZipRequested(e.target.checked)}
+                  className="h-3 w-3 accent-white"
+                />
+                Bundle as .zip
+              </label>
+            )}
+          </div>
           <Button variant="ghost" onClick={() => setExportOpen(false)}>
             Cancel
           </Button>
@@ -4342,7 +4366,9 @@ export function Editor({ project, onBack, onRename = () => {} }) {
                 ? 'Rendering…'
                 : selPresets.length === 1
                   ? `Export ${format.toUpperCase()}`
-                  : `Export ${selPresets.length} sizes (.zip)`}
+                  : zipRequested
+                    ? `Export ${selPresets.length} sizes (.zip)`
+                    : `Export ${selPresets.length} ${format.toUpperCase()} files`}
             </Button>
           ) : (
             <Button variant="primary" icon="export" onClick={doExport} disabled={exporting}>

@@ -508,9 +508,11 @@ layers, quick actions, AI suite, collage, versioning all present.
   on deep blue). All wired into: Actions grid, Recipes (safe keys + one-touch
   runner), the **Effects Gallery**, and plain-English commands
   ("make it noir", "teal and orange", "cyanotype", "scanlines"…)
-- **Smarter single-file export**: when exactly **one** size is checked the
-  file downloads directly (no zip wrapper); **2+ checked** still bundle into
-  one `project-<ts>.zip`. Button label matches ("Export PNG" vs
-  "Export 3 sizes (.zip)"); selection still persists for quick re-exports
-- 17-step audit passes (new actions run, prompt phrases, 1-file direct
-  download, 2-file zip, zero console errors)
+- **Smarter export (zip only if asked)**: checking **one** size downloads the
+  file directly; checking **2+** downloads each size as its **own file**
+  (e.g. "Export 2 PNG files") — a **Bundle as .zip** checkbox appears only
+  for 2+ sizes and combines them into one `project-<ts>.zip` when ticked.
+  Button label always matches what you get; selection persists for quick
+  re-exports
+- 26-step audit passes (new actions run, prompt phrases, 1-file direct
+  download, 2-file individual downloads, opt-in zip, zero console errors)
