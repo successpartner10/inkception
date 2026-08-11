@@ -33,11 +33,12 @@ import {
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../lib/export'
 import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectBBox } from '../lib/segment'
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
-import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas } from '../lib/encode'
+import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas, zipFiles } from '../lib/encode'
 import * as PX from '../lib/pxengine'
 import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
 import { ACTION_CATS, ACTIONS } from '../lib/actions'
 import { bumpUsage, defaultRecipe, loadRecipes, loadStats, mostUsed, saveRecipes, saveStats, stepSummary, suggestEmoji, suggestName, uid } from '../lib/recipes'
+import { getTheme, setTheme as persistTheme, THEME_OPTIONS } from '../lib/theme'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
@@ -212,6 +213,8 @@ export function Editor({ project, onBack }) {
   const [exportOpen, setExportOpen] = useState(false)
   const [preset, setPreset] = useState('yt-thumb')
   const [exportGroup, setExportGroup] = useState('all')
+  // multi-size export: checked presets → one zip ("pick the sizes you need")
+  const [selPresets, setSelPresets] = useState([])
   // global search — one query filters AI, Quick, Export, Templates, Layers
   const [globalSearch, setGlobalSearch] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
@@ -274,6 +277,10 @@ export function Editor({ project, onBack }) {
   const [recipeBuilderOpen, setRecipeBuilderOpen] = useState(false)
   const [recipeDraft, setRecipeDraft] = useState(null) // recipe being built/edited
   const recipeGuardRef = useRef(false) // suppress per-step history pushes during a recipe run
+  // settings — interface theme (dark default, light, auto) + AI mode
+  const [theme, setThemeState] = useState(getTheme)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const changeTheme = (t) => { persistTheme(t); setThemeState(t) }
   // selection engine
   const [selMask, setSelMask] = useState(null) // {w,h,data:Uint8Array} natural res
   const selRef = useRef(null)
@@ -2984,6 +2991,104 @@ export function Editor({ project, onBack }) {
     }
   }
 
+  /* ------------------- multi-size export (checkbox → one zip) ---------------- */
+  // The user's core flow: tick the sizes you need (1, 2 or more) → one click →
+  // all rendered at once → one project-<ts>.zip with platform-named files.
+  const toJpegData = async (dataUrl, w, h) => {
+    const im = await loadImageElement(dataUrl)
+    const cv = document.createElement('canvas')
+    cv.width = w; cv.height = h
+    const ctx = cv.getContext('2d')
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(im, 0, 0)
+    return cv.toDataURL('image/jpeg', 0.92)
+  }
+  const toWebpData = async (dataUrl, w, h) => {
+    const im = await loadImageElement(dataUrl)
+    const cv = document.createElement('canvas')
+    cv.width = w; cv.height = h
+    const ctx = cv.getContext('2d')
+    ctx.drawImage(im, 0, 0, w, h)
+    return cv.toDataURL('image/webp', 0.92)
+  }
+
+  const toggleSel = (id) => {
+    setSelPresets((prev) => {
+      const has = prev.includes(id)
+      if (!has) setPreset(id) // keep the single-export target in sync
+      return has ? prev.filter((x) => x !== id) : [...prev, id]
+    })
+  }
+  const selAllInGroup = (g) => {
+    const ids = EXPORT_PRESETS.filter((p) => p.platform === g && matchesExport(p)).map((p) => p.id)
+    setSelPresets((prev) => {
+      const allOn = ids.every((x) => prev.includes(x))
+      const keep = prev.filter((x) => !ids.includes(x))
+      return allOn ? keep : [...keep, ...ids]
+    })
+  }
+  const setAllSel = (on) => {
+    if (on) {
+      const ids = EXPORT_PRESETS.filter((p) => matchesExport(p)).map((p) => p.id)
+      setSelPresets((prev) => Array.from(new Set([...prev, ...ids])))
+    } else setSelPresets([])
+  }
+
+  const isImageExport = format === 'png' || format === 'jpg' || format === 'webp'
+
+  const doExportMany = async () => {
+    const c = fabricRef.current
+    if (!imageSrcRef.current && !(c && c.getObjects().length)) {
+      showToast('Nothing to export', 'info')
+      return
+    }
+    const ids = selPresets.filter(Boolean)
+    if (!ids.length) {
+      showToast('Check the sizes you want first', 'info')
+      return
+    }
+    setExporting(true)
+    try {
+      const base = slug(project.name)
+      const ts = new Date()
+        .toISOString()
+        .replace(/[-:T]/g, '')
+        .slice(0, 14) // yyyymmddhhmmss
+      const entries = []
+      let done = 0
+      for (const id of ids) {
+        const p =
+          id === 'original'
+            ? { id: 'original', name: 'Original', platform: 'original', w: naturalRef.current.w, h: naturalRef.current.h }
+            : EXPORT_PRESETS.find((x) => x.id === id)
+        if (!p || !p.w || !p.h) continue
+        done++
+        setBusy({ kind: 'real', title: `Export ${done}/${ids.length}`, step: `${p.name} — ${p.w}×${p.h}`, progress: 10 + Math.round((done / ids.length) * 70) })
+        const dataUrl = await renderFrameCanvas(p)
+        if (!dataUrl) continue
+        const ext = format === 'jpg' ? 'jpg' : format
+        let out = dataUrl
+        if (format === 'jpg') out = await toJpegData(dataUrl, p.w, p.h)
+        else if (format === 'webp') out = await toWebpData(dataUrl, p.w, p.h)
+        const blob = await (await fetch(out)).blob()
+        const pf = slug(p.platform || 'original')
+        entries.push({ name: `${pf}-${p.w}x${p.h}-${base}-${ts}.${ext}`, data: blob })
+      }
+      if (!entries.length) throw new Error('nothing rendered')
+      const zip = await zipFiles(entries)
+      downloadBlob(zip, `${base}-${ts}.zip`)
+      setBusy(null)
+      setExportOpen(false)
+      showToast(`Exported ${entries.length} size${entries.length === 1 ? '' : 's'} → ${base}-${ts}.zip`, 'download')
+    } catch {
+      setBusy(null)
+      showToast('Export failed', 'close')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   /* --------------------------------- helpers -------------------------------- */
   const openTab = (t) => {
     setTab(t)
@@ -3253,6 +3358,7 @@ export function Editor({ project, onBack }) {
           <Button variant="secondary" size="sm" icon="export" onClick={() => openModal(setExportOpen)}>
             Export
           </Button>
+          <IconBtn icon="sliders" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
         </div>
         <div className="flex items-center gap-0.5 lg:hidden">
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
@@ -3260,6 +3366,7 @@ export function Editor({ project, onBack }) {
           <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
           <IconBtn icon="folder" title="Open file" onClick={() => fileRef.current && fileRef.current.click()} />
           <IconBtn icon="export" title="Export (⌘E)" onClick={() => openModal(setExportOpen)} />
+          <IconBtn icon="sliders" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
         </div>
       </header>
 
@@ -3911,7 +4018,7 @@ export function Editor({ project, onBack }) {
             onClick={() => setExportGroup('all')}
             className={cn(
               'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
-              exportGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+              exportGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
             )}
           >
             All · {EXPORT_PRESETS.length}
@@ -3923,7 +4030,7 @@ export function Editor({ project, onBack }) {
               onClick={() => setExportGroup(g)}
               className={cn(
                 'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
-                exportGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+                exportGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
               )}
             >
               {g} · {EXPORT_PRESETS.filter((p) => p.platform === g).length}
@@ -3931,45 +4038,95 @@ export function Editor({ project, onBack }) {
           ))}
         </div>
 
+        {/* checked-count + select all / clear */}
+        <div className="mt-2 flex items-center gap-2">
+          <span className="label-xs text-mute">
+            {selPresets.length} of {EXPORT_PRESETS.length} checked
+          </span>
+          <span className="h-px flex-1 bg-line" />
+          <button type="button" onClick={() => setAllSel(true)} className="label-xs text-dim transition-colors hover:text-white">
+            Select all
+          </button>
+          <button type="button" onClick={() => setAllSel(false)} className="label-xs text-dim transition-colors hover:text-white">
+            Clear
+          </button>
+        </div>
+
         <div className="mt-3">
           {exportGroup === 'all'
-            ? EXPORT_GROUPS.map((g) => (
-                <div key={g} className="mb-4 last:mb-0">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Icon name={PLATFORM_ICONS[g]} size={13} className="text-mute" />
-                    <span className="label-xs text-dim">{g}</span>
-                    <span className="h-px flex-1 bg-line" />
+            ? EXPORT_GROUPS.map((g) => {
+                const gids = EXPORT_PRESETS.filter((p) => p.platform === g && matchesExport(p))
+                const gOn = gids.length > 0 && gids.every((p) => selPresets.includes(p.id))
+                return (
+                  <div key={g} className="mb-4 last:mb-0">
+                    <div className="mb-2 flex items-center gap-2">
+                      <Icon name={PLATFORM_ICONS[g]} size={13} className="text-mute" />
+                      <span className="label-xs text-dim">{g}</span>
+                      <span className="h-px flex-1 bg-line" />
+                      <button
+                        type="button"
+                        onClick={() => selAllInGroup(g)}
+                        className="label-xs text-mute transition-colors hover:text-white"
+                      >
+                        {gOn ? 'Uncheck all' : 'Check all'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {gids.map((p) => (
+                        <PresetRow key={p.id} p={p} checked={selPresets.includes(p.id)} onToggle={() => toggleSel(p.id)} query={globalSearch} />
+                      ))}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {EXPORT_PRESETS.filter((p) => p.platform === g && matchesExport(p)).map((p) => (
-                      <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} query={globalSearch} />
-                    ))}
-                  </div>
-                </div>
-              ))
-            : (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {EXPORT_PRESETS.filter((p) => p.platform === exportGroup && matchesExport(p)).map((p) => (
-                  <PresetRow key={p.id} p={p} active={preset === p.id} onClick={() => setPreset(p.id)} query={globalSearch} />
-                ))}
-              </div>
-            )}
+                )
+              })
+            : (() => {
+                const gids = EXPORT_PRESETS.filter((p) => p.platform === exportGroup && matchesExport(p))
+                const gOn = gids.length > 0 && gids.every((p) => selPresets.includes(p.id))
+                return (
+                  <>
+                    <div className="mb-2 flex items-center gap-2">
+                      <Icon name={PLATFORM_ICONS[exportGroup]} size={13} className="text-mute" />
+                      <span className="label-xs text-dim">{exportGroup}</span>
+                      <span className="h-px flex-1 bg-line" />
+                      <button
+                        type="button"
+                        onClick={() => selAllInGroup(exportGroup)}
+                        className="label-xs text-mute transition-colors hover:text-white"
+                      >
+                        {gOn ? 'Uncheck all' : 'Check all'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {gids.map((p) => (
+                        <PresetRow key={p.id} p={p} checked={selPresets.includes(p.id)} onToggle={() => toggleSel(p.id)} query={globalSearch} />
+                      ))}
+                    </div>
+                  </>
+                )
+              })()}
         </div>
 
         <button
           type="button"
-          onClick={() => setPreset('original')}
+          onClick={() => toggleSel('original')}
           className={cn(
             'mt-4 flex w-full items-center justify-between rounded-ink border px-3.5 py-2.5 text-left transition-colors',
-            preset === 'original' ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+            selPresets.includes('original') ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
           )}
         >
-          <span className="text-xs font-semibold">Original size</span>
-          <span className="flex items-center gap-2">
-            <span className="text-[10px] text-mute">
-              {naturalRef.current.w || '–'}×{naturalRef.current.h || '–'}
+          <span className="flex items-center gap-2.5">
+            <span
+              className={cn(
+                'flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors',
+                selPresets.includes('original') ? 'border-white bg-white text-black' : 'border-line-2 text-transparent',
+              )}
+            >
+              <Icon name="check" size={11} />
             </span>
-            {preset === 'original' && <Icon name="check" size={14} className="text-white" />}
+            <span className="text-xs font-semibold">Original size</span>
+          </span>
+          <span className="text-[10px] text-mute">
+            {naturalRef.current.w || '–'}×{naturalRef.current.h || '–'}
           </span>
         </button>
 
@@ -4010,13 +4167,25 @@ export function Editor({ project, onBack }) {
         )}
         {format === 'pdf' && <p className="mt-2 text-[10px] text-mute">Single-page PDF at the selected size (JPEG-embedded).</p>}
 
-        <div className="mt-6 flex items-center justify-end gap-3">
+        {isImageExport && (
+          <p className="mt-4 rounded-ink border border-dashed border-line px-3 py-2 text-[10px] leading-relaxed text-mute">
+            Check the sizes you need (1 or more) — they render together into <b className="text-dim">one .zip folder</b>.
+          </p>
+        )}
+
+        <div className="mt-5 flex items-center justify-end gap-3">
           <Button variant="ghost" onClick={() => setExportOpen(false)}>
             Cancel
           </Button>
-          <Button variant="primary" icon="export" onClick={doExport} disabled={exporting}>
-            {exporting ? 'Rendering…' : `Export ${format.toUpperCase()}`}
-          </Button>
+          {isImageExport && selPresets.length > 0 ? (
+            <Button variant="primary" icon="export" onClick={doExportMany} disabled={exporting}>
+              {exporting ? 'Rendering…' : `Export ${selPresets.length} size${selPresets.length === 1 ? '' : 's'} (.zip)`}
+            </Button>
+          ) : (
+            <Button variant="primary" icon="export" onClick={doExport} disabled={exporting}>
+              {exporting ? 'Rendering…' : `Export ${format.toUpperCase()}`}
+            </Button>
+          )}
         </div>
       </Modal>
 
@@ -4046,6 +4215,16 @@ export function Editor({ project, onBack }) {
         onSave={saveRecipeDraft}
       />
 
+      {/* settings — theme presets + AI mode */}
+      <SettingsModal
+        open={settingsOpen}
+        theme={theme}
+        onTheme={changeTheme}
+        justDoIt={justDoIt}
+        setJustDoIt={setJustDoIt}
+        onClose={() => setSettingsOpen(false)}
+      />
+
       {/* done → OK / Undo bar */}
       {confirmBar && (
         <div className="fixed bottom-16 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-3 rounded-ink bg-white px-4 py-2 text-xs font-semibold text-black shadow-2xl">
@@ -4065,17 +4244,25 @@ export function Editor({ project, onBack }) {
 }
 
 /* ------------------------------ export preset ---------------------------- */
-function PresetRow({ p, active, onClick, query = '' }) {
+function PresetRow({ p, checked, onToggle, query = '' }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={onToggle}
       title={p.use}
       className={cn(
         'flex items-center gap-2.5 rounded-ink border px-2.5 py-2 text-left transition-colors',
-        active ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+        checked ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
       )}
     >
+      <span
+        className={cn(
+          'flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors',
+          checked ? 'border-white bg-white text-black' : 'border-line-2 text-transparent',
+        )}
+      >
+        <Icon name="check" size={11} />
+      </span>
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
         <Icon name={PLATFORM_ICONS[p.platform]} size={13} />
       </span>
@@ -4085,7 +4272,6 @@ function PresetRow({ p, active, onClick, query = '' }) {
           {p.w}×{p.h} · {p.ratio}
         </span>
       </span>
-      {active && <Icon name="check" size={13} className="shrink-0 text-white" />}
     </button>
   )
 }
@@ -4100,7 +4286,7 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
       onClick={onClick}
       className={cn(
         'flex w-full items-center justify-between px-3 py-1.5 text-left text-[11px] transition-colors',
-        active ? 'bg-white/10 font-semibold text-white' : 'text-dim hover:bg-white/5 hover:text-white',
+        active ? 'bg-white/10 font-semibold text-fg' : 'text-dim hover:bg-white/5 hover:text-fg',
       )}
     >
       <span>{label}</span>
@@ -4267,10 +4453,10 @@ function ActionsTab({ search = '', imageSrc, onRun }) {
     <div className="p-4">
       {/* feasibility toggle — hide AI/composite by default */}
       <div className="mb-2 flex items-center gap-1">
-        <button type="button" onClick={() => setFeat('local')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'local' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}>
+        <button type="button" onClick={() => setFeat('local')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'local' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
           Free ({counts.local})
         </button>
-        <button type="button" onClick={() => setFeat('all')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}>
+        <button type="button" onClick={() => setFeat('all')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
           All ({counts.all})
         </button>
         <span className="ml-auto text-[8px] text-mute">{feat === 'local' ? 'AI/needs-model hidden' : 'showing all (AI greyed)'}</span>
@@ -4278,9 +4464,9 @@ function ActionsTab({ search = '', imageSrc, onRun }) {
 
       {/* category chips */}
       <div className="no-scrollbar flex gap-1 overflow-x-auto pb-1">
-        <button type="button" onClick={() => setCat('all')} className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}>All</button>
+        <button type="button" onClick={() => setCat('all')} className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>All</button>
         {ACTION_CATS.map((c) => (
-          <button key={c} type="button" onClick={() => setCat(c)} className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === c ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}>{c}</button>
+          <button key={c} type="button" onClick={() => setCat(c)} className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === c ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>{c}</button>
         ))}
       </div>
 
@@ -4356,7 +4542,7 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
                 >
                   <span className="text-mute"><Icon name={l ? l.icon : 'sparkle'} size={11} /></span>
                   <span className="text-[10px] font-semibold text-fg">{l ? l.label : k}</span>
-                  <span className="rounded-full bg-white/10 px-1.5 text-[8px] font-bold text-white">{st.n}</span>
+                  <span className="rounded-full bg-white/10 px-1.5 text-[8px] font-bold text-fg">{st.n}</span>
                 </button>
               )
             })}
@@ -4503,7 +4689,7 @@ function RecipeBuilderModal({ open, draft, library, onClose, onChange, onSave })
             <div className="mt-1 flex flex-col gap-1">
               {steps.map((s, i) => (
                 <div key={i} className="flex items-center gap-1.5 rounded-ink border border-line bg-surface-2 px-2 py-1.5">
-                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-white">{i + 1}</span>
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-fg">{i + 1}</span>
                   <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-fg">{s.label}</span>
                   <IconBtn icon="chevronUp" size={12} title="Move up" onClick={() => move(i, -1)} className="h-6 w-6" />
                   <IconBtn icon="chevronDown" size={12} title="Move down" onClick={() => move(i, 1)} className="h-6 w-6" />
@@ -4528,7 +4714,7 @@ function RecipeBuilderModal({ open, draft, library, onClose, onChange, onSave })
                 key={g}
                 type="button"
                 onClick={() => setCat(g)}
-                className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
+                className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
               >
                 {g === 'all' ? 'All' : g}
               </button>
@@ -4555,6 +4741,63 @@ function RecipeBuilderModal({ open, draft, library, onClose, onChange, onSave })
         <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button variant="primary" icon="check" onClick={() => onSave(draft)}>Save Recipe</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ----------------------------- settings modal ----------------------------- */
+function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Settings" subtitle="All preferences stay on this device — no account, no cloud" width="max-w-md">
+      <div className="flex flex-col gap-5">
+        <div>
+          <label className="label-xs text-dim">Interface theme</label>
+          <p className="mt-0.5 text-[10px] text-mute">Dark is the studio default. Light keeps the black canvas with a light workspace.</p>
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            {THEME_OPTIONS.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => onTheme(o.id)}
+                className={cn(
+                  'flex flex-col gap-1 rounded-ink border px-2 py-2 text-left transition-colors',
+                  theme === o.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+                )}
+              >
+                <span className={cn('text-[10px] font-bold uppercase tracking-[0.1em]', theme === o.id ? 'text-fg' : 'text-dim')}>{o.label}</span>
+                <span className="text-[9px] leading-relaxed text-mute">{o.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="label-xs text-dim">AI assistant mode</label>
+          <p className="mt-0.5 text-[10px] text-mute">Guided = propose → confirm → run. ⚡ Just do it = runs immediately (still undoable).</p>
+          <div className="mt-2 flex gap-1">
+            <button
+              type="button"
+              onClick={() => setJustDoIt(false)}
+              className={cn('flex-1 rounded-ink px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors', !justDoIt ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
+            >
+              Guided
+            </button>
+            <button
+              type="button"
+              onClick={() => setJustDoIt(true)}
+              className={cn('flex-1 rounded-ink px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors', justDoIt ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
+            >
+              ⚡ Just do it
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-ink border border-line bg-surface-2/50 px-3 py-2">
+          <p className="text-[9px] leading-relaxed text-mute">
+            Everything else is automatic: autosave (every 15 s), undo history, recipes and usage stats all live in your browser's local storage.
+          </p>
         </div>
       </div>
     </Modal>
@@ -4786,7 +5029,7 @@ function QuickTab({ fx, setFx, filters, setLive, commitFilters, onDone, showToas
                 onClick={it.onClick}
                 className={cn(
                   'flex flex-col items-center gap-1.5 rounded-ink border px-1 py-2.5 transition-colors',
-                  it.active ? 'border-white bg-surface-2 text-white' : 'border-line text-dim hover:border-line-2 hover:text-fg',
+                  it.active ? 'border-white bg-surface-2 text-fg' : 'border-line text-dim hover:border-line-2 hover:text-fg',
                   highlightTarget === it.label && 'border-white ring-2 ring-white/40 animate-pulse',
                 )}
               >
@@ -4985,7 +5228,7 @@ function AITab({
               key={s}
               type="button"
               onClick={() => onPromptAction(matchPrompt(s).action, matchPrompt(s).payload)}
-              className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-white"
+              className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
             >
               {s}
             </button>
@@ -4998,7 +5241,7 @@ function AITab({
               <button
                 type="button"
                 onClick={onUndoLast}
-                className="flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:text-white"
+                className="flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
               >
                 <Icon name="undo" size={11} /> Undo last
               </button>
@@ -5011,9 +5254,9 @@ function AITab({
                   type="button"
                   title={`Revert to before step ${i + 1} (${c.phrase})`}
                   onClick={() => onRevertTo(i)}
-                  className="group flex items-center gap-1 rounded-ink border border-line bg-surface-2 px-1.5 py-1 text-[9px] text-dim transition-colors hover:border-white hover:text-white"
+                  className="group flex items-center gap-1 rounded-ink border border-line bg-surface-2 px-1.5 py-1 text-[9px] text-dim transition-colors hover:border-white hover:text-fg"
                 >
-                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-white">{i + 1}</span>
+                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-fg">{i + 1}</span>
                   <span className="max-w-[80px] truncate">{c.phrase}</span>
                   <Icon name="undo" size={9} className="opacity-0 transition-opacity group-hover:opacity-100" />
                 </button>
@@ -5034,7 +5277,7 @@ function AITab({
           <ol className="mt-2 space-y-1.5">
             {howtoResult.steps.map((st, i) => (
               <li key={i} className="flex gap-2 text-[11px] leading-relaxed text-fg">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-white">{i + 1}</span>
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-fg">{i + 1}</span>
                 <span>{st}</span>
               </li>
             ))}
@@ -5208,7 +5451,7 @@ function LayersTab({
                     <button
                       type="button"
                       onClick={() => onFitPhoto(l.id, 'contain')}
-                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                       title="Shrink photo to fit its slot"
                     >
                       Fit
@@ -5216,7 +5459,7 @@ function LayersTab({
                     <button
                       type="button"
                       onClick={() => onFitPhoto(l.id, 'cover')}
-                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                       title="Expand photo to fill its slot"
                     >
                       Fill
@@ -5226,7 +5469,7 @@ function LayersTab({
                         <button
                           type="button"
                           onClick={() => onRotatePhoto(l.id, -15)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                           title="Rotate left 15°"
                         >
                           ↺
@@ -5234,7 +5477,7 @@ function LayersTab({
                         <button
                           type="button"
                           onClick={() => onRotatePhoto(l.id, 15)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                           title="Rotate right 15°"
                         >
                           ↻
@@ -5246,7 +5489,7 @@ function LayersTab({
                         <button
                           type="button"
                           onClick={() => onShiftSlot(l.id, -1)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                           title="Swap with previous slot"
                         >
                           ←
@@ -5254,7 +5497,7 @@ function LayersTab({
                         <button
                           type="button"
                           onClick={() => onShiftSlot(l.id, 1)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-white"
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                           title="Swap with next slot"
                         >
                           →
@@ -5446,7 +5689,7 @@ function BatchBody({ onRun, result, onClear }) {
             onClick={() => setOp(o.id)}
             className={cn(
               'rounded-ink px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors',
-              op === o.id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+              op === o.id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
             )}
           >
             {o.label}
@@ -5467,7 +5710,7 @@ function BatchBody({ onRun, result, onClear }) {
                 key={r.name}
                 type="button"
                 onClick={() => downloadDataUrl(r.dataUrl, `${r.name}.png`)}
-                className="flex w-full items-center gap-2 rounded-ink bg-surface-2 px-2.5 py-1.5 text-left text-[11px] text-dim transition-colors hover:text-white"
+                className="flex w-full items-center gap-2 rounded-ink bg-surface-2 px-2.5 py-1.5 text-left text-[11px] text-dim transition-colors hover:text-fg"
               >
                 <Icon name="download" size={12} />
                 <span className="truncate">{r.name}.png</span>
@@ -5663,7 +5906,7 @@ function HowToBody({ onRun }) {
             key={sg}
             type="button"
             onClick={() => { setQ(sg); const m = matchHowTo(sg); setResult(m); setAsked(true) }}
-            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-white"
+            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
           >
             {sg}
           </button>
@@ -5690,7 +5933,7 @@ function HowToBody({ onRun }) {
           <ol className="mt-2 space-y-1.5">
             {result.steps.map((st, i) => (
               <li key={i} className="flex gap-2 text-[11px] leading-relaxed text-fg">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-white">{i + 1}</span>
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-fg">{i + 1}</span>
                 <span>{st}</span>
               </li>
             ))}
@@ -5871,7 +6114,7 @@ function CollageBody({ onBuild, showToast, search = '' }) {
               onClick={() => setCollageGroup('all')}
               className={cn(
                 'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
-                collageGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+                collageGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
               )}
             >
               All · {EXPORT_PRESETS.length}
@@ -5883,7 +6126,7 @@ function CollageBody({ onBuild, showToast, search = '' }) {
                 onClick={() => setCollageGroup(g)}
                 className={cn(
                   'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
-                  collageGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+                  collageGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
                 )}
               >
                 {g} · {EXPORT_PRESETS.filter((p) => p.platform === g).length}

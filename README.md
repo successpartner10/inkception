@@ -13,6 +13,18 @@ monochromatic palette, Raleway wordmark + Plus Jakarta Sans UI, "Round Eight"
 The site deploys automatically whenever `main` is updated (GitHub Actions →
 `.github/workflows/deploy.yml`), so the URL always reflects the latest push.
 
+## Highlights
+
+- **Free & private** — no account, no backend, no data leaves the device
+- **42 one-click Actions** + real on-device AI (subject matting, inpainting,
+  smart crop) — honest about what needs a paid model
+- **Recipes** — save any repeated steps as a named one-click task; the app
+  learns your "most used" and captures your last steps
+- **Multi-size export** — tick the platform sizes you need → one
+  `project-<ts>.zip` with every size at once (27 presets × 8 formats)
+- **Interface themes** — Dark (default) / Light / Auto, plus Settings hub
+- Works offline: `inkception-standalone.html` (fonts + samples embedded)
+
 ## Stack
 
 - **React 19** + **Vite 6**

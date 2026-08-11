@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.16.1
+> **Version**: v0.16.2
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.16.1)
+> **Updated**: 2026-08-11 (v0.16.2)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -117,6 +117,19 @@ input; applies live to selected text and to new text.
 - Honest limits: steps that need input (brushes, region clicks, model-only
   AI) are marked "needs input" and excluded from recipes
 
+## 4d. Settings & interface themes
+
+- **Settings** (sliders icon in the top bar): no account, no server — every
+  preference is stored in your browser
+- **Interface theme**: **Dark** (default, monochrome studio look) · **Light**
+  (light chrome over the black canvas — the stage stays dark so white text
+  stays visible) · **Auto** (follows the OS live). Applied before first
+  paint, remembered per device
+- **AI assistant mode**: Guided (propose → confirm → run) vs ⚡ Just do it
+  (runs immediately, still undoable) — also toggleable inline in the AI tab
+- Automatic & always-on: autosave (every 15 s + on close), snapshot undo
+  history, recipe + usage stats — all in localStorage
+
 ## 5. AI Suite (17 capabilities, all on-device)
 
 **Content-Aware**
@@ -178,7 +191,12 @@ background removal, replace background, upscale, export…) that executes on tap
   - **PSD** — **layered** (ag-psd): every canvas object becomes an editable
     layer with name, opacity, visibility, blend mode; composite included
   - **SVG** — vector (fabric objects) or edge-traced
-- Cover-crop to fit; filename = project-size.ext; format hints in the modal
+- **Multi-size batch → one .zip**: checkboxes on every preset (Select all /
+  per-platform Check all / Original size); **Export N sizes (.zip)** renders
+  PNG/JPG/WebP at each checked size into a single zip folder with
+  platform-named files — the "pick 1–2–3 sizes, all at once, one folder"
+  flow; selection persists for re-exports
+- Cover-crop to fit; filename = platform-size-name-timestamp.ext
 
 ## 7. Offline / Standalone
 
@@ -373,3 +391,24 @@ layers, quick actions, AI suite, collage, versioning all present.
   runs the latest or named recipe
 - **Search dropdown**: each recipe appears as "Run recipe: <name>"
 - Repaired creases action now wired from the Actions grid
+
+### v0.16.2 — Multi-size export (one zip) · interface themes · Settings
+- **Checkbox multi-size export**: every preset row now has a checkbox —
+  tick the 1–2–3 sizes you need, hit **Export N sizes (.zip)**, and all of
+  them render at once into one `project-<ts>.zip` (platform-named files:
+  `instagram-1080x1080-name-20260811-163000.png`). Select all / Clear,
+  per-platform **Check all**, and **Original size** are checkable too.
+- **ZIP writer**: hand-rolled, dependency-free (STORE + CRC32) — works fully
+  offline; PNG/JPG/WebP batch; GIF/MP4/PDF/PSD/SVG keep the single export
+  path. The selection persists across modal opens for one-click re-exports.
+- **Interface theme presets** (Settings → Interface theme): **Dark**
+  (default, the monochrome studio look), **Light** (light chrome over the
+  black canvas — the stage stays dark so white text objects stay visible),
+  **Auto** (follows the OS, live). Stored per device in localStorage,
+  applied before first paint (no flash).
+- **Settings modal** (sliders icon in the top bar): theme + AI assistant
+  mode (Guided vs ⚡ Just do it) in one place; everything is local.
+- Light-mode polish: hover/active accents flip to dark ink, badges and
+  check icons stay readable on light surfaces.
+- 18-step automated audit passes (home → editor → theme → recipes →
+  multi-export → mobile, no console errors).
