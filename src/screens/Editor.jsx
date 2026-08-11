@@ -766,7 +766,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         const isFile = typeof location !== 'undefined' && location.protocol === 'file:'
         const img = await FabricImage.fromURL(imageSrc, isFile ? {} : { crossOrigin: 'anonymous' })
         if (!alive) return
-        const scale = Math.min(fit.w / img.width, fit.h / img.height)
+        const scale = Math.max(fit.w / img.width, fit.h / img.height) // cover — fills the canvas, crop overflow
         img.set({
           left: (fit.w - img.width * scale) / 2,
           top: (fit.h - img.height * scale) / 2,
@@ -1208,6 +1208,25 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         decompRef.current.forEach((d) => c.remove(d.img))
         decompRef.current = []
         setExtraLayers([])
+      }
+
+      // Single photo → fill the canvas with it (cover). Becomes the base image,
+      // so it's fully editable + movable.
+      if (layoutId === 'single') {
+        try {
+          if (placement === 'new' && size) {
+            naturalRef.current = { w: size.w, h: size.h }
+            const nf = calcFitFor(size.w, size.h) || { w: 640, h: 640 }
+            setFit(nf)
+            setImageSrc(null)
+            imageSrcRef.current = null
+          }
+          await loadIntoCanvas(urls[0])
+          showToast(placement === 'new' ? `Photo placed on ${size.w}×${size.h} canvas` : 'Photo fills the canvas — drag to move', 'image')
+        } catch {
+          showToast('Could not place photo', 'close')
+        }
+        return
       }
 
       // Option B — append: keep existing collage layers, add new photos on top
@@ -3692,10 +3711,15 @@ export function Editor({ project, onBack, onRename = () => {} }) {
                     <p className="text-sm text-dim">
                       Blank {naturalRef.current.w || '–'}×{naturalRef.current.h || '–'} canvas
                     </p>
-                    <Button variant="primary" size="sm" icon="grid" onClick={() => setCollageOpen(true)}>
-                      Add Photos / Collage
-                    </Button>
-                    <p className="text-[10px] text-mute">or open a file to start with an image</p>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <Button variant="primary" size="sm" icon="upload" onClick={() => fileRef.current && fileRef.current.click()}>
+                        Add Photo
+                      </Button>
+                      <Button variant="secondary" size="sm" icon="grid" onClick={() => setCollageOpen(true)}>
+                        Collage grid…
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-mute">Add Photo fills the canvas — you can move/resize it after. Collage builds a multi-photo layout.</p>
                   </>
                 ) : (
                   <>
@@ -6386,11 +6410,22 @@ function CollageBody({ onBuild, showToast, search = '' }) {
   }
 
   const current = COLLAGE_LAYOUTS.find((l) => l.id === layout)
-  const fits = photos.length >= (current?.min ?? 99) && photos.length <= (current?.max ?? 0)
+  // a single photo always works (full-bleed); grids need their min count
+  const fits = photos.length >= 1 && (photos.length === 1 || (photos.length >= (current?.min ?? 99) && photos.length <= (current?.max ?? 0)))
   const size = EXPORT_PRESETS.find((p) => p.id === collagePreset) || EXPORT_PRESETS[0]
   const sizePresets = EXPORT_PRESETS.filter((p) => collageGroup === 'all' || p.platform === collageGroup)
 
   const build = () => {
+    // one photo → place it full-bleed on the canvas (no grid needed)
+    if (photos.length === 1) {
+      onBuild('single', photos.map((p) => p.url), {
+        placement,
+        size: placement === 'new' ? { w: size.w, h: size.h } : null,
+        append: false,
+        circlePos,
+      })
+      return
+    }
     onBuild(layout, photos.map((p) => p.url), {
       placement,
       size: placement === 'new' ? { w: size.w, h: size.h } : null,
@@ -6589,8 +6624,13 @@ function CollageBody({ onBuild, showToast, search = '' }) {
         <p className="py-3 text-center text-xs text-mute">No collage template matches “{search}”</p>
       )}
       <p className="mt-2 text-[10px] text-mute">
-        {photos.length} photo{photos.length === 1 ? '' : 's'} selected · {current ? `${current.min}–${current.max} for ${current.name}` : 'pick a template'}
-        {photos.length > 0 && current && photos.length < current.min ? ` · add ${current.min - photos.length} more` : ''}
+        {photos.length} photo{photos.length === 1 ? '' : 's'} selected ·{' '}
+        {photos.length === 1
+          ? 'one photo fills the canvas — add more for a grid'
+          : current
+            ? `${current.min}–${current.max} for ${current.name}`
+            : 'pick a template'}
+        {photos.length > 1 && current && photos.length < current.min ? ` · add ${current.min - photos.length} more` : ''}
       </p>
 
       {/* Circle Inset → choose where the circular frame sits */}
@@ -6617,15 +6657,21 @@ function CollageBody({ onBuild, showToast, search = '' }) {
 
       <div className="mt-5 flex items-center justify-between gap-3">
         <span className="text-[10px] text-mute">
-          {current ? `${current.min}–${current.max} photos required` : 'Pick a layout'}
+          {photos.length === 1 ? '1 photo → fills the canvas' : current ? `${current.min}–${current.max} photos required` : 'Pick a layout'}
         </span>
         <Button
           variant="primary"
-          icon="grid"
-          disabled={!fits || photos.length < 2}
+          icon={photos.length === 1 ? 'image' : 'grid'}
+          disabled={!fits}
           onClick={build}
         >
-          {placement === 'new' ? `Create ${size.w}×${size.h}` : append ? 'Add Photos' : 'Build Collage'}
+          {photos.length === 1
+            ? 'Place Photo'
+            : placement === 'new'
+              ? `Create ${size.w}×${size.h}`
+              : append
+                ? 'Add Photos'
+                : 'Build Collage'}
         </Button>
       </div>
     </div>

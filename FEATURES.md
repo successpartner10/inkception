@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.6
+> **Version**: v0.17.7
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.6)
+> **Updated**: 2026-08-11 (v0.17.7)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -564,3 +564,17 @@ layers, quick actions, AI suite, collage, versioning all present.
 - 12-step audit passes (template→size auto-select, project rename, auto-fit,
   circle clip, ring-follow-drag, single-file export, standard grid, no
   console errors)
+
+### v0.17.7 — Blank templates: no more forced collage jump
+- A blank template now shows **two clear actions**: **Add Photo** (fills the
+  canvas with your image, edge-to-edge — you can then move/resize it) and
+  **Collage grid…** (only if you actually want a multi-photo layout). Adding
+  a photo no longer throws you into the collage flow
+- **Single-photo collage**: in the collage modal, one photo now works — the
+  button becomes **Place Photo** and fills the canvas, instead of demanding
+  "add N more to form a grid". Add 2+ and it's the normal grid builder again
+- **Imported photos fill the template** (cover-fit, crop overflow) instead
+  of sitting in a letterboxed box; still selectable/movable afterwards
+- 16-step audit passes (template → Add Photo fills canvas with no collage
+  jump, 1-photo Place Photo, 2-photo grid still clips, single-file export,
+  zero console errors)
