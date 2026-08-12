@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.20
+> **Version**: v0.17.21
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.20)
+> **Updated**: 2026-08-12 (v0.17.21)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -801,3 +801,21 @@ layers, quick actions, AI suite, collage, versioning all present.
 - The box only clears when YOU clear it (Clear button or Esc)
 - Verified: query persists after running an action, after picking "Open a
   file", and after the image actually loads — 7/7, zero console errors
+
+### v0.17.21 — Auto Enhance yellow-cast fix + controls audit
+- **Fixed Auto Enhance turning images yellow**: the fabric ColorMatrix
+  temperature offsets were written for 0–255 space but fabric normalizes
+  pixels to 0–1, so red/green got clamped (red +1.27, green +0.48) —
+  the "bright yellow, loses all reds/greens" you saw. Offsets now scaled
+  by 1/255. Verified pixel-level: enhance is now a gentle lift (R 23→27%,
+  G 18→20%, B 12→14%) instead of the yellow blowout (was R 45%, G 37%,
+  B 11%)
+- **Controls audit — removed true duplicates** (each still reachable via
+  the global search + AI tab):
+  - Adjust tab's **Auto Enhance** button (dup of AI-tab card + Actions)
+  - Tool dock's **Smart Crop** button (dup of AI-tab card + search)
+- **Kept** (complementary, not duplicates): the 6 precision sliders
+  (Actions are one-shots, sliders fine-tune), all drawing tools, brushes,
+  Before/After, zoom, AI cards, Text/Layers controls
+- 9-step audit passes (yellow fixed, cuts applied, search still reaches
+  both, AI tab intact, zero console errors)

@@ -52,19 +52,22 @@ export function buildFabricFilters(f) {
   list.push(new F.Contrast({ contrast: f.contrast / 100 - 1 }))
   list.push(new F.Saturation({ saturation: f.saturation / 100 - 1 }))
   if (f.temperature > 0) {
+    // fabric ColorMatrix offsets are in 0–1 space (pixels are normalized),
+    // so scale the 0–255-style offsets by 1/255 — otherwise it clamps red
+    // and green, turning the image yellow.
     const a = (f.temperature / 100) * 0.22
     list.push(new F.ColorMatrix({ matrix: [
-      1, 0, 0, 0, a * 120,
-      0, 1, 0, 0, a * 45,
-      0, 0, 1, 0, a * -10,
+      1, 0, 0, 0, (a * 120) / 255,
+      0, 1, 0, 0, (a * 45) / 255,
+      0, 0, 1, 0, (a * -10) / 255,
       0, 0, 0, 1, 0,
     ] }))
   } else if (f.temperature < 0) {
     const a = (-f.temperature / 100) * 0.22
     list.push(new F.ColorMatrix({ matrix: [
-      1, 0, 0, 0, a * -30,
-      0, 1, 0, 0, a * -10,
-      0, 0, 1, 0, a * 70,
+      1, 0, 0, 0, (a * -30) / 255,
+      0, 1, 0, 0, (a * -10) / 255,
+      0, 0, 1, 0, (a * 70) / 255,
       0, 0, 0, 1, 0,
     ] }))
   }

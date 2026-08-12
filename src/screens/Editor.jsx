@@ -4078,7 +4078,6 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           <IconBtn icon="wind" title="Blur brush — paint to blur" active={eraseMode === 'blur'} onClick={() => startErase('blur')} />
           <IconBtn icon="eraser" title="Erase brush — paint to transparent" active={eraseMode === 'alpha'} onClick={() => startErase('alpha')} />
           <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
-          <IconBtn icon="focus" title="Smart Crop (subject-aware)" onClick={() => openModal(setCropOpen)} />
         </div>
         {/* Row 2 — utility tools */}
         <div className="flex flex-wrap items-center justify-center gap-0.5">
@@ -5614,13 +5613,10 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
   })
   return (
     <div className="p-5">
-      <Button variant="primary" className="w-full" icon="sparkle" onClick={runEnhance} disabled={busy}>
-        Auto Enhance
-      </Button>
       <Button
         variant="ghost"
         size="sm"
-        className="mt-2 w-full"
+        className="mb-2 w-full"
         onClick={resetAll}
         disabled={isDefault}
       >
