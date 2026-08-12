@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.16
+> **Version**: v0.17.17
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.16)
+> **Updated**: 2026-08-12 (v0.17.17)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -741,3 +741,18 @@ layers, quick actions, AI suite, collage, versioning all present.
 - Verified: offline standalone still loads + runs actions + opens export;
   hosted build shows 10 font options and search still finds everything —
   zero console errors
+
+### v0.17.17 — All 15 fonts restored via hybrid embed + link
+- **All 15 font families are back** in the text tool and the hosted Google
+  Fonts link (Plus Jakarta Sans, Raleway, Montserrat, Inter, Poppins, Open
+  Sans, Roboto, Nunito Sans, Work Sans, Space Grotesk, DM Sans, Bebas
+  Neue, Lora, Playfair Display, Merriweather)
+- **Offline hybrid**: the standalone embeds only the 2 UI-critical fonts
+  (Plus Jakarta Sans + Raleway, ~0.5 MB) so the interface is identical
+  offline, and **links the other 13** from Google — they load online and
+  fall back to system fonts when offline (editing still works)
+- Net size: **standalone 8.5 → 2.7 MB, offline zip 9.5 → 5.2 MB** (from the
+  original embedded-all version), while keeping the full font choice
+- Verified offline (7/7: loads, 15 fonts in picker, linked-font selection
+  doesn't crash, actions + export work) and hosted (15 options, fonts
+  actually loading, zero console errors)

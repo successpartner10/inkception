@@ -14,6 +14,11 @@ export const FONTS = [
   { id: 'bebas-neue', family: 'Bebas Neue', stack: "'Bebas Neue', sans-serif", kind: 'Display' },
   { id: 'lora', family: 'Lora', stack: "'Lora', Georgia, serif", kind: 'Serif' },
   { id: 'playfair', family: 'Playfair Display', stack: "'Playfair Display', Georgia, serif", kind: 'Serif' },
+  { id: 'nunito-sans', family: 'Nunito Sans', stack: "'Nunito Sans', sans-serif", kind: 'Sans' },
+  { id: 'work-sans', family: 'Work Sans', stack: "'Work Sans', sans-serif", kind: 'Sans' },
+  { id: 'space-grotesk', family: 'Space Grotesk', stack: "'Space Grotesk', sans-serif", kind: 'Sans' },
+  { id: 'dm-sans', family: 'DM Sans', stack: "'DM Sans', sans-serif", kind: 'Sans' },
+  { id: 'merriweather', family: 'Merriweather', stack: "'Merriweather', Georgia, serif", kind: 'Serif' },
 ]
 
 export const DEFAULT_FONT = 'Plus Jakarta Sans'
