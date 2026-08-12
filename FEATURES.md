@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.11
+> **Version**: v0.17.12
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.11)
+> **Updated**: 2026-08-12 (v0.17.12)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -651,3 +651,26 @@ layers, quick actions, AI suite, collage, versioning all present.
   "makeup look", "magazine cover", "motorcycle shine"…)
 - 15-step audit passes (197 render, new engines run, prompts, gallery
   previews, zero console errors)
+
+### v0.17.12 — Relevance, ranking & taxonomy-powered smart search
+- **B — relevance made structural**: actions are now tagged so portrait-only
+  (face/body) actions can *never* leak onto a building/product/document —
+  no "show everything" fallback. Fixed mis-tags (Motion Blur BG is a car/
+  action shot, not portrait-only)
+- **D — rank, don't hide**: the Actions tab now shows **"Best for this
+  photo"** (applicable actions) with a live count ("Showing N actions for
+  Product · M hidden") and a one-tap **Show all** toggle. Nothing is
+  silently hidden anymore — the app says exactly why
+- **Smart search (as-you-type)**: a new search box inside the Actions tab
+  — "thinner" → Slim Body, "make the gold look richer" → Rich Gold, "clean
+  the floor" → Floor Clean. Results are **ranked by match score** and show
+  a match badge
+- **Taxonomy vocabulary** (from the shopping-image taxonomy doc): a
+  material / surface / condition / action dictionary so you can search by
+  what the thing is made of or its state — "steel" → Metal Shine,
+  "marble" → Luxury Grade, "rust" → Scratch Remover, "wrinkled" → Iron
+  Outfit, "recolor" → More Color, plus compound queries like "make the
+  leather seats darker and more luxurious". One-touch extras (Remove
+  Background, Sharpen, B&W…) are searchable too
+- 28-step audit passes (relevance, Show-all, synonym + taxonomy searches,
+  phrase ranking, compound queries, zero console errors)

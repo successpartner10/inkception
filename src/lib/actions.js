@@ -85,7 +85,7 @@ export const ACTIONS = [
   { id: 'sketch3d', name: '3D Sketch Pop', cat: 'Digital', applies: '*', desc: 'Stereoscopic sketch (needs depth)', when: 'Surreal art', fe: 'ai', icon: 'layers' },
 
   /* ---- Motion ---- */
-  { id: 'motionbg', name: 'Motion Blur BG', cat: 'Motion', applies: 'portrait', desc: 'Streak background, subject sharp', when: 'Car/action shots', fe: 'local', icon: 'wind' },
+  { id: 'motionbg', name: 'Motion Blur BG', cat: 'Motion', applies: '*', desc: 'Streak background, subject sharp', when: 'Car/action shots', fe: 'local', icon: 'wind' },
   { id: 'tilt', name: 'Tilt-Shift', cat: 'Motion', applies: '*', desc: 'Miniature focus band', when: 'Toy-town effect', fe: 'local', icon: 'focus' },
   { id: 'zoomblur', name: 'Zoom Blur', cat: 'Motion', applies: '*', desc: 'Radial zoom burst', when: 'Action, focus punch', fe: 'local', icon: 'focus' },
   /* ---- Commercial & Product (from the action library) ---- */

@@ -40,6 +40,7 @@ import { ACTION_CATS, ACTIONS } from '../lib/actions'
 import { bumpUsage, bumpTransition, defaultRecipe, detectChain, loadRecipes, loadStats, mostUsed, predictNext, saveRecipes, saveStats, stepSummary, suggestEmoji, suggestName, uid } from '../lib/recipes'
 import { buildGalleryThumbs } from '../lib/gallery'
 import { classifyImage, PHOTO_TYPES, TYPE_LABEL } from '../lib/classify'
+import { searchActions } from '../lib/searchdict'
 import { getTheme, setTheme as persistTheme, THEME_OPTIONS } from '../lib/theme'
 import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
@@ -4738,6 +4739,8 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
   const [cat, setCat] = useState('all')
   const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default
   const [type, setType] = useState('auto') // auto-detected photo type filter
+  const [showAll, setShowAll] = useState(false) // D — "show all" override
+  const [localQ, setLocalQ] = useState('') // type-as-you-go search inside the tab
   const [detected, setDetected] = useState(null) // {type,label,conf}
   // detect what's in the photo so only applicable actions show
   useEffect(() => {
@@ -4755,20 +4758,39 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
     return () => { alive = false }
   }, [imageSrc, type])
 
-  const q = String(search || '').trim().toLowerCase()
+  const q = String((localQ || search) || '').trim().toLowerCase()
+  // effective photo type (auto → detected, unless manual/all)
+  const activeType = type === 'auto' && detected ? detected.type : type
+  const typeName = type === 'auto' && detected && detected.loading ? '…' : activeType && activeType !== 'auto' && activeType !== 'all' ? (TYPE_LABEL[activeType] || activeType) : null
+
+  // does an action apply to the current photo type? (B: structurally safe)
   const applies = (a) => {
-    // auto/all/generic → show everything (only filter when we're confident)
-    const t = type === 'auto' && detected ? detected.type : type
-    if (t === 'all' || t === 'auto' || t === 'generic' || !t) return true
+    const t = activeType
+    if (t === 'all' || t === 'auto' || !t) return true
+    const portraitOnly =
+      a.applies === 'portrait' || (Array.isArray(a.applies) && a.applies.length === 1 && a.applies[0] === 'portrait')
+    if (portraitOnly) return t === 'portrait'
+    if (t === 'generic') return true
     return a.applies === '*' || (Array.isArray(a.applies) && a.applies.includes(t)) || a.applies === t
   }
-  const visible = ACTIONS.filter((a) => {
-    if (q && !(a.name + ' ' + a.desc + ' ' + a.cat).toLowerCase().includes(q)) return false
-    if (cat !== 'all' && a.cat !== cat) return false
+  // universal (style) actions — always relevant
+  const isStyle = (a) => a.applies === '*' || (Array.isArray(a.applies) && a.applies.includes('*'))
+
+  // base filter (feat + cat)
+  const baseFilter = (a) => {
     if (feat === 'local' && a.fe !== 'local') return false
-    if (!applies(a)) return false
+    if (cat !== 'all' && a.cat !== cat) return false
     return true
-  })
+  }
+
+  // smart search: synonym-scored results, ranked best-first
+  const searchHits = q ? searchActions(q, { localOnly: feat === 'local' }).filter(({ action }) => baseFilter(action)) : null
+
+  // browse mode: relevant ("Best for this photo") vs the rest
+  const all = ACTIONS.filter((a) => baseFilter(a))
+  const best = all.filter((a) => applies(a))
+  const rest = all.filter((a) => !applies(a))
+
   const counts = { all: ACTIONS.length, local: ACTIONS.filter((a) => a.fe === 'local').length }
 
   return (
@@ -4793,13 +4815,30 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
         )}
       </div>
 
+      {/* smart search — type as you go */}
+      <div className="mb-2 flex items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white">
+        <Icon name="search" size={12} className="shrink-0 text-mute" />
+        <input
+          value={localQ}
+          onChange={(e) => setLocalQ(e.target.value)}
+          placeholder='Describe it — "thinner", "make it shine", "clean the floor"…'
+          aria-label="Search actions by what you want to do"
+          className="h-8 w-full min-w-0 bg-transparent text-[11px] text-fg placeholder:text-mute focus:outline-none"
+        />
+        {localQ && (
+          <button type="button" onClick={() => setLocalQ('')} className="shrink-0 text-mute hover:text-fg" title="Clear">
+            <Icon name="close" size={11} />
+          </button>
+        )}
+      </div>
+
       {/* photo-type filter — shows only applicable actions */}
       <div className="mb-2 flex items-center gap-1">
         {PHOTO_TYPES.map((t) => (
           <button
             key={t.id}
             type="button"
-            onClick={() => setType(t.id)}
+            onClick={() => { setType(t.id); setShowAll(false) }}
             className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', type === t.id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
           >
             {t.label}
@@ -4809,6 +4848,34 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
           {detected && !detected.loading ? (detected.manual ? `${detected.label} (manual)` : `Detected: ${detected.label}`) : ''}
         </span>
       </div>
+
+      {/* self-explaining: relevant count + Show all */}
+      {!q && (
+        <div className="mb-2 flex items-center justify-between rounded-ink border border-line px-2 py-1">
+          <span className="text-[9px] text-mute">
+            {typeName ? (
+              <>Showing <b className="text-dim">{best.length}</b> actions for {typeName} · {rest.length} hidden</>
+            ) : (
+              <>Showing <b className="text-dim">{best.length}</b> actions · {rest.length} hidden</>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="label-xs text-dim transition-colors hover:text-white"
+          >
+            {showAll ? 'Show relevant only' : 'Show all'}
+          </button>
+        </div>
+      )}
+      {q && (
+        <div className="mb-2 flex items-center justify-between rounded-ink border border-line px-2 py-1">
+          <span className="text-[9px] text-mute">
+            <b className="text-dim">{searchHits ? searchHits.length : 0}</b> matches for “{q}”
+          </span>
+          <button type="button" onClick={() => setLocalQ('')} className="label-xs text-dim transition-colors hover:text-white">Clear</button>
+        </div>
+      )}
 
       {/* effect strength — how strong one-click actions apply */}
       <div className="mb-2 rounded-ink border border-line px-2 py-1">
@@ -4823,40 +4890,78 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
         ))}
       </div>
 
-      {visible.length === 0 && <p className="py-6 text-center text-xs text-mute">No actions match “{search}”</p>}
+      {/* search results — ranked */}
+      {q && (
+        <>
+          {(!searchHits || searchHits.length === 0) && <p className="py-6 text-center text-xs text-mute">No actions match “{q}” — try “shine”, “clean”, “face”…</p>}
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            {searchHits && searchHits.map(({ action: a, score }) => <ActionTile key={a.id} a={a} score={score} onRun={onRun} query={q} />)}
+          </div>
+        </>
+      )}
 
-      {/* gallery grid */}
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        {visible.map((a) => {
-          const wired = a.fe === 'local' // only local are runnable
-          return (
+      {/* browse mode — relevant first, then the rest (D) */}
+      {!q && (
+        <>
+          {best.length === 0 && all.length === 0 && <p className="py-6 text-center text-xs text-mute">No actions in this view</p>}
+          {best.length > 0 && (
+            <>
+              {rest.length > 0 && <div className="mb-1 mt-2 flex items-center gap-2"><span className="label-xs text-dim">Best for this photo</span><span className="h-px flex-1 bg-line" /></div>}
+              <div className={cn('mt-1 grid grid-cols-2 gap-1.5', rest.length === 0 && 'mt-2')}>
+                {best.map((a) => <ActionTile key={a.id} a={a} onRun={onRun} query={q} />)}
+              </div>
+            </>
+          )}
+          {!showAll && rest.length > 0 && (
             <button
-              key={a.id}
               type="button"
-              disabled={!wired}
-              onClick={() => onRun(a.id)}
-              title={`${a.when}${a.fe !== 'local' ? ' — needs a model/composite (hidden from Free)' : ''}`}
-              className={cn(
-                'flex flex-col gap-1 rounded-ink border p-2 text-left transition-colors',
-                wired ? 'border-line hover:border-white' : 'border-line opacity-40',
-              )}
+              onClick={() => setShowAll(true)}
+              className="mt-2 w-full rounded-ink border border-dashed border-line px-3 py-2 text-[10px] text-mute transition-colors hover:border-white hover:text-fg"
             >
-              <span className="flex items-center gap-1.5">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center text-mute">
-                  <Icon name={a.icon} size={13} />
-                </span>
-                <span className="truncate text-[11px] font-semibold text-fg"><Highlight text={a.name} query={search} /></span>
-              </span>
-              <span className="line-clamp-2 text-[9px] leading-relaxed text-mute">{a.desc}</span>
-              <span className="mt-auto flex items-center justify-between">
-                <span className="label-xxs text-mute">{a.cat}</span>
-                {a.fe !== 'local' && <span className="label-xxs text-mute">🔒 AI</span>}
-              </span>
+              Show {rest.length} more actions (may not fit this photo)
             </button>
-          )
-        })}
-      </div>
+          )}
+          {showAll && rest.length > 0 && (
+            <>
+              <div className="mb-1 mt-3 flex items-center gap-2"><span className="label-xs text-dim">Everything else</span><span className="h-px flex-1 bg-line" /></div>
+              <div className="mt-1 grid grid-cols-2 gap-1.5">
+                {rest.map((a) => <ActionTile key={a.id} a={a} onRun={onRun} query={q} />)}
+              </div>
+            </>
+          )}
+        </>
+      )}
     </div>
+  )
+}
+
+/* one action card (shared by browse + search views) */
+function ActionTile({ a, onRun, query = '', score }) {
+  const wired = a.fe === 'local' // only local are runnable
+  return (
+    <button
+      type="button"
+      disabled={!wired}
+      onClick={() => onRun(a.id)}
+      title={`${a.when}${a.fe !== 'local' ? ' — needs a model/composite (hidden from Free)' : ''}`}
+      className={cn(
+        'flex flex-col gap-1 rounded-ink border p-2 text-left transition-colors',
+        wired ? 'border-line hover:border-white' : 'border-line opacity-40',
+      )}
+    >
+      <span className="flex items-center gap-1.5">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center text-mute">
+          <Icon name={a.icon} size={13} />
+        </span>
+        <span className="truncate text-[11px] font-semibold text-fg"><Highlight text={a.name} query={query} /></span>
+      </span>
+      <span className="line-clamp-2 text-[9px] leading-relaxed text-mute">{a.desc}</span>
+      <span className="mt-auto flex items-center justify-between">
+        <span className="label-xxs text-mute">{a.cat}</span>
+        {score ? <span className="label-xxs text-mute">match {score}</span> : null}
+        {a.fe !== 'local' && <span className="label-xxs text-mute">🔒 AI</span>}
+      </span>
+    </button>
   )
 }
 
