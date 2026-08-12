@@ -7,6 +7,7 @@
 // with a true alpha matte of the subject.
 
 import { loadImageElement } from './utils'
+import { hairCutout } from './pxengine'
 
 const base = import.meta.env.BASE_URL
 let segPromise = null
@@ -102,11 +103,17 @@ export async function segmentImage(src, { maxSize = 1024 } = {}) {
  * Returns { dataUrl, width, height, coverage } where coverage is the fraction
  * of pixels classified as subject (0..1) — used to detect "no subject".
  */
-export async function makeCutout(src, { maxSize = 1024 } = {}) {
+export async function makeCutout(src, { maxSize = 1024, edge = 0, decontam = 0 } = {}) {
   const { srcCv, sctx, w, h, mask, coverage } = await segmentImage(src, { maxSize })
   const out = sctx.getImageData(0, 0, w, h)
-  for (let i = 0; i < out.data.length; i += 4) {
-    out.data[i + 3] = Math.round(out.data[i + 3] * mask.data[i / 4])
+  if (edge > 0) {
+    // hair-aware matte: keep fine strands + decontaminate the fringe
+    const cleaned = hairCutout(out.data, w, h, mask.data, edge, decontam)
+    out.data.set(cleaned)
+  } else {
+    for (let i = 0; i < out.data.length; i += 4) {
+      out.data[i + 3] = Math.round(out.data[i + 3] * mask.data[i / 4])
+    }
   }
   sctx.putImageData(out, 0, 0)
   return { dataUrl: srcCv.toDataURL('image/png'), width: w, height: h, coverage }

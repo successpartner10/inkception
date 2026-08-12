@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.23
+> **Version**: v0.17.24
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.23)
+> **Updated**: 2026-08-12 (v0.17.24)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -848,3 +848,21 @@ layers, quick actions, AI suite, collage, versioning all present.
 - **Fixed: platform search** — searching "instagram" now surfaces the
   Instagram export sizes (preset labels now include the platform:
   "Instagram — Feed Square")
+
+### v0.17.24 — Hair-aware Remove BG + layout polish
+- **Remove Background now has options** (opens a settings modal): **Edge /
+  hair radius** (0–6px) keeps more hair strands and softens the edge, and
+  **Fringe cleanup** (0–100%) decontaminates the halo — removes the white/
+  colored remnants left on hair and edges. New on-device `hairCutout`
+  engine: dilates the mask into the hair zone, samples the outside
+  background, and pulls edge pixels away from the bg color while feathering
+  alpha. Verified on a real portrait: 36% bg removed, feathered edges,
+  zero errors
+- **Quick Pick** in the Actions tab: **Auto Enhance** and **Remove
+  Background** pinned as two always-visible one-tap cards at the top
+- **Tool dock consolidated**: removed the duplicate color-swatch button
+  (the dropper already picks color); draw + edit tools now on one tidy row,
+  zoom/quick-access on the second
+- **Panel widened** 340 → 360px on desktop for a roomier Actions list
+- 10-step audit passes (Quick Pick opens both modals, dock consolidated +
+  functional, panel width, remove-bg options, zero console errors)

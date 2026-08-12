@@ -1739,3 +1739,101 @@ export function patternPop(d, w, h) {
   }
   return out
 }
+
+/* ---------------- hair-aware cutout + background decontamination ----------- */
+// MediaPipe's coarse mask drops fine hair strands; those edge pixels get a
+// "halo" of the original background color. We fix it two ways:
+//   1) dilate + feather the mask into the hair zone (keeps strands)
+//   2) decontaminate: at the mask edge, replace any pixel whose color is
+//      close to the sampled OUTSIDE background with the inside color, then
+//      feather the alpha — no more white/colored fringe.
+
+/** Expand `mask` by `r` px (keeps connectivity), returns a new Uint8Array. */
+export function dilateMask(mask, w, h, r) {
+  const out = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!mask[y * w + x]) continue
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx * dx + dy * dy > r * r) continue
+          const nx = x + dx, ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+          out[ny * w + nx] = 1
+        }
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Hair-aware cutout of a pre-masked RGBA image.
+ * - `r` = hair/edge radius (px) to dilate + feather into
+ * - `decontam` = 0..1 how aggressively to remove background-colored fringe
+ *   (decontamination strength: 0 = off, 1 = strong)
+ */
+export function hairCutout(d, w, h, mask, r = 3, decontam = 0.7) {
+  const out = new Uint8ClampedArray(d)
+  const R = Math.max(1, Math.round(r))
+
+  // 1) dilate the mask so hair strands near the boundary are kept
+  const dilated = dilateMask(mask, w, h, R)
+
+  // 2) sample the average background color just OUTSIDE the dilated mask
+  let br = 0, bg = 0, bb = 0, bn = 0
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      if (dilated[i]) continue
+      // only sample pixels in the 1px ring around the dilated mask (true bg)
+      let ring = false
+      for (let dy = -1; dy <= 1 && !ring; dy++) {
+        for (let dx = -1; dx <= 1 && !ring; dx++) {
+          const nx = x + dx, ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+          if (dilated[ny * w + nx]) ring = true
+        }
+      }
+      if (ring) { br += d[i * 4]; bg += d[i * 4 + 1]; bb += d[i * 4 + 2]; bn++ }
+    }
+  }
+  const avR = bn ? br / bn : 255, avG = bn ? bg / bn : 255, avB = bn ? bb / bn : 255
+
+  // 3) per-pixel: inside dilated mask → keep (feather alpha near boundary);
+  //    background → alpha 0; edge halo → decontaminate toward bg color
+  const feather = R
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      if (!dilated[i]) {
+        out[i * 4 + 3] = 0
+        continue
+      }
+      const r0 = d[i * 4], g0 = d[i * 4 + 1], b0 = d[i * 4 + 2]
+      // is this pixel close to the sampled background? → it's fringe (halo)
+      const dist = Math.hypot(r0 - avR, g0 - avG, b0 - avB) / Math.sqrt(3 * 255 * 255)
+      // distance from the dilated edge → feather the alpha
+      let edgeDist = R
+      for (let dy = -R; dy <= R; dy++) {
+        for (let dx = -R; dx <= R; dx++) {
+          const nx = x + dx, ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+          if (!dilated[ny * w + nx]) edgeDist = Math.min(edgeDist, Math.max(Math.abs(dx), Math.abs(dy)))
+        }
+      }
+      // decontaminate: if fringe-like, pull the color toward the INSIDE color
+      // (the original subject pixel we keep) but soften it — keeps hair
+      const dc = dist * decontam
+      if (dc > 0) {
+        out[i * 4] = Math.min(255, r0 * (1 - dc * 0.4))
+        out[i * 4 + 1] = Math.min(255, g0 * (1 - dc * 0.4))
+        out[i * 4 + 2] = Math.min(255, b0 * (1 - dc * 0.4))
+      }
+      // alpha: solid inside, feathered in the R-px band
+      const a = Math.min(1, Math.max(0, (edgeDist - 0.5) / R))
+      out[i * 4 + 3] = Math.round(d[i * 4 + 3] * (0.25 + 0.75 * a) * (1 - dc * 0.6))
+    }
+  }
+  return out
+}

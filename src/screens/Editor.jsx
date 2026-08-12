@@ -241,6 +241,9 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [paletteColors, setPaletteColors] = useState([])
   const [eraseMode, setEraseMode] = useState(null) // null | 'erase'(inpaint) | 'fill' | 'blur' | 'alpha'(transparent)
+  const [removeBgOpen, setRemoveBgOpen] = useState(false)
+  const [removeBgEdge, setRemoveBgEdge] = useState(2) // hair/edge radius px (0=off)
+  const [removeBgDecontam, setRemoveBgDecontam] = useState(0.7) // fringe cleanup 0..1
   const [currentColor, setCurrentColor] = useState('#ffffff') // eyedropper / brush color
   const [motion, setMotion] = useState({ mode: 'off', speed: 1 })
   const [extraLayers, setExtraLayers] = useState([])
@@ -1376,7 +1379,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       setStep(12, 'Loading segmentation model…')
       await getSegmenter()
       setStep(45, 'Segmenting subject…')
-      const { dataUrl, coverage } = await makeCutout(src)
+      const { dataUrl, coverage } = await makeCutout(src, { edge: removeBgEdge, decontam: removeBgDecontam })
       if (coverage < 0.005) {
         setBusy(null)
         showToast('No clear subject detected — try another image', 'info')
@@ -3555,6 +3558,8 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           onGallery={() => openModal(setGalleryOpen)}
           amt={effectAmt}
           setAmt={setEffectAmt}
+          onQuickEnhance={() => openModal(setEnhanceOpen)}
+          onQuickRemoveBg={() => setRemoveBgOpen(true)}
         />
       )
     }
@@ -3580,7 +3585,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       ) : (
         <AITab
           busy={busy}
-          onRemoveBg={() => runRemoveBg()}
+          onRemoveBg={() => { setRemoveBgOpen(true) }}
           onReplaceBg={() => openModal(setReplaceOpen)}
           onEnhance={() => openModal(setEnhanceOpen)}
           onUpscale={() => runAi('upscale')}
@@ -4023,7 +4028,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
             panelCollapsed
               ? 'w-11'
               : isDesktop
-                ? 'w-[340px]'
+                ? 'w-[360px]'
                 : 'absolute bottom-0 right-0 top-0 z-40 w-[300px] shadow-2xl', // overlay on mobile
           )}
         >
@@ -4067,7 +4072,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           Row 1 = draw/move tools · Row 2 = edit/utility tools. Compact,
           always visible, canvas is never covered. */}
       <footer className="flex shrink-0 flex-col items-center gap-1 border-t border-line px-2 py-1.5">
-        {/* Row 1 — draw tools */}
+        {/* Row 1 — draw + edit tools (consolidated) */}
         <div className="flex flex-wrap items-center justify-center gap-0.5">
           <IconBtn icon="move" title="Select / Move (V)" active={tool === 'select'} onClick={() => setTool('select')} />
           <IconBtn icon="shape" title="Rectangle (R)" active={tool === 'rect'} onClick={() => setTool('rect')} />
@@ -4075,25 +4080,14 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           <IconBtn icon="minus" title="Line (L)" active={tool === 'line'} onClick={() => setTool('line')} />
           <IconBtn icon="text" title="Text (T)" active={tool === 'text'} onClick={() => setTool('text')} />
           <IconBtn icon="brush" title="Brush (B)" active={tool === 'brush'} onClick={() => setTool('brush')} />
-          <button
-            type="button"
-            title="Brush color (pick with dropper)"
-            onClick={() => setTool('dropper')}
-            className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-ink border transition-colors',
-              tool === 'dropper' ? 'border-white bg-surface-2' : 'border-line',
-            )}
-          >
-            <span className="h-4 w-4 rounded-full border border-white/40" style={{ background: currentColor }} />
-          </button>
-          <div className="mx-1.5 h-5 w-px bg-line" />
           <IconBtn icon="dropper" title="Eyedropper — pick color from image" active={tool === 'dropper'} onClick={() => setTool('dropper')} />
           <IconBtn icon="crop" title="Crop (drag to select)" active={tool === 'crop'} onClick={startCrop} />
+          <div className="mx-1 h-5 w-px bg-line" />
           <IconBtn icon="wind" title="Blur brush — paint to blur" active={eraseMode === 'blur'} onClick={() => startErase('blur')} />
           <IconBtn icon="eraser" title="Erase brush — paint to transparent" active={eraseMode === 'alpha'} onClick={() => startErase('alpha')} />
           <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
         </div>
-        {/* Row 2 — utility tools */}
+        {/* Row 2 — zoom + quick access (consolidated) */}
         <div className="flex flex-wrap items-center justify-center gap-0.5">
           <IconBtn icon="zoomOut" title="Zoom out" onClick={() => zoomBy(1 / 1.25)} />
           <div className="relative">
@@ -4624,6 +4618,24 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         onClearAll={clearAllLocalData}
       />
 
+      {/* remove background — hair/edge cleanup options */}
+      <Modal open={removeBgOpen} onClose={() => setRemoveBgOpen(false)} title="Remove Background" subtitle="Real subject matting — fine-tune the edge for hair & fringe" width="max-w-sm">
+        <div className="flex flex-col gap-4">
+          <div>
+            <Slider label="Edge / hair radius" value={removeBgEdge} min={0} max={6} defaultValue={2} format={(v) => (v === 0 ? 'Off' : `${v}px`)} onChange={setRemoveBgEdge} />
+            <p className="mt-1 text-[9px] text-mute">Higher keeps more hair strands and softens the edge — good for flyaway hair.</p>
+          </div>
+          <div>
+            <Slider label="Fringe cleanup" value={Math.round(removeBgDecontam * 100)} min={0} max={100} defaultValue={70} format={(v) => `${v}%`} onChange={(v) => setRemoveBgDecontam(v / 100)} />
+            <p className="mt-1 text-[9px] text-mute">Removes the background-colored halo on the edge (white/colored remnants).</p>
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
+            <Button variant="ghost" onClick={() => setRemoveBgOpen(false)}>Cancel</Button>
+            <Button variant="primary" icon="scissors" onClick={() => { setRemoveBgOpen(false); runRemoveBg() }}>Remove Background</Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* enhance — strength slider + reduce chips + region */}
       <EnhanceModal
         open={enhanceOpen}
@@ -4734,7 +4746,7 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
 // Everything advanced lives here so the main one-click tabs stay clean.
 // The global search also finds these.
 /* ------------------------------ tab: Actions (gallery) -------------------- */
-function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt = () => {} }) {
+function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt = () => {}, onQuickEnhance, onQuickRemoveBg }) {
   const [cat, setCat] = useState('all')
   const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default
   const [type, setType] = useState('auto') // auto-detected photo type filter
@@ -4821,6 +4833,32 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
             <Icon name="grid" size={11} /> Gallery
           </button>
         )}
+      </div>
+
+      {/* Quick pick — the most-used actions, always one tap away */}
+      <div className="mb-2 grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={onQuickEnhance}
+          className="flex items-center gap-2 rounded-ink border border-white/30 bg-white/5 px-2.5 py-2 text-left transition-colors hover:border-white"
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-ink bg-white text-black"><Icon name="sparkle" size={13} /></span>
+          <span className="min-w-0">
+            <span className="block text-[11px] font-bold text-fg">Auto Enhance</span>
+            <span className="block text-[9px] text-mute">Balance light + color</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onQuickRemoveBg}
+          className="flex items-center gap-2 rounded-ink border border-white/30 bg-white/5 px-2.5 py-2 text-left transition-colors hover:border-white"
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-ink bg-white text-black"><Icon name="scissors" size={13} /></span>
+          <span className="min-w-0">
+            <span className="block text-[11px] font-bold text-fg">Remove Background</span>
+            <span className="block text-[9px] text-mute">Hair & edge options</span>
+          </span>
+        </button>
       </div>
 
       {/* Row 2 — photo-type filter */}
