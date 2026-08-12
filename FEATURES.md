@@ -1,8 +1,9 @@
 # Inkception — Features & Functionality
 
 > **Version**: v0.17.32
-> **Live**: https://successpartner10.github.io/inkception/
-> **Repo**: github.com/successpartner10/inkception
+> **Status**: repo PRIVATE — GitHub Pages site offline; distributed as paid offline copies
+> **Repo**: github.com/successpartner10/inkception (private)
+> **License**: free for personal/non-commercial use; commercial use requires a paid license; redistribution/resale/cloning prohibited (see `LICENSE`)
 > **Updated**: 2026-08-12 (v0.17.32)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
@@ -260,10 +261,13 @@ background removal, replace background, upscale, export…) that executes on tap
   file, run `python -m http.server` in the folder.
 - Everything (editing, crop, filters, collage, all 8 export formats) works
   fully offline — verified by automated test via `file://` with no server.
-- **Private-repo safe**: the offline copy never touches GitHub, so you can
-  make the repo private anytime. The deploy workflow auto-skips the Pages
-  step on a private repo (no failing runs) and resumes automatically if the
-  repo goes public again.
+- **Private-repo safe**: the offline copy never touches GitHub. The repo is
+  private; the deploy workflow auto-skips the Pages step (no failing runs)
+  and would resume automatically if the repo went public again.
+- **Licensed, not sold**: the offline files carry the `LICENSE` terms
+  (personal/non-commercial free · commercial requires a paid license ·
+  redistribution, resale, and cloning prohibited). They live in the
+  workspace root only — never on a public URL.
 - **PWA**: `manifest.webmanifest` + icons + network-first service worker —
   the hosted site installs like an app and works offline after the first
   visit. (Not used by the standalone file, which is offline by design.)

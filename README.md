@@ -6,12 +6,14 @@ Built from the **Inkception** design system (`DESIGN.md`): Zen minimalism, stric
 monochromatic palette, Raleway wordmark + Plus Jakarta Sans UI, "Round Eight"
 (8px) geometry, tonal layering instead of shadows, ghost borders.
 
-## Live
+## License & status
 
-🌐 **https://successpartner10.github.io/inkception/**
-
-The site deploys automatically whenever `main` is updated (GitHub Actions →
-`.github/workflows/deploy.yml`), so the URL always reflects the latest push.
+- **The repo is PRIVATE** — source and full history are visible only to the
+  owner and invited collaborators. The public GitHub Pages site is therefore
+  offline; the product is distributed as paid offline copies (see below).
+- **License:** see [`LICENSE`](LICENSE). Free for personal, non-commercial
+  use. Commercial use requires a paid license. **Redistribution, resale, and
+  cloning are prohibited.**
 
 ## Highlights
 
@@ -52,18 +54,18 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
 
 ## Use it on your laptop — fully offline
 
-No GitHub, no internet, no account needed. Two files are shipped with each
-release — **downloadable straight from the live site** (or from the workspace
-root):
+No GitHub, no internet, no account needed. The two offline files are built on
+every release and live **in the workspace root** (they are NOT published on
+any public URL — they ship only to buyers / by private hand-off):
 
-| File | What it is | Download |
-|---|---|---|
-| `inkception-standalone.html` | The **whole app in one file** (~2.7 MB) — 2 core fonts + 8 sample photos embedded | [inkception-standalone.html](inkception-standalone.html) |
-| `inkception-offline.zip` | Same app + the `mediapipe/` AI model folder + `README.txt` (~5.4 MB) | [inkception-offline.zip](inkception-offline.zip) |
+| File | What it is |
+|---|---|
+| `inkception-standalone.html` | The **whole app in one file** (~2.7 MB) — core fonts + 8 sample photos embedded |
+| `inkception-offline.zip` | Same app + the `mediapipe/` AI model folder + `README.txt` (~5.4 MB) |
 
 **Setup (one time):**
-1. Download `inkception-offline.zip` (above) and extract it into a folder
-   (keep `inkception.html` and `mediapipe/` side by side).
+1. Take `inkception-offline.zip` and extract it into a folder (keep
+   `inkception.html` and `mediapipe/` side by side).
 2. Double-click `inkception.html` — the editor opens in your browser.
    Everything works offline: 358 Actions, recipes, collage, filters, all
    exports (PNG/JPG/WebP/GIF/PDF/PSD/SVG), themes.
@@ -74,22 +76,24 @@ root):
      `http://localhost:8000/` (Windows: install Python, same command; or use
      VS Code → Live Server).
 
-## Going private on GitHub — what changes, what doesn't
+> **Copyright note:** these files are licensed, not sold — see
+> [`LICENSE`](LICENSE). Reselling, republishing, or cloning them is
+> prohibited and enforceable.
 
-You can make the repo **private** anytime (Settings → Danger Zone). Effects:
+## The repo is private — what that means
 
 - ✅ **Laptop offline version keeps working** — it never touches GitHub.
-- ✅ **Your code is hidden** from everyone except invited collaborators.
-- ⚠️ **The public site `successpartner10.github.io/inkception/` goes offline**
-  — GitHub Pages on the free plan only serves public repos. That is expected;
-  your offline copy replaces it.
+- ✅ **Source + history are hidden** from everyone except invited collaborators.
+- ⚠️ **The public site `successpartner10.github.io/inkception/` is offline** —
+  GitHub Pages on the free plan only serves public repos. That is expected;
+  paid offline copies replace it.
 - ✅ **Pushes still work** — commit + `bash deploy-inkception.sh "msg"` pushes
   fine to a private repo; the deploy workflow automatically **skips** the
-  Pages step (no red ❌ runs). Flip the repo back to public and the site
-  resumes deploying on its own.
+  Pages step (no red ❌ runs). If you ever flip the repo back to public, the
+  site resumes deploying on its own.
 - Note: the *published site* can never be password-gated on the free plan —
-  if you need login-restricted access for a small circle, that requires the
-  Cloudflare Access route (see `CLOUDFLARE_ACCESS_SETUP.md`).
+  for login-restricted access, use the Cloudflare Access route (see
+  `CLOUDFLARE_ACCESS_SETUP.md`).
 
 ## Stack
 
