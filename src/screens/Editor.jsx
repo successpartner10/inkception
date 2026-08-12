@@ -4742,6 +4742,22 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
   const [showAll, setShowAll] = useState(false) // D — "show all" override
   const [hideAuto, setHideAuto] = useState(false) // hide generated (auto) actions
   const [localQ, setLocalQ] = useState('') // type-as-you-go search inside the tab
+  const searchInputRef = useRef(null)
+  // "/" focuses the search box, Esc clears it
+  useEffect(() => {
+    const h = (e) => {
+      const tag = (e.target && e.target.tagName) || ''
+      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA' && !(e.target && e.target.isContentEditable)) {
+        e.preventDefault()
+        searchInputRef.current && searchInputRef.current.focus()
+      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        setLocalQ('')
+        searchInputRef.current.blur()
+      }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
   const [detected, setDetected] = useState(null) // {type,label,conf}
   // detect what's in the photo so only applicable actions show
   useEffect(() => {
@@ -4817,20 +4833,40 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
         )}
       </div>
 
-      {/* smart search — type as you go */}
-      <div className="mb-2 flex items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white">
-        <Icon name="search" size={12} className="shrink-0 text-mute" />
-        <input
-          value={localQ}
-          onChange={(e) => setLocalQ(e.target.value)}
-          placeholder='Describe it — "thinner", "make it shine", "clean the floor"…'
-          aria-label="Search actions by what you want to do"
-          className="h-8 w-full min-w-0 bg-transparent text-[11px] text-fg placeholder:text-mute focus:outline-none"
-        />
-        {localQ && (
-          <button type="button" onClick={() => setLocalQ('')} className="shrink-0 text-mute hover:text-fg" title="Clear">
-            <Icon name="close" size={11} />
-          </button>
+      {/* smart search — type as you go (the main way to find actions) */}
+      <div className="mb-1.5 rounded-ink-lg border-2 border-white/40 bg-surface-2 p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] transition-colors focus-within:border-white focus-within:shadow-[0_0_18px_rgba(255,255,255,0.15)]">
+        <div className="flex items-center gap-2">
+          <Icon name="search" size={16} className="shrink-0 text-white" />
+          <input
+            ref={searchInputRef}
+            value={localQ}
+            onChange={(e) => setLocalQ(e.target.value)}
+            placeholder="Find an action — “thinner”, “make it shine”, “steel”…"
+            aria-label="Search actions by what you want to do"
+            className="h-9 w-full min-w-0 bg-transparent text-[13px] font-medium text-fg placeholder:text-mute focus:outline-none"
+          />
+          {localQ ? (
+            <button type="button" onClick={() => setLocalQ('')} className="shrink-0 rounded-ink bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-fg hover:bg-white/20" title="Clear">
+              Clear
+            </button>
+          ) : (
+            <span className="shrink-0 rounded-ink border border-line px-1.5 py-0.5 text-[9px] font-bold text-mute">/</span>
+          )}
+        </div>
+        {!localQ && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            <span className="text-[8px] uppercase tracking-[0.12em] text-mute">Try</span>
+            {['thinner', 'make it shine', 'steel', 'clean the floor', 'silver tarnish'].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setLocalQ(s)}
+                className="rounded-ink bg-white/10 px-1.5 py-0.5 text-[9px] text-dim transition-colors hover:bg-white/20 hover:text-white"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 

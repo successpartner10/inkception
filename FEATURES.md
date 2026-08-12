@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.14
+> **Version**: v0.17.15
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.14)
+> **Updated**: 2026-08-12 (v0.17.15)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -716,3 +716,14 @@ layers, quick actions, AI suite, collage, versioning all present.
   "chandelier", "vinyl"…)
 - 11-step audit passes (358 render, 161 auto, batch-2 search + run, gallery
   previews, engine fixes, zero console errors)
+
+### v0.17.15 — Prominent action search
+- The Actions-tab search is now the **hero of the panel**: a tall, bordered
+  box with a bold white search icon, a bright focus glow, a clear
+  placeholder ("Find an action — thinner, make it shine, steel…") and
+  one-click **example chips** (thinner · make it shine · steel · clean the
+  floor · silver tarnish) that fill the query for you
+- **`/` keyboard shortcut** focuses the search from anywhere; **Esc** clears
+  and blurs it
+- 8-step audit passes (prominent styling, chips fill + search, / shortcut
+  focus, typed search works, zero console errors)
