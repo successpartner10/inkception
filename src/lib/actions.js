@@ -1,11 +1,14 @@
 // src/lib/actions.js
+import { GEN_ACTIONS } from './actions.gen'
+
+// src/lib/actions.js
 // The Actions catalog — one-click effects gathered from the techniques docs.
 // Each action: name (brand-free), category, description, "when to use",
 // feasibility: 'local' (deterministic, free) | 'ai' (needs model/API) |
 // 'composite' (needs multi-layer ops) — so the UI can hide/discard the rest.
 // fnKey maps to a handler in the Editor; null = not implemented yet (hidden).
 
-export const ACTIONS = [
+const CURATED = [
   /* ---- Artistic & Drawing ---- */
   { id: 'sketch', name: 'Pencil Sketch', cat: 'Artistic', applies: '*', desc: 'Turn the photo into a pencil drawing', when: 'Concept art, cards, prints', fe: 'local', icon: 'penTool' },
   { id: 'charcoal', name: 'Charcoal', cat: 'Artistic', applies: '*', desc: 'Rough, smudged charcoal look', when: 'Artistic portraits, posters', fe: 'local', icon: 'brush' },
@@ -267,5 +270,7 @@ export const ACTIONS = [
   { id: 'editorialgrade', name: 'Editorial Grade', cat: 'Docs', applies: ['portrait', 'product', 'landscape'], desc: 'Editorial magazine finish', when: 'Feature images', fe: 'local', icon: 'sparkle', fx: 'Catalog Look', def: 0.65 },
   { id: 'motoshine', name: 'Motorcycle Shine', cat: 'Auto', applies: ['landscape', 'product'], desc: 'Glossy bike paint', when: 'Motorcycles, scooters', fe: 'local', icon: 'sun', fx: 'Car Shine', def: 0.6 },
 ]
+
+export const ACTIONS = [...CURATED, ...GEN_ACTIONS]
 
 export const ACTION_CATS = ['Artistic', 'Portrait', 'Color', 'Vintage', 'Texture', 'Restore', 'Creative', 'Digital', 'Motion', 'Commercial', 'Fashion', 'Luxury', 'Eyewear', 'Electronics', 'Food', 'Home', 'Auto', 'Real Estate', 'Artwork', 'Interior', 'Apparel', 'Travel', 'Accessories', 'Beauty', 'Docs']

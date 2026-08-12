@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.12
+> **Version**: v0.17.13
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.12)
+> **Updated**: 2026-08-12 (v0.17.13)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -674,3 +674,22 @@ layers, quick actions, AI suite, collage, versioning all present.
   Background, Sharpen, B&W…) are searchable too
 - 28-step audit passes (relevance, Show-all, synonym + taxonomy searches,
   phrase ranking, compound queries, zero console errors)
+
+### v0.17.13 — 100 curated auto-generated actions (297 total)
+- **Generated from the taxonomy vocabulary**: a curated matrix (material ×
+  action-family) reuses the existing local engines with product-specific
+  names & descriptions — e.g. **Silver Tarnish Lift** (brighten oxidized
+  silver), **Wood Polish** (deepen grain), **Suede Refresh** (lift the
+  nap), **Ceramic Glaze**, **Denim Wear Repair**, **Marble Luxe**,
+  **Chrome Gleam**, **Leather Seat Luxe**, **Paper Clean**, **Coffee Rich**,
+  **Polarized Glare Cut** and ~90 more across metals, stone, glass, wood,
+  fabric, objects, food and documents
+- **Zero new pixel code** — every generated action maps to an existing
+  engine (fx) so it runs in the grid, Recipes, Effects Gallery (previews
+  resolved by engine name), prompts and search
+- **`auto` badge + toggle**: generated actions are tagged and shown with a
+  small "auto" label; a **Auto (100)** chip hides/shows them so the curated
+  set stays clean. Smart filter + relevance still apply to them
+- 11-step audit passes (generated run via fx, search finds them, gallery
+  previews, hide-auto hides generated but keeps curated, zero console
+  errors)

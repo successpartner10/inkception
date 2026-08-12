@@ -4740,6 +4740,7 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
   const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default
   const [type, setType] = useState('auto') // auto-detected photo type filter
   const [showAll, setShowAll] = useState(false) // D — "show all" override
+  const [hideAuto, setHideAuto] = useState(false) // hide generated (auto) actions
   const [localQ, setLocalQ] = useState('') // type-as-you-go search inside the tab
   const [detected, setDetected] = useState(null) // {type,label,conf}
   // detect what's in the photo so only applicable actions show
@@ -4780,6 +4781,7 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
   const baseFilter = (a) => {
     if (feat === 'local' && a.fe !== 'local') return false
     if (cat !== 'all' && a.cat !== cat) return false
+    if (hideAuto && a.auto) return false
     return true
   }
 
@@ -4847,6 +4849,19 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
         <span className="ml-auto text-[8px] text-mute">
           {detected && !detected.loading ? (detected.manual ? `${detected.label} (manual)` : `Detected: ${detected.label}`) : ''}
         </span>
+      </div>
+
+      {/* auto-generated actions toggle */}
+      <div className="mb-2 flex items-center gap-1.5 rounded-ink border border-line px-2 py-1">
+        <button
+          type="button"
+          onClick={() => setHideAuto((v) => !v)}
+          className={cn('flex items-center gap-1 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', !hideAuto ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+          title="Generated actions reuse the same engines with product-specific names"
+        >
+          <Icon name="sparkle" size={11} /> Auto ({ACTIONS.filter((a) => a.auto).length})
+        </button>
+        <span className="text-[8px] text-mute">generated from the material vocabulary — same engines, product names</span>
       </div>
 
       {/* self-explaining: relevant count + Show all */}
@@ -4958,8 +4973,11 @@ function ActionTile({ a, onRun, query = '', score }) {
       <span className="line-clamp-2 text-[9px] leading-relaxed text-mute">{a.desc}</span>
       <span className="mt-auto flex items-center justify-between">
         <span className="label-xxs text-mute">{a.cat}</span>
-        {score ? <span className="label-xxs text-mute">match {score}</span> : null}
-        {a.fe !== 'local' && <span className="label-xxs text-mute">🔒 AI</span>}
+        <span className="flex items-center gap-1">
+          {a.auto && <span className="label-xxs text-mute" title="Auto-generated from the material vocabulary">auto</span>}
+          {score ? <span className="label-xxs text-mute">match {score}</span> : null}
+          {a.fe !== 'local' && <span className="label-xxs text-mute">🔒 AI</span>}
+        </span>
       </span>
     </button>
   )

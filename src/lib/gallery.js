@@ -217,10 +217,36 @@ const FX_CSS = {
 const MIRROR = new Set(['mirror'])
 
 /** Render a thumbnail (dataURL) for one action id. */
-function applyThumb(ctx, img, w, h, id) {
-  if (PX_MAP[id]) {
+// Engine lookup by the SAME names the editor's runner uses (fx field on
+// generated actions) — so auto-generated actions get live gallery previews.
+const ENGINE_FNS = {
+  'Spot Clean': PX.spotCleaner, 'Scratch Remover': PX.scratchRemove, 'Metal Shine': PX.metalShine,
+  'Shoe Gloss': PX.shoeGloss, 'Matte Finish': PX.matteFinish, 'Fluff Soften': PX.fluffSoften,
+  'Glamour': PX.glamour, 'Denim Pop': PX.denimPop, 'Silk Sheen': PX.silkSheen,
+  'Smooth Fabric': PX.clothSmooth, 'Product Sharpen': PX.sharpenMore, 'Rich Gold': PX.goldRich,
+  'Gold Bar': PX.goldBar, 'Brand New': PX.productClean, 'Bright Silver': PX.silverBright,
+  'Luxury Grade': PX.luxuryGrade, 'Screen Clean': PX.screenClean, 'Glass Gloss': PX.glassGloss,
+  'Diamond Bright': PX.crystalBright, 'Diamond Sparkle': PX.diamondSparkle, 'Room Brighten': PX.roomBrighten,
+  'Floor Clean': PX.floorClean, 'Fabric Rich': PX.fabricEnhance, 'Gemstone Vibrance': PX.gemVibrance,
+  'Poster Clean': PX.posterClean, 'Plan Sharp': PX.planSharp, 'Food Appetize': PX.foodAppetize,
+  'Liquid Rich': PX.liquidRich, 'Crystal Bright': PX.crystalBright, 'De-Reflect': PX.deReflect,
+  'Car Shine': PX.carShine, 'Sky Pop': PX.skyPop, 'Makeup Pop': PX.makeupPop, 'Pattern Pop': PX.patternPop,
+  'Sole Brighten': PX.soleBrighten, 'Catalog Look': PX.adGrade, 'Luxury Interior': PX.interiorLux,
+  'Window Light': PX.windowLight, 'Vignette': PX.vignette, 'Kaleidoscope': PX.kaleido,
+  'Duotone': PX.duotone, 'Split Tone': PX.splitTone, 'Dehaze': PX.dehaze, 'Zoom Blur': PX.zoomBlur,
+  'Glitch': PX.glitch, 'Eyes': PX.eyes, 'Lips': PX.lips, 'Charcoal': PX.charcoal, 'Posterize': PX.posterize || PX.addNoise,
+  'Cyanotype': PX.cyanotype, 'Teal & Orange': PX.tealOrange, 'Cross Process': PX.crossProcess,
+  'Infrared': PX.infrared, 'Red Pop': PX.colorPop, 'Ice Blue': PX.ice, 'Sunset Glow': PX.sunset,
+  'Flat Matte': PX.matte, 'Noir': PX.noir, 'Bleach Bypass': PX.bleach, 'Lomo': PX.lomo, 'Pastel': PX.pastel,
+  'Scanlines': PX.scanlines, 'Dither': PX.dither, 'Blueprint': PX.blueprint, 'Add Sparkle': PX.sparkle,
+  'Liquid Rich': PX.liquidRich,
+}
+
+function applyThumb(ctx, img, w, h, id, fx) {
+  const fn = PX_MAP[id] || (fx && ENGINE_FNS[fx])
+  if (fn) {
     const data = ctx.getImageData(0, 0, w, h)
-    const out = PX_MAP[id](data.data, w, h)
+    const out = fn(data.data, w, h)
     ctx.putImageData(new ImageData(out, w, h), 0, 0)
     return
   }
@@ -275,7 +301,7 @@ export async function buildGalleryThumbs(list, src, size = 150, onProgress) {
     cv.height = h
     const ctx = cv.getContext('2d')
     ctx.drawImage(img, 0, 0, w, h)
-    try { applyThumb(ctx, img, w, h, a.id) } catch { /* skip broken */ }
+    try { applyThumb(ctx, img, w, h, a.id, a.fx) } catch { /* skip broken */ }
     out.push({ id: a.id, name: a.name, icon: a.icon, cat: a.cat, url: cv.toDataURL('image/jpeg', 0.82) })
     if (onProgress) onProgress(i + 1, list.length)
     await new Promise((r) => setTimeout(r, 0))
