@@ -53,15 +53,16 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
 ## Use it on your laptop — fully offline
 
 No GitHub, no internet, no account needed. Two files are shipped with each
-release (in the workspace root):
+release — **downloadable straight from the live site** (or from the workspace
+root):
 
-| File | What it is |
-|---|---|
-| `inkception-standalone.html` | The **whole app in one file** (~8 MB) — 15 fonts + 8 sample photos embedded |
-| `inkception-offline.zip` | Same app + the `mediapipe/` AI model folder + `README.txt` (~9 MB) |
+| File | What it is | Download |
+|---|---|---|
+| `inkception-standalone.html` | The **whole app in one file** (~2.7 MB) — 2 core fonts + 8 sample photos embedded | [inkception-standalone.html](inkception-standalone.html) |
+| `inkception-offline.zip` | Same app + the `mediapipe/` AI model folder + `README.txt` (~5.4 MB) | [inkception-offline.zip](inkception-offline.zip) |
 
 **Setup (one time):**
-1. Copy `inkception-offline.zip` to your laptop and extract it into a folder
+1. Download `inkception-offline.zip` (above) and extract it into a folder
    (keep `inkception.html` and `mediapipe/` side by side).
 2. Double-click `inkception.html` — the editor opens in your browser.
    Everything works offline: 358 Actions, recipes, collage, filters, all
