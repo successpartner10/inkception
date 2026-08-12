@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.15
+> **Version**: v0.17.16
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.15)
+> **Updated**: 2026-08-12 (v0.17.16)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -727,3 +727,17 @@ layers, quick actions, AI suite, collage, versioning all present.
   and blurs it
 - 8-step audit passes (prominent styling, chips fill + search, / shortcut
   focus, typed search works, zero console errors)
+
+### v0.17.16 — Offline build slimmed 24% (9.5 MB → 7.2 MB zip)
+- **Fonts trimmed 5.0 MB → 3.4 MB**: kept the 10 quality families most used
+  for text (Plus Jakarta Sans, Raleway, Montserrat, Inter, Poppins, Open
+  Sans, Roboto, Bebas Neue, Lora, Playfair Display); dropped Nunito Sans,
+  Work Sans, Space Grotesk, DM Sans, Merriweather from the embedded CSS,
+  the font picker and the online Google Fonts link
+- **Sample photos shrunk 916 KB → 288 KB** (560px, q72 — still plenty for
+  starting projects)
+- Net effect: **standalone 8.5 → 5.3 MB**, **offline zip 9.5 → 7.2 MB**.
+  MediaPipe AI model left untouched (already near-minimal in the zip)
+- Verified: offline standalone still loads + runs actions + opens export;
+  hosted build shows 10 font options and search still finds everything —
+  zero console errors
