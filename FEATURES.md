@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.17
+> **Version**: v0.17.18
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.17)
+> **Updated**: 2026-08-12 (v0.17.18)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -756,3 +756,16 @@ layers, quick actions, AI suite, collage, versioning all present.
 - Verified offline (7/7: loads, 15 fonts in picker, linked-font selection
   doesn't crash, actions + export work) and hosted (15 options, fonts
   actually loading, zero console errors)
+
+### v0.17.18 — Search is now the hero of the Actions panel
+- The smart search box moves to the **very top** of the Actions panel —
+  the first thing you see, above the Free/All toggles and type chips
+- More prominent: larger input (14px semibold, h-10), brighter border +
+  glow on focus, drop shadow, bigger magnifier, clearer placeholder
+  ("Find an action — type what you want to do…"), and example chips
+  (thinner · make it shine · steel · clean the floor · silver tarnish)
+- **`/`** still focuses it from anywhere, **Esc** clears
+- Verified: search is the first input in the panel content, chips fill +
+  find, shortcut works, Free/All still reachable — zero console errors
+- (Fonts note: the offline copy runs on a desktop with internet, so the 13
+  linked fonts always load — no offline fallback concern)

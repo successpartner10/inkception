@@ -4813,6 +4813,43 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
 
   return (
     <div className="p-4">
+      {/* SMART SEARCH — the primary way in, front and center */}
+      <div className="mb-2 rounded-ink-lg border-2 border-white/50 bg-surface-2 p-2.5 shadow-[0_2px_14px_rgba(0,0,0,0.35)] transition-all focus-within:border-white focus-within:shadow-[0_0_22px_rgba(255,255,255,0.25)]">
+        <div className="flex items-center gap-2">
+          <Icon name="search" size={18} className="shrink-0 text-white" />
+          <input
+            ref={searchInputRef}
+            value={localQ}
+            onChange={(e) => setLocalQ(e.target.value)}
+            placeholder="Find an action — type what you want to do…"
+            aria-label="Search actions by what you want to do"
+            className="h-10 w-full min-w-0 bg-transparent text-[14px] font-semibold text-fg placeholder:text-mute focus:outline-none"
+          />
+          {localQ ? (
+            <button type="button" onClick={() => setLocalQ('')} className="shrink-0 rounded-ink bg-white/15 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-white hover:bg-white/25" title="Clear">
+              Clear
+            </button>
+          ) : (
+            <span className="shrink-0 rounded-ink border border-white/30 px-2 py-0.5 text-[10px] font-bold text-white/70">/</span>
+          )}
+        </div>
+        {!localQ && (
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            <span className="text-[8px] uppercase tracking-[0.12em] text-mute">Try</span>
+            {['thinner', 'make it shine', 'steel', 'clean the floor', 'silver tarnish'].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setLocalQ(s)}
+                className="rounded-ink bg-white/10 px-2 py-0.5 text-[9px] text-dim transition-colors hover:bg-white/25 hover:text-white"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* feasibility toggle — hide AI/composite by default */}
       <div className="mb-2 flex items-center gap-1">
         <button type="button" onClick={() => setFeat('local')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'local' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
@@ -4830,43 +4867,6 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
           >
             <Icon name="grid" size={11} /> Gallery
           </button>
-        )}
-      </div>
-
-      {/* smart search — type as you go (the main way to find actions) */}
-      <div className="mb-1.5 rounded-ink-lg border-2 border-white/40 bg-surface-2 p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] transition-colors focus-within:border-white focus-within:shadow-[0_0_18px_rgba(255,255,255,0.15)]">
-        <div className="flex items-center gap-2">
-          <Icon name="search" size={16} className="shrink-0 text-white" />
-          <input
-            ref={searchInputRef}
-            value={localQ}
-            onChange={(e) => setLocalQ(e.target.value)}
-            placeholder="Find an action — “thinner”, “make it shine”, “steel”…"
-            aria-label="Search actions by what you want to do"
-            className="h-9 w-full min-w-0 bg-transparent text-[13px] font-medium text-fg placeholder:text-mute focus:outline-none"
-          />
-          {localQ ? (
-            <button type="button" onClick={() => setLocalQ('')} className="shrink-0 rounded-ink bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-fg hover:bg-white/20" title="Clear">
-              Clear
-            </button>
-          ) : (
-            <span className="shrink-0 rounded-ink border border-line px-1.5 py-0.5 text-[9px] font-bold text-mute">/</span>
-          )}
-        </div>
-        {!localQ && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            <span className="text-[8px] uppercase tracking-[0.12em] text-mute">Try</span>
-            {['thinner', 'make it shine', 'steel', 'clean the floor', 'silver tarnish'].map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setLocalQ(s)}
-                className="rounded-ink bg-white/10 px-1.5 py-0.5 text-[9px] text-dim transition-colors hover:bg-white/20 hover:text-white"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
         )}
       </div>
 
