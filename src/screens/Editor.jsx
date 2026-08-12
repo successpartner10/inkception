@@ -217,6 +217,9 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   const [blendMode, setBlendMode] = useState('normal')
   const [layers, setLayers] = useState(LAYER_DEFAULTS)
   const [selectedLayer, setSelectedLayer] = useState('subject')
+  const [selCollageId, setSelCollageId] = useState(null) // selected collage photo for the on-canvas bar
+  const collageReplaceRef = useRef(null) // id being replaced
+  const collageReplaceInputRef = useRef(null) // hidden file input for replacing a photo
   const [beforeAfter, setBeforeAfter] = useState(false)
   const [comparePos, setComparePos] = useState(50)
   const [busy, setBusy] = useState(null)
@@ -703,9 +706,14 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         setActiveText(false)
       }
     }
-    c.on('selection:created', syncTextSelection)
-    c.on('selection:updated', syncTextSelection)
-    c.on('selection:cleared', () => setActiveText(false))
+    const syncCollageSel = () => {
+      const o = c.getActiveObject()
+      const d = o && decompRef.current.find((x) => x.img === o)
+      setSelCollageId(d && d.id.startsWith('col-') ? d.id : null)
+    }
+    c.on('selection:created', () => { syncTextSelection(); syncCollageSel() })
+    c.on('selection:updated', () => { syncTextSelection(); syncCollageSel() })
+    c.on('selection:cleared', () => { setActiveText(false); setSelCollageId(null) })
 
     // double-click any text object → edit it in place
     c.on('mouse:dblclick', (o) => {
@@ -3049,6 +3057,69 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     [showToast],
   )
 
+  /* Replace a collage photo — same slot, same clip, same fit; grid intact. */
+  const replaceCollagePhoto = useCallback(
+    (id) => {
+      const d = decompRef.current.find((x) => x.id === id)
+      if (!d) return
+      collageReplaceRef.current = id
+      collageReplaceInputRef.current && collageReplaceInputRef.current.click()
+    },
+    [],
+  )
+  const onCollageReplaceFile = async (e) => {
+    const id = collageReplaceRef.current
+    const f = e.target.files && e.target.files[0]
+    e.target.value = ''
+    collageReplaceRef.current = null
+    if (!id || !f || !f.type.startsWith('image/')) return
+    const d = decompRef.current.find((x) => x.id === id)
+    const img = d && d.img
+    const c = fabricRef.current
+    if (!img || !c) return
+    try {
+      const url = URL.createObjectURL(f)
+      const slot = img.slotRect
+      const mode = img.fitMode || 'cover'
+      const angle = img.angle || 0
+      const next = await FabricImage.fromURL(url)
+      next.set({ selectable: true, evented: true, angle })
+      fitPhotoToSlot(next, slot, mode)
+      next.set('slotRect', slot)
+      c.remove(img)
+      c.add(next)
+      d.img = next
+      d.dataUrl = url
+      d.name = 'Photo (' + (f.name || 'replaced') + ')'
+      c.setActiveObject(next)
+      c.requestRenderAll()
+      setExtraLayers(
+        decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })),
+      )
+      showToast('Photo replaced — same grid slot', 'image')
+    } catch {
+      showToast('Replace failed', 'close')
+    }
+  }
+
+  /* Remove a collage photo — others keep their slots; the slot goes empty. */
+  const removeCollagePhoto = useCallback(
+    (id) => {
+      const d = decompRef.current.find((x) => x.id === id)
+      const c = fabricRef.current
+      if (!d || !c) return
+      c.remove(d.img)
+      decompRef.current = decompRef.current.filter((x) => x.id !== id)
+      setExtraLayers(
+        decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })),
+      )
+      c.requestRenderAll()
+      if (selCollageId === id) setSelCollageId(null)
+      showToast('Photo removed — grid kept', 'trash')
+    },
+    [selCollageId],
+  )
+
   /* --------------------- text character / paragraph controls ---------------- */
   useEffect(() => { textFontRef.current = textFont }, [textFont])
   useEffect(() => { textSizeRef.current = textSize }, [textSize])
@@ -3682,6 +3753,8 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         onFitPhoto={fitCollagePhoto}
         onRotatePhoto={rotateCollagePhoto}
         onShiftSlot={shiftCollageSlot}
+        onReplacePhoto={replaceCollagePhoto}
+        onRemovePhoto={removeCollagePhoto}
         imageSrc={imageSrc}
         showToast={showToast}
         layerOpacity={layerOpacity}
@@ -4686,6 +4759,37 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         onChange={setRecipeDraft}
         onSave={saveRecipeDraft}
       />
+
+      {/* hidden file input for replacing a collage photo */}
+      <input ref={collageReplaceInputRef} type="file" accept="image/*" className="hidden" onChange={onCollageReplaceFile} />
+
+      {/* on-canvas collage photo action bar — click a photo to edit it in place */}
+      {selCollageId && (() => {
+        const d = decompRef.current.find((x) => x.id === selCollageId)
+        if (!d) return null
+        return (
+          <div className="fixed bottom-20 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-1 rounded-ink bg-white px-2 py-1.5 shadow-2xl">
+            <span className="px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/60">{d.name}</span>
+            <span className="h-4 w-px bg-black/10" />
+            <button type="button" onClick={() => replaceCollagePhoto(selCollageId)} className="flex items-center gap-1 rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Replace this photo (same grid slot)">
+              <Icon name="refresh" size={11} /> Replace
+            </button>
+            <button type="button" onClick={() => fitCollagePhoto(selCollageId, 'cover')} className="rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Fill its slot">
+              Fill
+            </button>
+            <button type="button" onClick={() => fitCollagePhoto(selCollageId, 'contain')} className="rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Fit inside its slot">
+              Fit
+            </button>
+            <button type="button" onClick={() => rotateCollagePhoto(selCollageId, 15)} className="rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Rotate 15°">
+              ↻
+            </button>
+            <span className="h-4 w-px bg-black/10" />
+            <button type="button" onClick={() => removeCollagePhoto(selCollageId)} className="flex items-center gap-1 rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-danger transition-colors hover:bg-black/10" title="Remove this photo (grid stays)">
+              <Icon name="trash" size={11} /> Remove
+            </button>
+          </div>
+        )
+      })()}
 
       {/* settings — theme presets + AI mode + shortcuts + privacy */}
       <SettingsModal
@@ -6079,7 +6183,7 @@ function AITab({
 /* ------------------------------- tab: Layers ------------------------------ */
 function LayersTab({
   layers, extraLayers = [], selected, onSelect, onToggleVisibility, onToggleLock, onDeleteLayer,
-  onFitPhoto, onRotatePhoto, onShiftSlot, imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
+  onFitPhoto, onRotatePhoto, onShiftSlot, onReplacePhoto, onRemovePhoto, imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
   search = '',
 }) {
   const previews = {
@@ -6204,6 +6308,26 @@ function LayersTab({
                         >
                           →
                         </button>
+                        {onReplacePhoto && (
+                          <button
+                            type="button"
+                            onClick={() => onReplacePhoto(l.id)}
+                            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+                            title="Replace this photo (same grid slot)"
+                          >
+                            Replace
+                          </button>
+                        )}
+                        {onRemovePhoto && (
+                          <button
+                            type="button"
+                            onClick={() => onRemovePhoto(l.id)}
+                            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-danger transition-colors hover:text-fg"
+                            title="Remove this photo (grid stays)"
+                          >
+                            Remove
+                          </button>
+                        )}
                       </>
                     )}
                     <span className="ml-1 text-[9px] text-mute">fit · fill · rotate · swap</span>

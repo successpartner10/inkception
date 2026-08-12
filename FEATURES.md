@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.26
+> **Version**: v0.17.27
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.26)
+> **Updated**: 2026-08-12 (v0.17.27)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -898,3 +898,15 @@ layers, quick actions, AI suite, collage, versioning all present.
   4 photos fills them correctly — zero console errors
 - Honest: detection works best on layouts with clear gutters/borders; for
   blended or borderless references you can still trace manually
+
+### v0.17.27 — Click a collage photo: Replace / Remove / Fit / Fill / Rotate
+- **On-canvas collage photo editing**: click any photo in a collage and a
+  floating action bar appears — **Replace** (pick a new image, it fills the
+  exact same grid slot, keeping clip/fit/rotation), **Fill** / **Fit**,
+  **Rotate ↻**, and **Remove** (deletes that photo; the grid and all other
+  photos stay intact)
+- **Layers tab** gains the same **Replace / Remove** buttons next to the
+  existing Fit/Fill/Rotate/Swap for each collage photo
+- Verified end-to-end: build a 2-photo grid → click photo → bar shows
+  [Replace, Fill, Fit, ↻, Remove] → Replace keeps 2 slots → Remove drops
+  to 1 with the grid intact — zero console errors; auto-detect unaffected
