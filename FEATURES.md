@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.25
+> **Version**: v0.17.26
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.25)
+> **Updated**: 2026-08-12 (v0.17.26)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -884,3 +884,17 @@ layers, quick actions, AI suite, collage, versioning all present.
   template grid based on your photo count
 - 18-step audit passes (6 AI Auto cards + modals, custom preset add/select/
   export, custom slots drawn + built, suggestion, zero console errors)
+
+### v0.17.26 — Auto-detect a collage layout from a reference image
+- Upload a reference collage in **Custom layout** and the app now
+  **auto-detects the photo slots on-device**: it finds the thin low-edge
+  gutter lines (gutters are uniform, photos have texture) and builds the
+  box grid from them — no manual tracing needed
+- A **Auto-detect** button re-runs detection (e.g. after swapping the
+  reference); detected boxes are editable (drag to add, tap chips to
+  remove); the hint line confirms what happened
+- Verified with synthetic references: a 2-photo + bottom-bar reference →
+  4 slots, a 2×2 grid reference → exactly 4 slots, and building with
+  4 photos fills them correctly — zero console errors
+- Honest: detection works best on layouts with clear gutters/borders; for
+  blended or borderless references you can still trace manually

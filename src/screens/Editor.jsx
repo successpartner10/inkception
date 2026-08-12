@@ -48,7 +48,7 @@ import { buildLayeredPsdBlob } from '../lib/psd'
 import { pickVideoMime, recordFrames, renderMotionFrames } from '../lib/motioncapture'
 import { traceImage } from '../lib/trace'
 import { PROMPT_SUGGESTIONS, matchPrompt, splitCommandChain } from '../lib/prompts'
-import { COLLAGE_LAYOUTS, computeSlots } from '../lib/collage'
+import { COLLAGE_LAYOUTS, computeSlots, detectCollageBoxes } from '../lib/collage'
 import { DEFAULT_FONT, DEFAULT_FONT_SIZE, FONTS } from '../lib/fonts'
 import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
 
@@ -6739,6 +6739,7 @@ function CollageBody({ onBuild, showToast, search = '', presets }) {
   const inputRef = useRef(null)
   // custom layout — draw your own slots (optionally over a reference image)
   const [customSlots, setCustomSlots] = useState([]) // fractions {x,y,w,h}
+  const [autoDetected, setAutoDetected] = useState(false)
   const [refImage, setRefImage] = useState(null) // dataURL shown faintly to trace
   const customRef = useRef(null) // draw area element
   const dragStart = useRef(null) // {x,y} fractions while drawing
@@ -6758,6 +6759,24 @@ function CollageBody({ onBuild, showToast, search = '', presets }) {
         setLayout(fits.id)
         if (fits.preset) setCollagePreset(fits.preset)
       }
+    }
+  }
+
+  // auto-detect the reference image's layout → slot boxes (fractions)
+  const autoDetect = async (src) => {
+    try {
+      const boxes = await detectCollageBoxes(src)
+      if (boxes && boxes.length >= 2) {
+        setCustomSlots(boxes)
+        setAutoDetected(true)
+        showToast(`Auto-detected ${boxes.length} slots from the reference`, 'check')
+      } else {
+        setAutoDetected(false)
+        showToast('Could not detect a clear layout — draw the boxes', 'info')
+      }
+    } catch {
+      setAutoDetected(false)
+      showToast('Could not read the reference image', 'close')
     }
   }
 
@@ -7030,6 +7049,11 @@ function CollageBody({ onBuild, showToast, search = '', presets }) {
               <Button variant="ghost" size="sm" icon="upload" onClick={() => refInputRef.current && refInputRef.current.click()}>
                 {refImage ? 'Change ref' : 'Reference image'}
               </Button>
+              {refImage && (
+                <Button variant="secondary" size="sm" icon="sparkle" onClick={() => autoDetect(refImage)} title="Re-run auto-detection on the reference">
+                  Auto-detect
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={() => setCustomSlots([])} disabled={!customSlots.length}>Clear</Button>
             </div>
           </div>
@@ -7040,7 +7064,14 @@ function CollageBody({ onBuild, showToast, search = '', presets }) {
             className="hidden"
             onChange={(e) => {
               const f = e.target.files && e.target.files[0]
-              if (f) { const r = new FileReader(); r.onload = () => setRefImage(r.result); r.readAsDataURL(f) }
+              if (f) {
+                const r = new FileReader()
+                r.onload = () => {
+                  setRefImage(r.result)
+                  autoDetect(r.result)
+                }
+                r.readAsDataURL(f)
+              }
               e.target.value = ''
             }}
           />
@@ -7068,7 +7099,11 @@ function CollageBody({ onBuild, showToast, search = '', presets }) {
               ))}
             </div>
           )}
-          <p className="mt-1.5 text-[8px] text-mute">Tip: upload a collage you like as the reference, then trace its boxes — your photos fill them exactly.</p>
+          <p className="mt-1.5 text-[8px] text-mute">
+            {autoDetected
+              ? <>Auto-detected from the reference — drag to add more boxes, tap a chip to remove.</>
+              : <>Tip: upload a collage you like as the reference — the layout is auto-detected, then you can trace/adjust.</>}
+          </p>
         </div>
       )}
 

@@ -103,3 +103,81 @@ export function computeSlots(layoutId, count, W, H, opts = {}) {
       return []
   }
 }
+
+/* ------------------------- auto-detect layout from a reference ------------ */
+// Given a collage reference image, find the photo slots by locating the thin
+// low-edge "gutter" lines (gutters are uniform; photos have texture) and
+// building boxes from the resulting grid. Returns slot fractions (0..1).
+
+function profileMedian(arr) {
+  const a = Array.from(arr).sort((p, q) => p - q)
+  const m = a.length >> 1
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2
+}
+
+function findGutters(edge, len, thr, maxRun) {
+  const out = []
+  let start = -1
+  for (let i = 0; i < len; i++) {
+    if (edge[i] < thr) {
+      if (start < 0) start = i
+    } else if (start >= 0) {
+      if (i - start <= maxRun) out.push([start, i - 1])
+      start = -1
+    }
+  }
+  if (start >= 0 && len - start <= maxRun) out.push([start, len - 1])
+  return out
+}
+
+export async function detectCollageBoxes(src, { maxSize = 360, minArea = 0.02 } = {}) {
+  const img = await new Promise((res, rej) => {
+    const im = new Image()
+    im.onload = () => res(im)
+    im.onerror = rej
+    im.src = src
+  })
+  const scale = Math.min(1, maxSize / Math.max(img.naturalWidth || 1, img.naturalHeight || 1))
+  const w = Math.max(16, Math.round((img.naturalWidth || 1) * scale))
+  const h = Math.max(16, Math.round((img.naturalHeight || 1) * scale))
+  const cv = document.createElement('canvas')
+  cv.width = w; cv.height = h
+  const ctx = cv.getContext('2d')
+  ctx.drawImage(img, 0, 0, w, h)
+  const d = ctx.getImageData(0, 0, w, h).data
+  const lum = new Float32Array(w * h)
+  for (let i = 0; i < w * h; i++) lum[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]
+
+  // edge energy per column / row (avg |gradient|)
+  const colEdge = new Float32Array(w)
+  for (let x = 1; x < w - 1; x++) {
+    let s = 0
+    for (let y = 0; y < h; y++) s += Math.abs(lum[y * w + x + 1] - lum[y * w + x - 1])
+    colEdge[x] = s / h
+  }
+  const rowEdge = new Float32Array(h)
+  for (let y = 1; y < h - 1; y++) {
+    let s = 0
+    for (let x = 0; x < w; x++) s += Math.abs(lum[(y + 1) * w + x] - lum[(y - 1) * w + x])
+    rowEdge[y] = s / w
+  }
+
+  const thrC = 0.55 * profileMedian(colEdge)
+  const thrR = 0.55 * profileMedian(rowEdge)
+  const maxRun = Math.max(6, Math.round(Math.min(w, h) * 0.05))
+  const cx = findGutters(colEdge, w, thrC, maxRun).map(([a, b]) => ((a + b) / 2) / w)
+  const cy = findGutters(rowEdge, h, thrR, maxRun).map(([a, b]) => ((a + b) / 2) / h)
+  const xs = [0, ...cx, 1].sort((a, b) => a - b)
+  const ys = [0, ...cy, 1].sort((a, b) => a - b)
+
+  const boxes = []
+  for (let i = 0; i < ys.length - 1; i++) {
+    for (let j = 0; j < xs.length - 1; j++) {
+      const x = xs[j], y = ys[i], bw = xs[j + 1] - x, bh = ys[i + 1] - y
+      if (bw * bh >= minArea) boxes.push({ x, y, w: bw, h: bh })
+    }
+  }
+  if (boxes.length <= 1) return []
+  boxes.sort((a, b) => (a.y - b.y) || (a.x - b.x))
+  return boxes.slice(0, 12)
+}
