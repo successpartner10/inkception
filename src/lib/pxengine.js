@@ -1701,3 +1701,41 @@ export function posterClean(d, w, h) {
   }
   return out
 }
+
+/* ---------------------- engines (v0.17.11) --------------------------------- */
+
+/** Makeup pop — soft glamour + boosted lip/eye color. */
+export function makeupPop(d, w, h) {
+  const g = glamour(d, w, h, 0.45)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = g[j], gg = g[j + 1], b = g[j + 2]
+    const l = 0.299 * r + 0.587 * gg + 0.114 * b
+    const sat = 1.3
+    out[j] = Math.min(255, l + (r - l) * sat)
+    out[j + 1] = Math.min(255, l + (gg - l) * sat)
+    out[j + 2] = Math.min(255, l + (b - l) * sat)
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Pattern pop — printed fabric: contrast + saturation + crisp. */
+export function patternPop(d, w, h) {
+  const s = CONV_FILTERS.sharpenMore(d, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    let r = (s[j] - 128) * 1.12 + 128
+    let g = (s[j + 1] - 128) * 1.12 + 128
+    let b = (s[j + 2] - 128) * 1.12 + 128
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const sat = 1.3
+    out[j] = Math.min(255, l + (r - l) * sat)
+    out[j + 1] = Math.min(255, l + (g - l) * sat)
+    out[j + 2] = Math.min(255, l + (b - l) * sat)
+    out[j + 3] = 255
+  }
+  return out
+}

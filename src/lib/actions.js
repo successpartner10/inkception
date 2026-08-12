@@ -224,6 +224,48 @@ export const ACTIONS = [
   { id: 'artvibrant', name: 'Art Vibrant', cat: 'Artwork', applies: ['document', 'product'], desc: 'Rich gallery colors', when: 'Paintings, prints', fe: 'local', icon: 'droplet', fx: 'Gemstone Vibrance', def: 0.6 },
   { id: 'canvasbright', name: 'Canvas Bright', cat: 'Artwork', applies: ['document', 'product'], desc: 'Brighten faded artwork', when: 'Old posters, canvas', fe: 'local', icon: 'sun', fx: 'Room Brighten', def: 0.6 },
   { id: 'frameshine', name: 'Frame Shine', cat: 'Artwork', applies: ['document', 'product'], desc: 'Polish frame + glass', when: 'Framed art', fe: 'local', icon: 'focus', fx: 'Glass Gloss', def: 0.6 },
+  /* ---- Apparel — Shirts, Suits & Sportswear ---- */
+  { id: 'shirtcrisp', name: 'Crisp Shirt', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Steam-press shirt creases', when: 'Wrinkled shirts', fe: 'local', icon: 'wind', fx: 'Smooth Fabric', def: 0.6 },
+  { id: 'suitpressed', name: 'Pressed Suit', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Polished formal wear', when: 'Suits, blazers', fe: 'local', icon: 'wind', fx: 'Smooth Fabric', def: 0.7 },
+  { id: 'jacketrich', name: 'Jacket Rich', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Leather/wool texture depth', when: 'Jackets, coats', fe: 'local', icon: 'layers', fx: 'Fabric Rich', def: 0.6 },
+  { id: 'tieshine', name: 'Tie Shine', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Silk tie luster', when: 'Ties, bowties', fe: 'local', icon: 'wind', fx: 'Silk Sheen', def: 0.6 },
+  { id: 'scarfsoft', name: 'Scarf Soft', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Soft knit/scarf texture', when: 'Scarves, knitwear', fe: 'local', icon: 'wind', fx: 'Fluff Soften', def: 0.6 },
+  { id: 'hatfresh', name: 'Hat Fresh', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Clean caps and hats', when: 'Caps, beanies, fedoras', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+  { id: 'sportpro', name: 'Sportswear Pro', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'High-energy sport finish', when: 'Activewear, kits', fe: 'local', icon: 'sparkle', fx: 'Denim Pop', def: 0.6 },
+  { id: 'swimvibrant', name: 'Swimwear Vibrant', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Rich saturated swim fabrics', when: 'Swimwear, rash guards', fe: 'local', icon: 'droplet', fx: 'Gemstone Vibrance', def: 0.6 },
+  { id: 'knitsoft', name: 'Knit Soft', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Soft focus for knits', when: 'Sweaters, knits', fe: 'local', icon: 'wind', fx: 'Fluff Soften', def: 0.6 },
+  { id: 'sockcrisp', name: 'Sock Crisp', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Crisp sock detail', when: 'Socks, hosiery', fe: 'local', icon: 'focus', fx: 'Product Sharpen', def: 0.6 },
+  { id: 'patternpop', name: 'Pattern Pop', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Vivid printed fabric', when: 'Prints, plaids, logos', fe: 'local', icon: 'grid', fx: 'Pattern Pop', def: 0.6 },
+  { id: 'outfiteditorial', name: 'Outfit Editorial', cat: 'Apparel', applies: ['portrait', 'product'], desc: 'Magazine-worthy outfit', when: 'Fashion spreads', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+
+  /* ---- Luggage & Travel ---- */
+  { id: 'lugscuff', name: 'Luggage Scratch Repair', cat: 'Travel', applies: ['product'], desc: 'Repair scuffed cases', when: 'Suitcases, hard shells', fe: 'local', icon: 'refresh', fx: 'Scratch Remover', def: 0.6 },
+  { id: 'lugclean', name: 'Luggage Clean', cat: 'Travel', applies: ['product'], desc: 'Clean dust and grime', when: 'Used luggage', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+  { id: 'lugleather', name: 'Luggage Leather', cat: 'Travel', applies: ['product'], desc: 'Premium bag leather', when: 'Leather luggage', fe: 'local', icon: 'layers', fx: 'Fabric Rich', def: 0.6 },
+  { id: 'backpackpro', name: 'Backpack Pro', cat: 'Travel', applies: ['product'], desc: 'Clean structured backpack', when: 'Backpacks, duffels', fe: 'local', icon: 'focus', fx: 'Product Sharpen', def: 0.6 },
+  { id: 'lugbrandnew', name: 'Luggage Brand New', cat: 'Travel', applies: ['product'], desc: 'Full travel cleanup', when: 'Pre-owned cases', fe: 'local', icon: 'refresh', fx: 'Brand New', def: 0.6 },
+
+  /* ---- Accessories — Belts & Wallets ---- */
+  { id: 'beltleather', name: 'Belt Leather', cat: 'Accessories', applies: ['product', 'portrait'], desc: 'Rich belt leather', when: 'Leather belts', fe: 'local', icon: 'layers', fx: 'Fabric Rich', def: 0.6 },
+  { id: 'beltbuckle', name: 'Buckle Shine', cat: 'Accessories', applies: ['product', 'portrait'], desc: 'Polished metal buckle', when: 'Belts, straps', fe: 'local', icon: 'focus', fx: 'Metal Shine', def: 0.6 },
+  { id: 'walletrich', name: 'Wallet Rich', cat: 'Accessories', applies: ['product'], desc: 'Premium wallet finish', when: 'Leather wallets', fe: 'local', icon: 'sparkle', fx: 'Luxury Grade', def: 0.6 },
+  { id: 'walletclean', name: 'Wallet Clean', cat: 'Accessories', applies: ['product'], desc: 'Clean worn wallets', when: 'Used wallets', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+
+  /* ---- Beauty & Makeup ---- */
+  { id: 'makeuplook', name: 'Makeup Look', cat: 'Beauty', applies: ['portrait'], desc: 'Soft glam + boosted color', when: 'Beauty portraits', fe: 'local', icon: 'sparkle', fx: 'Makeup Pop', def: 0.6 },
+  { id: 'lipboost', name: 'Lip Color Pop', cat: 'Beauty', applies: ['portrait'], desc: 'Rich lip color', when: 'Beauty retouch', fe: 'local', icon: 'droplet', alias: 'lipcolor' },
+  { id: 'skinclear', name: 'Skincare Bottle Clear', cat: 'Beauty', applies: ['product'], desc: 'Crisp clear skincare glass', when: 'Serums, creams', fe: 'local', icon: 'droplet', fx: 'Glass Gloss', def: 0.6 },
+  { id: 'serumgloss', name: 'Serum Gloss', cat: 'Beauty', applies: ['product'], desc: 'Glossy serum vials', when: 'Serum bottles', fe: 'local', icon: 'sun', fx: 'Glass Gloss', def: 0.6 },
+  { id: 'creamclean', name: 'Cream Jar Clean', cat: 'Beauty', applies: ['product'], desc: 'Clean jar packaging', when: 'Moisturizers, jars', fe: 'local', icon: 'refresh', fx: 'Spot Clean', def: 0.6 },
+  { id: 'beautypro', name: 'Beauty Product Pro', cat: 'Beauty', applies: ['product'], desc: 'Crisp cosmetic packaging', when: 'Cosmetic listings', fe: 'local', icon: 'focus', fx: 'Product Sharpen', def: 0.6 },
+
+  /* ---- Documents & Editorial ---- */
+  { id: 'drawingclean', name: 'Drawing Clean', cat: 'Docs', applies: ['document'], desc: 'Clean construction drawings', when: 'Blueprints, CAD', fe: 'local', icon: 'penTool', fx: 'Poster Clean', def: 0.6 },
+  { id: 'receiptclear', name: 'Receipt Clear', cat: 'Docs', applies: ['document'], desc: 'Readable receipt scan', when: 'Receipts, invoices', fe: 'local', icon: 'text', fx: 'Plan Sharp', def: 0.6 },
+  { id: 'invoicebright', name: 'Invoice Bright', cat: 'Docs', applies: ['document'], desc: 'Bright, crisp document', when: 'Invoices, forms', fe: 'local', icon: 'sun', fx: 'Poster Clean', def: 0.6 },
+  { id: 'magcover', name: 'Magazine Cover', cat: 'Docs', applies: ['portrait', 'product', 'landscape'], desc: 'Cover-grade punch', when: 'Covers, banners', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+  { id: 'editorialgrade', name: 'Editorial Grade', cat: 'Docs', applies: ['portrait', 'product', 'landscape'], desc: 'Editorial magazine finish', when: 'Feature images', fe: 'local', icon: 'sparkle', fx: 'Catalog Look', def: 0.65 },
+  { id: 'motoshine', name: 'Motorcycle Shine', cat: 'Auto', applies: ['landscape', 'product'], desc: 'Glossy bike paint', when: 'Motorcycles, scooters', fe: 'local', icon: 'sun', fx: 'Car Shine', def: 0.6 },
 ]
 
-export const ACTION_CATS = ['Artistic', 'Portrait', 'Color', 'Vintage', 'Texture', 'Restore', 'Creative', 'Digital', 'Motion', 'Commercial', 'Fashion', 'Luxury', 'Eyewear', 'Electronics', 'Food', 'Home', 'Auto', 'Real Estate', 'Artwork', 'Interior']
+export const ACTION_CATS = ['Artistic', 'Portrait', 'Color', 'Vintage', 'Texture', 'Restore', 'Creative', 'Digital', 'Motion', 'Commercial', 'Fashion', 'Luxury', 'Eyewear', 'Electronics', 'Food', 'Home', 'Auto', 'Real Estate', 'Artwork', 'Interior', 'Apparel', 'Travel', 'Accessories', 'Beauty', 'Docs']

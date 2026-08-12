@@ -305,6 +305,27 @@ export function matchPrompt(raw) {
   if ((has('poster') || has('artwork') || has('print')) && (has('clean') || has('restore') || has('faded'))) return { action: 'runaction', payload: { key: 'posterclean' } }
   if ((has('painting') || has('art')) && (has('vibrant') || has('rich') || has('color'))) return { action: 'runaction', payload: { key: 'artvibrant' } }
   if ((has('canvas') || has('artwork')) && (has('bright') || has('faded'))) return { action: 'runaction', payload: { key: 'canvasbright' } }
+  // ---- apparel / luggage / accessories / beauty / docs (v0.17.11) ----
+  if ((has('shirt') || has('blouse')) && (has('wrinkle') || has('crease') || has('iron') || has('crisp'))) return { action: 'runaction', payload: { key: 'shirtcrisp' } }
+  if ((has('suit') || has('blazer')) && (has('press') || has('crease') || has('polish'))) return { action: 'runaction', payload: { key: 'suitpressed' } }
+  if ((has('tie') || has('bowtie')) && (has('shine') || has('silky'))) return { action: 'runaction', payload: { key: 'tieshine' } }
+  if ((has('scarf') || has('knit') || has('sweater')) && (has('soft') || has('fluffy'))) return { action: 'runaction', payload: { key: 'scarfsoft' } }
+  if ((has('hat') || has('cap') || has('beanie')) && (has('clean') || has('fresh'))) return { action: 'runaction', payload: { key: 'hatfresh' } }
+  if ((has('sportswear') || has('activewear') || has('jersey')) && (has('pro') || has('better') || has('punch'))) return { action: 'runaction', payload: { key: 'sportpro' } }
+  if (has('swimwear') || (has('swimsuit') && has('vibrant'))) return { action: 'runaction', payload: { key: 'swimvibrant' } }
+  if ((has('pattern') || has('print') || has('plaid')) && (has('pop') || has('vivid') || has('colorful'))) return { action: 'runaction', payload: { key: 'patternpop' } }
+  if ((has('luggage') || has('suitcase') || has('case')) && (has('scratch') || has('scuff'))) return { action: 'runaction', payload: { key: 'lugscuff' } }
+  if ((has('luggage') || has('suitcase') || has('backpack')) && (has('clean') || has('dirty'))) return { action: 'runaction', payload: { key: 'lugclean' } }
+  if ((has('belt') && has('leather')) || (has('wallet') && has('leather'))) return { action: 'runaction', payload: { key: 'beltleather' } }
+  if ((has('belt') || has('buckle')) && (has('shine') || has('polish'))) return { action: 'runaction', payload: { key: 'beltbuckle' } }
+  if (has('wallet') && (has('clean') || has('worn'))) return { action: 'runaction', payload: { key: 'walletclean' } }
+  if ((has('makeup') || has('glam')) && has('look')) return { action: 'runaction', payload: { key: 'makeuplook' } }
+  if (has('skincare') || (has('serum') && has('gloss'))) return { action: 'runaction', payload: { key: 'serumgloss' } }
+  if ((has('receipt') || has('invoice')) && (has('clear') || has('readable'))) return { action: 'runaction', payload: { key: 'receiptclear' } }
+  if (has('drawing') && (has('clean') || has('sharp'))) return { action: 'runaction', payload: { key: 'drawingclean' } }
+  if (has('magazine') && (has('cover') || has('grade'))) return { action: 'runaction', payload: { key: 'magcover' } }
+  if (has('editorial') && (has('grade') || has('look'))) return { action: 'runaction', payload: { key: 'editorialgrade' } }
+  if (has('motorcycle') && (has('shine') || has('gloss') || has('paint'))) return { action: 'runaction', payload: { key: 'motoshine' } }
 
   // ---- adjust ----
   if (has('warm')) return { action: 'filters', payload: { temperature: 45 } }

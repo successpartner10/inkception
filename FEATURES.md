@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.10
+> **Version**: v0.17.11
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.10)
+> **Updated**: 2026-08-11 (v0.17.11)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -632,4 +632,22 @@ layers, quick actions, AI suite, collage, versioning all present.
 - ~18 new command phrases ("make the sky richer", "clean my glasses",
   "make the car paint shine", "appetizing food"…)
 - 14-step audit passes (164 render, new engines run, prompts, gallery
+  previews, zero console errors)
+
+### v0.17.11 — 33 more Actions (205 total, 197 free) — apparel, travel, accessories, beauty, docs
+- **Apparel** — Crisp Shirt, Pressed Suit, Jacket Rich, Tie Shine, Scarf
+  Soft, Hat Fresh, Sportswear Pro, Swimwear Vibrant, Knit Soft, Sock Crisp,
+  Pattern Pop, Outfit Editorial
+- **Travel** — Luggage Scratch Repair, Luggage Clean, Luggage Leather,
+  Backpack Pro, Luggage Brand New
+- **Accessories** — Belt Leather, Buckle Shine, Wallet Rich, Wallet Clean
+- **Beauty** — Makeup Look, Lip Color Pop, Skincare Bottle Clear, Serum
+  Gloss, Cream Jar Clean, Beauty Product Pro
+- **Docs & Editorial** — Drawing Clean, Receipt Clear, Invoice Bright,
+  Magazine Cover, Editorial Grade; **Auto** — Motorcycle Shine
+- New local engines: Makeup Pop (soft glam + color), Pattern Pop (vivid
+  printed fabric)
+- ~20 new command phrases ("make the shirt crisp", "clean my luggage",
+  "makeup look", "magazine cover", "motorcycle shine"…)
+- 15-step audit passes (197 render, new engines run, prompts, gallery
   previews, zero console errors)
