@@ -91,7 +91,7 @@ export function Chip({ children, active, className }) {
 
 /* --------------------------------- Segmented -------------------------------- */
 
-export function Segmented({ items, value, onChange, className }) {
+export function Segmented({ items, value, onChange, className, iconOnly = false }) {
   return (
     <div className={cn('flex border-b border-line', className)}>
       {items.map((it) => {
@@ -101,13 +101,16 @@ export function Segmented({ items, value, onChange, className }) {
             key={it.id}
             type="button"
             onClick={() => onChange(it.id)}
+            title={iconOnly ? it.label : undefined}
+            aria-label={iconOnly ? it.label : undefined}
             className={cn(
-              'relative flex h-12 items-center gap-2 px-4 text-[11px] font-bold uppercase tracking-[0.12em] transition-colors',
+              'relative flex h-12 items-center justify-center transition-colors',
+              iconOnly ? 'w-11 px-0' : 'gap-2 px-4 text-[11px] font-bold uppercase tracking-[0.12em]',
               isActive ? 'text-white' : 'text-mute hover:text-dim',
             )}
           >
             {it.icon && <Icon name={it.icon} size={14} strokeWidth={1.8} />}
-            {it.label}
+            {!iconOnly && it.label}
             {isActive && <span className="absolute inset-x-2 bottom-0 h-[2px] bg-white" />}
           </button>
         )

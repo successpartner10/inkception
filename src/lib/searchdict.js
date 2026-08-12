@@ -210,3 +210,18 @@ export function searchActions(q, { localOnly = true } = {}) {
 export const SEARCH_SUGGESTIONS = [
   'slim', 'teeth', 'shine', 'luxury', 'clean', 'gold', 'car', 'food', 'face', 'remove background',
 ]
+
+/** Generic text scorer for non-action inventory (tools, panels, exports…). */
+export function scoreQuery(text, q) {
+  if (!q) return 0
+  const t = String(text || '').toLowerCase()
+  const words = q.split(' ').filter(Boolean)
+  if (!words.length) return 0
+  let best = 0
+  for (const w of words) {
+    if (t === w) best = Math.max(best, 100)
+    else if (t.includes(w)) best = Math.max(best, 80)
+    else if (t.replace(/[^a-z0-9]/g, '').includes(w.replace(/[^a-z0-9]/g, ''))) best = Math.max(best, 60)
+  }
+  return best
+}

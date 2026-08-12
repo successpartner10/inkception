@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Canvas, Circle, Ellipse, IText, Line, PencilBrush, Polygon, Rect, Triangle, Image as FabricImage } from 'fabric'
 import { Icon } from '../components/Icon'
+import { GlobalSearch } from '../components/GlobalSearch'
 import {
   ActionCard,
   Button,
@@ -228,7 +229,6 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   const [zipRequested, setZipRequested] = useState(false) // bundle multi-size into one .zip only if asked
   // global search — one query filters AI, Quick, Export, Templates, Layers
   const [globalSearch, setGlobalSearch] = useState('')
-  const [searchFocused, setSearchFocused] = useState(false)
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [retouchOpen, setRetouchOpen] = useState(false)
   const [denoiseOpen, setDenoiseOpen] = useState(false)
@@ -3514,6 +3514,21 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     setSearchFocused(false)
   }
 
+  // Everything-search inventory (non-action items) + pick handler.
+  // ALL_TOOLS already covers panels, tools, exports, recipes and how-tos.
+  const globalItems = [
+    ...ALL_TOOLS.map((t) => ({ id: t.id, label: t.label, group: t.group === 'Panel' ? 'Panels' : t.group, sub: '', icon: t.icon, act: () => t.go() })),
+    { id: 'open', label: 'Open a file', group: 'Actions & more', sub: 'Import an image', icon: 'folder', act: () => fileRef.current && fileRef.current.click() },
+    { id: 'paste', label: 'Paste from clipboard', group: 'Actions & more', sub: 'Ctrl/Cmd+V', icon: 'upload', act: () => showToast('Press Ctrl/Cmd+V to paste an image', 'info') },
+    { id: 'export', label: 'Export', group: 'Actions & more', sub: 'Open the export panel', icon: 'export', act: () => openModal(setExportOpen) },
+    { id: 'collage', label: 'Collage Studio', group: 'Actions & more', sub: 'Multi-photo layouts', icon: 'grid', act: () => openModal(setCollageOpen) },
+    { id: 'settings', label: 'Settings', group: 'Actions & more', sub: 'Theme, shortcuts, privacy', icon: 'gear', act: () => openModal(setSettingsOpen) },
+    { id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Actions & more', sub: 'See the shortcut cheat-sheet', icon: 'info', act: () => openModal(setSettingsOpen) },
+  ]
+  const onGlobalPick = (kind, action) => {
+    if (kind === 'action') runAction(action.id)
+  }
+
   /* ------------------------------ panel renderer ----------------------------- */
   const renderPanel = () => {
     if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => openModal(setEnhanceOpen), resetAll, isDefault: isDefaultFilters(filters), busy, highlightTarget }} />
@@ -3677,42 +3692,13 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           <Chip className="hidden sm:inline-flex">{project.layers} Layers</Chip>
         </div>
         <div className="relative mx-2 flex min-w-0 flex-1 items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white sm:max-w-xs">
-          <Icon name="search" size={13} className="shrink-0 text-mute" />
-          <input
-            value={globalSearch}
-            onChange={(e) => setGlobalSearch(e.target.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-            placeholder="Search tools, how-to, sizes…"
-            aria-label="Search tools, how-to and sizes"
-            className="h-8 w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+          <GlobalSearch
+            items={globalItems}
+            includeActions
+            placeholder="Search everything — actions, tools, menus, sizes…"
+            onPick={onGlobalPick}
+            onQueryChange={setGlobalSearch}
           />
-          {globalSearch && (
-            <button type="button" onClick={() => setGlobalSearch('')} className="shrink-0 text-mute hover:text-white" title="Clear">
-              <Icon name="close" size={12} />
-            </button>
-          )}
-          {searchFocused && globalResults.length > 0 && (
-            <div className="absolute right-0 top-full z-50 mt-1.5 max-h-80 w-64 overflow-y-auto rounded-ink border border-line bg-surface py-1 shadow-2xl scrollbar-thin">
-              {globalResults.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => jumpGlobal(t)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-white/5"
-                >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center text-mute">
-                    <Icon name={t.icon} size={13} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[11px] text-fg"><Highlight text={t.label} query={globalSearch} /></span>
-                    <span className="block text-[9px] uppercase tracking-[0.1em] text-mute">{t.group}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
         <div className="flex-1" />
 
@@ -4048,7 +4034,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
             <>
               <div className="flex items-center justify-between border-b border-line pr-1">
                 <div className="no-scrollbar min-w-0 flex-1 overflow-x-auto">
-                  <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} />
+                  <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} iconOnly />
                 </div>
                 <IconBtn icon={isDesktop ? 'chevronRight' : 'close'} title="Collapse panel" onClick={() => setPanelCollapsed(true)} />
               </div>
@@ -4741,23 +4727,6 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
   const [type, setType] = useState('auto') // auto-detected photo type filter
   const [showAll, setShowAll] = useState(false) // D — "show all" override
   const [hideAuto, setHideAuto] = useState(false) // hide generated (auto) actions
-  const [localQ, setLocalQ] = useState('') // type-as-you-go search inside the tab
-  const searchInputRef = useRef(null)
-  // "/" focuses the search box, Esc clears it
-  useEffect(() => {
-    const h = (e) => {
-      const tag = (e.target && e.target.tagName) || ''
-      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA' && !(e.target && e.target.isContentEditable)) {
-        e.preventDefault()
-        searchInputRef.current && searchInputRef.current.focus()
-      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
-        setLocalQ('')
-        searchInputRef.current.blur()
-      }
-    }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [])
   const [detected, setDetected] = useState(null) // {type,label,conf}
   // detect what's in the photo so only applicable actions show
   useEffect(() => {
@@ -4775,7 +4744,7 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
     return () => { alive = false }
   }, [imageSrc, type])
 
-  const q = String((localQ || search) || '').trim().toLowerCase()
+  const q = String(search || '').trim().toLowerCase()
   // effective photo type (auto → detected, unless manual/all)
   const activeType = type === 'auto' && detected ? detected.type : type
   const typeName = type === 'auto' && detected && detected.loading ? '…' : activeType && activeType !== 'auto' && activeType !== 'all' ? (TYPE_LABEL[activeType] || activeType) : null
@@ -4813,63 +4782,6 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
 
   return (
     <div className="p-4">
-      {/* SMART SEARCH — the primary way in, front and center */}
-      <div className="mb-2 rounded-ink-lg border-2 border-white/50 bg-surface-2 p-2.5 shadow-[0_2px_14px_rgba(0,0,0,0.35)] transition-all focus-within:border-white focus-within:shadow-[0_0_22px_rgba(255,255,255,0.25)]">
-        <div className="flex items-center gap-2">
-          <Icon name="search" size={18} className="shrink-0 text-white" />
-          <input
-            ref={searchInputRef}
-            value={localQ}
-            onChange={(e) => setLocalQ(e.target.value)}
-            placeholder="Find an action — type what you want to do…"
-            aria-label="Search actions by what you want to do"
-            className="h-10 w-full min-w-0 bg-transparent text-[14px] font-semibold text-fg placeholder:text-mute focus:outline-none"
-          />
-          {localQ ? (
-            <button type="button" onClick={() => setLocalQ('')} className="shrink-0 rounded-ink bg-white/15 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-white hover:bg-white/25" title="Clear">
-              Clear
-            </button>
-          ) : (
-            <span className="shrink-0 rounded-ink border border-white/30 px-2 py-0.5 text-[10px] font-bold text-white/70">/</span>
-          )}
-        </div>
-        {!localQ && (
-          <div className="mt-2 flex flex-wrap items-center gap-1">
-            <span className="text-[8px] uppercase tracking-[0.12em] text-mute">Try</span>
-            {['thinner', 'make it shine', 'steel', 'clean the floor', 'silver tarnish'].map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setLocalQ(s)}
-                className="rounded-ink bg-white/10 px-2 py-0.5 text-[9px] text-dim transition-colors hover:bg-white/25 hover:text-white"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* feasibility toggle — hide AI/composite by default */}
-      <div className="mb-2 flex items-center gap-1">
-        <button type="button" onClick={() => setFeat('local')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'local' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
-          Free ({counts.local})
-        </button>
-        <button type="button" onClick={() => setFeat('all')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
-          All ({counts.all})
-        </button>
-        {onGallery && (
-          <button
-            type="button"
-            onClick={onGallery}
-            className="ml-auto flex items-center gap-1 rounded-ink border border-line px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-fg"
-            title="See every effect on YOUR photo, then pick"
-          >
-            <Icon name="grid" size={11} /> Gallery
-          </button>
-        )}
-      </div>
-
       {/* photo-type filter — shows only applicable actions */}
       <div className="mb-2 flex items-center gap-1">
         {PHOTO_TYPES.map((t) => (

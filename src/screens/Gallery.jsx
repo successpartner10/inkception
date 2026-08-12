@@ -8,6 +8,7 @@ import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS } from '../lib/export'
 import { Icon } from '../components/Icon'
 import { Button, Chip, Highlight, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
+import { GlobalSearch } from '../components/GlobalSearch'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -106,21 +107,18 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
       {/* Header — 48px, text-only wordmark + same search bar as the editor */}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4 sm:px-6">
         <Logo size="sm" />
-        <div className="mx-2 flex min-w-0 max-w-xs flex-1 items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white">
-          <Icon name="search" size={13} className="shrink-0 text-mute" />
-          <input
-            value={gallerySearch}
-            onChange={(e) => setGallerySearch(e.target.value)}
-            placeholder="Filter projects, templates…"
-            aria-label="Filter projects and templates"
-            className="h-8 w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
-          />
-          {gallerySearch && (
-            <button type="button" onClick={() => setGallerySearch('')} className="shrink-0 text-mute hover:text-white" title="Clear">
-              <Icon name="close" size={12} />
-            </button>
-          )}
-        </div>
+        <GlobalSearch
+          items={[
+            ...projects.map((p) => ({ id: 'proj-' + p.id, label: p.name, group: 'Projects', sub: p.layers + ' layers', icon: 'image', act: () => onOpen(p.id) })),
+            ...EXPORT_PRESETS.slice(0, 27).map((t) => ({ id: 'tpl-' + t.id, label: t.name + ' Template', group: 'Templates', sub: `${t.w}×${t.h} · ${t.platform}`, icon: PLATFORM_ICONS[t.platform], act: () => onTemplate(t) })),
+            ...SAMPLE_PHOTOS.map((sp) => ({ id: 'smp-' + sp.src, label: sp.name, group: 'Samples', sub: 'Start from a sample', icon: 'image', act: () => onImportMedia(sp.src) })),
+            { id: 'new', label: 'New Project', group: 'Actions & more', sub: 'Blank canvas', icon: 'plus', act: () => onNew() },
+            { id: 'open', label: 'Open / Add Media', group: 'Actions & more', sub: 'Import an image', icon: 'folder', act: () => fileRef.current && fileRef.current.click() },
+          ]}
+          includeActions={false}
+          placeholder="Search projects, templates, samples…"
+          onQueryChange={setGallerySearch}
+        />
         <IconBtn icon="user" title="Profile" size={17} />
       </header>
 

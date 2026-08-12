@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.18
+> **Version**: v0.17.19
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.18)
+> **Updated**: 2026-08-12 (v0.17.19)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -769,3 +769,26 @@ layers, quick actions, AI suite, collage, versioning all present.
   find, shortcut works, Free/All still reachable — zero console errors
 - (Fonts note: the offline copy runs on a desktop with internet, so the 13
   linked fonts always load — no offline fallback concern)
+
+### v0.17.19 — One search for everything (persistent, grouped)
+- **One persistent search bar** in the app header on BOTH screens (home +
+  editor), styled like the home page's — always visible, never a menu
+- Typing opens a **grouped results palette**: **Actions** (all 358, via the
+  smart synonym/taxonomy dictionary — "thinner" → Slim Body, "steel" →
+  Metal Shine), **Tools** (incl. wand, lasso, clone, curves, warp),
+  **Panels** (Adjust/Actions/Recipes/AI/Layers/Text), **Export sizes**,
+  **Recipes**, **How to**, **Actions & more** (Open, Paste, Export, Collage,
+  Settings, Shortcuts) — each group with counts, results ranked by score
+- **Click = act**: running an action, switching tool, jumping to a panel,
+  opening export/settings — one click does the thing
+- **Search bypasses filters**: intent wins — search shows matches even if
+  the photo-type filter would hide them
+- **Keyboard**: `/` or **⌘/Ctrl+K** focuses from anywhere · **↑↓** navigate
+  · **Enter** run · **Esc** close/clear
+- **Icon-only tabs**: the panel tab bar collapsed to icons (hover shows the
+  name) — search is now the primary way to open things; the redundant
+  in-panel search boxes were removed (Actions hero box, Gallery filter)
+- The global query still filters the current panel live (export sizes,
+  collage, AI list) so nothing regressed
+- 14-step audit passes (both screens, grouped results, synonym search,
+  run-from-palette, keyboard nav, icon tabs, zero console errors)
