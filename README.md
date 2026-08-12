@@ -34,6 +34,10 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
   wipe-compare, click to apply
 - **Tunable Enhance** — strength slider + Reduce chips + region-only, so
   it's never too strong
+- **Visual Templates & Layouts** — every platform size as a real
+  aspect-ratio card with ratio quick-filters (Square/Portrait/Landscape/
+  Story/Wide), a live hover preview stage, and drawn collage layouts —
+  no more endless text list
 - **Multi-size export** — tick the platform sizes you need → one
   `project-<ts>.zip` with every size at once (27 presets × 8 formats)
 - **Interface themes** — Dark (default) / Light / Auto, plus Settings hub

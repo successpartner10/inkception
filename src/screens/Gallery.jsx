@@ -9,7 +9,7 @@ import { loadCustomPresets } from '../lib/presets'
 import { Icon } from '../components/Icon'
 import { Button, Chip, Highlight, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
-import { detectCollageBoxes } from '../lib/collage'
+import { COLLAGE_LAYOUTS, computeSlots, detectCollageBoxes } from '../lib/collage'
 import { GlobalSearch } from '../components/GlobalSearch'
 import { GoalMenu } from '../components/GoalMenu'
 
@@ -31,6 +31,20 @@ const SAMPLE_PHOTOS = [
   { name: 'Mono B&W', src: `${import.meta.env.BASE_URL}samples/bw.jpg` },
 ]
 
+// Collage quick-starts shown in the Templates modal (visual slot previews)
+const COLLAGE_QUICK = [
+  { lid: 'grid2', name: 'Grid 2', sz: EXPORT_PRESETS.find((p) => p.id === 'ig-portrait') || EXPORT_PRESETS[0], desc: 'Two photos side by side' },
+  { lid: 'grid4', name: 'Grid 4', sz: EXPORT_PRESETS.find((p) => p.id === 'ig-square') || EXPORT_PRESETS[0], desc: '2×2 square grid' },
+  { lid: 'hero', name: 'Hero + Sidekick', sz: EXPORT_PRESETS.find((p) => p.id === 'fb-cover') || EXPORT_PRESETS[0], desc: 'Big photo + smaller companion' },
+  { lid: 'circleinset', name: 'Circle Inset', sz: EXPORT_PRESETS.find((p) => p.id === 'ig-square') || EXPORT_PRESETS[0], desc: 'White background + circular frame' },
+]
+
+// Scale a real w×h canvas into a display box (keeps true aspect ratio)
+function fitRect(w, h, maxW = 150, maxH = 150) {
+  const s = Math.min(maxW / w, maxH / h)
+  return { width: Math.max(2, Math.round(w * s)), height: Math.max(2, Math.round(h * s)) }
+}
+
 export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTemplate, onStartCollage }) {
   const [filter, setFilter] = useState('all')
   const [pendingDelete, setPendingDelete] = useState(null)
@@ -44,6 +58,12 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
   const refInputRef = useRef(null)
   const customPresets = loadCustomPresets()
   const allTemplates = [...EXPORT_PRESETS, ...customPresets]
+  // Templates modal — ratio quick-filter + live preview stage (desktop)
+  const [templateRatio, setTemplateRatio] = useState('all')
+  const [stage, setStage] = useState(null) // { kind:'preset', t } | { kind:'collage', lid, name, desc, sz }
+  useEffect(() => {
+    if (templateOpen) { setStage(null); setTemplateRatio('all') }
+  }, [templateOpen])
   // first-run guide — "What do you want to do today?" (one-time, reopenable)
   const [showOnboard, setShowOnboard] = useState(() => {
     try { return localStorage.getItem('inkception.onboard') !== '1' } catch { return true }
@@ -60,6 +80,47 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
     !gq ||
     [p.name, p.platform, p.ratio, p.use, `${p.w} x ${p.h}`, `${p.w}×${p.h}`].join(' ').toLowerCase().includes(gq)
   const fileRef = useRef(null)
+
+  // Templates modal — ratio bucket + filtered views + live preview stage
+  const ratioBucket = (p) => {
+    const r = p.w / p.h
+    if (r <= 0.7) return 'story'
+    if (r >= 0.95 && r <= 1.05) return 'square'
+    if (r >= 1.6) return 'wide'
+    if (r < 0.95) return 'portrait'
+    return 'landscape'
+  }
+  const matchRatio = (p) => templateRatio === 'all' || ratioBucket(p) === templateRatio
+  const visibleAll = allTemplates.filter((p) => matchPreset(p) && matchRatio(p))
+  const groupItems = (g) =>
+    g === 'Custom'
+      ? allTemplates.filter((p) => p.custom && matchPreset(p) && matchRatio(p))
+      : allTemplates.filter((p) => !p.custom && p.platform === g && matchPreset(p) && matchRatio(p))
+  const sections = templateGroup === 'all'
+    ? [...EXPORT_GROUPS, ...(customPresets.length ? ['Custom'] : [])]
+        .map((g) => ({ g, items: groupItems(g) }))
+        .filter((s) => s.items.length)
+    : [{ g: templateGroup, items: groupItems(templateGroup) }].filter((s) => s.items.length)
+  const collageStage = (q) => {
+    const meta = COLLAGE_LAYOUTS.find((l) => l.id === q.lid)
+    return {
+      kind: 'collage',
+      lid: q.lid,
+      title: q.name,
+      sub: `${q.sz.w}×${q.sz.h}${meta ? ` · ${meta.min}–${meta.max} photos` : ''}`,
+      desc: q.desc,
+    }
+  }
+  const stageView = (() => {
+    if (stage && stage.kind === 'collage') return collageStage(stage)
+    if (stage && stage.kind === 'preset' && visibleAll.some((p) => p.id === stage.t.id)) {
+      const t = stage.t
+      return { kind: 'preset', t, title: t.name, sub: `${t.w}×${t.h} · ${t.ratio}`, desc: `${t.platform}${t.use ? ' — ' + t.use : ''}` }
+    }
+    const fp = visibleAll[0]
+    if (fp) return { kind: 'preset', t: fp, title: fp.name, sub: `${fp.w}×${fp.h} · ${fp.ratio}`, desc: `${fp.platform}${fp.use ? ' — ' + fp.use : ''}` }
+    return collageStage(COLLAGE_QUICK[0])
+  })()
 
   // paste an image from the clipboard → new project
   useEffect(() => {
@@ -333,178 +394,229 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
         </span>
       </footer>
 
-      {/* Template picker — blank canvas at any export size (grouped) */}
+      {/* Template picker — visual size cards + collage layouts + reference */}
       <Modal
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
         title="Templates & Layouts"
         subtitle="Start from a platform size, a collage layout, or a reference image"
-        width="max-w-2xl"
+        width="max-w-3xl"
       >
-        <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
-          <button
-            type="button"
-            onClick={() => setTemplateGroup('all')}
-            className={cn(
-              'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
-              templateGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
-            )}
-          >
-            All · {allTemplates.length}
-          </button>
-          {EXPORT_GROUPS.map((g) => (
-            <button
-              key={g}
-              type="button"
-              onClick={() => setTemplateGroup(g)}
-              className={cn(
-                'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
-                templateGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1 scrollbar-thin md:flex-row md:gap-5">
+          {/* ---------- live preview stage (desktop) ---------- */}
+          <div className="hidden shrink-0 flex-col md:sticky md:top-0 md:flex md:w-56">
+            <span className="label-xs mb-2 text-dim">Preview</span>
+            <div className="flex h-44 items-center justify-center rounded-ink-lg border border-line bg-surface-2/60">
+              {stageView.kind === 'collage' ? (
+                <div className="h-32 w-32 overflow-hidden rounded-[6px]">
+                  <CollageMini lid={stageView.lid} big />
+                </div>
+              ) : stageView.kind === 'preset' ? (
+                <div
+                  className="flex items-center justify-center rounded-[4px] border border-white/60 bg-white/5"
+                  style={fitRect(stageView.t.w, stageView.t.h, 150, 150)}
+                >
+                  <Icon name={PLATFORM_ICONS[stageView.t.platform] || 'grid'} size={16} className="text-white/50" />
+                </div>
+              ) : null}
+            </div>
+            <div className="mt-3 min-h-[64px]">
+              <div className="truncate text-xs font-bold text-fg">{stageView.title}</div>
+              <div className="mt-0.5 text-[10px] text-mute">{stageView.sub}</div>
+              <div className="mt-1.5 text-[9px] leading-relaxed text-dim">{stageView.desc}</div>
+            </div>
+            <p className="mt-3 border-t border-line pt-2 text-[8.5px] leading-relaxed text-mute">
+              Tap any size to open a blank canvas at exactly that size. Hover the cards to preview.
+            </p>
+          </div>
+
+          {/* ---------- picker ---------- */}
+          <div className="min-w-0 flex-1 space-y-4">
+            {/* platform groups */}
+            <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
+              <button
+                type="button"
+                onClick={() => setTemplateGroup('all')}
+                className={cn(
+                  'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                  templateGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+                )}
+              >
+                All · {visibleAll.length}
+              </button>
+              {EXPORT_GROUPS.map((g) => {
+                const n = allTemplates.filter((p) => !p.custom && p.platform === g && matchPreset(p) && matchRatio(p)).length
+                if (!n) return null
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setTemplateGroup(g)}
+                    className={cn(
+                      'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                      templateGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+                    )}
+                  >
+                    {g} · {n}
+                  </button>
+                )
+              })}
+              {customPresets.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setTemplateGroup('Custom')}
+                  className={cn(
+                    'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                    templateGroup === 'Custom' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
+                  )}
+                >
+                  Custom · {allTemplates.filter((p) => p.custom && matchPreset(p) && matchRatio(p)).length}
+                </button>
               )}
-            >
-              {g} · {allTemplates.filter((p) => p.platform === g).length}
-            </button>
-          ))}
-        </div>
-        <div className="mt-3 max-h-[46vh] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
-          {templateGroup === 'all'
-            ? EXPORT_GROUPS.map((g) => (
+            </div>
+
+            {/* ratio quick-filters */}
+            <div className="no-scrollbar -mt-1 flex gap-1 overflow-x-auto pb-1">
+              {[
+                ['all', 'All ratios'],
+                ['square', 'Square'],
+                ['portrait', 'Portrait'],
+                ['landscape', 'Landscape'],
+                ['story', 'Story'],
+                ['wide', 'Wide'],
+              ].map(([rid, rl]) => (
+                <button
+                  key={rid}
+                  type="button"
+                  onClick={() => setTemplateRatio(rid)}
+                  className={cn(
+                    'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+                    templateRatio === rid ? 'bg-white text-black' : 'border border-line text-dim hover:text-white',
+                  )}
+                >
+                  {rl}
+                </button>
+              ))}
+            </div>
+
+            {/* size cards, grouped */}
+            {sections.length === 0 ? (
+              <p className="rounded-ink border border-dashed border-line px-4 py-8 text-center text-xs text-mute">
+                No sizes match — try another filter.
+              </p>
+            ) : (
+              sections.map(({ g, items }) => (
                 <div key={g}>
                   <div className="mb-1.5 flex items-center gap-2">
-                    <Icon name={PLATFORM_ICONS[g]} size={13} className="text-mute" />
+                    <Icon name={PLATFORM_ICONS[g] || 'grid'} size={13} className="text-mute" />
                     <span className="label-xs text-dim">{g}</span>
+                    <span className="label-xxs text-mute">{items.length}</span>
                     <span className="h-px flex-1 bg-line" />
                   </div>
-                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {allTemplates.filter((p) => p.platform === g).map((t) => (
-                      <button
+                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-5">
+                    {items.map((t) => (
+                      <TemplateTile
                         key={t.id}
-                        type="button"
-                        onClick={() => {
+                        t={t}
+                        query={gallerySearch}
+                        onHover={() => setStage({ kind: 'preset', t })}
+                        onStart={() => {
                           setTemplateOpen(false)
                           onTemplate({ w: t.w, h: t.h, label: `${t.name} (${t.w}×${t.h})` })
                         }}
-                        className="flex items-center gap-2 rounded-ink border border-line px-2.5 py-2 text-left transition-colors hover:border-white"
-                      >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
-                          <Icon name={PLATFORM_ICONS[t.platform]} size={13} />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[11px] font-semibold text-fg"><Highlight text={t.name} query={gallerySearch} /></span>
-                          <span className="block text-[9px] text-mute">{t.w}×{t.h} · {t.ratio}</span>
-                        </span>
-                      </button>
+                      />
                     ))}
                   </div>
                 </div>
               ))
-            : (
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {templatePresets.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      setTemplateOpen(false)
-                      onTemplate({ w: t.w, h: t.h, label: `${t.name} (${t.w}×${t.h})` })
-                    }}
-                    className="flex items-center gap-2 rounded-ink border border-line px-2.5 py-2 text-left transition-colors hover:border-white"
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-ink border border-line text-dim">
-                      <Icon name={PLATFORM_ICONS[t.platform]} size={13} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] font-semibold text-fg">{t.name}</span>
-                      <span className="block text-[9px] text-mute">{t.w}×{t.h} · {t.ratio}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
             )}
-        </div>
-        {/* Collage quick-starts */}
-        <div className="mt-4">
-          <div className="mb-1.5 flex items-center gap-2">
-            <Icon name="grid" size={13} className="text-mute" />
-            <span className="label-xs text-dim">Collage layouts</span>
-            <span className="h-px flex-1 bg-line" />
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-            {[
-              ['grid2', 'Grid 2', 'ig-portrait', 'Two photos side by side'],
-              ['grid4', 'Grid 4', 'ig-square', '2×2 square grid'],
-              ['hero', 'Hero + Sidekick', 'fb-cover', 'Big + small'],
-              ['circleinset', 'Circle Inset', 'ig-square', 'White bg + circle frame'],
-            ].map(([lid, lname, presetId, ldesc]) => {
-              const sz = EXPORT_PRESETS.find((p) => p.id === presetId) || EXPORT_PRESETS[0]
-              return (
-                <button
-                  key={lid}
-                  type="button"
-                  onClick={() => {
-                    setTemplateOpen(false)
-                    onStartCollage({ name: lname, w: sz.w, h: sz.h, layout: lid, slots: null })
-                  }}
-                  className="flex flex-col gap-1 rounded-ink border border-line px-2 py-2 text-left transition-colors hover:border-white"
-                >
-                  <span className="text-[10px] font-bold text-fg">{lname}</span>
-                  <span className="text-[8px] leading-tight text-mute">{ldesc}</span>
-                  <span className="text-[8px] text-mute">{sz.w}×{sz.h}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
 
-        {/* Custom layout from a reference image */}
-        <div className="mt-4 rounded-ink border border-line bg-surface-2/60 p-3">
-          <div className="flex items-center justify-between gap-2">
+            {/* Collage quick-starts — visual layout previews */}
             <div>
-              <div className="text-[11px] font-bold text-fg">Collage / Custom layout</div>
-              <div className="mt-0.5 text-[9px] text-mute">Upload a reference collage — the layout is detected, then you add photos in the editor</div>
+              <div className="mb-1.5 flex items-center gap-2">
+                <Icon name="grid" size={13} className="text-mute" />
+                <span className="label-xs text-dim">Collage layouts</span>
+                <span className="h-px flex-1 bg-line" />
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                {COLLAGE_QUICK.map((q) => {
+                  const meta = COLLAGE_LAYOUTS.find((l) => l.id === q.lid)
+                  return (
+                    <button
+                      key={q.lid}
+                      type="button"
+                      onMouseEnter={() => setStage({ kind: 'collage', ...q })}
+                      onClick={() => {
+                        setTemplateOpen(false)
+                        onStartCollage({ name: q.name, w: q.sz.w, h: q.sz.h, layout: q.lid, slots: null })
+                      }}
+                      title={q.desc}
+                      className="group rounded-ink border border-line p-1.5 text-left transition-colors hover:border-white"
+                    >
+                      <div className="h-16 w-full overflow-hidden rounded-[4px]">
+                        <CollageMini lid={q.lid} />
+                      </div>
+                      <span className="mt-1 block truncate text-[9px] font-bold uppercase tracking-[0.05em] text-fg">{q.name}</span>
+                      <span className="block text-[8px] text-mute">
+                        {q.sz.w}×{q.sz.h}{meta ? ` · ${meta.min}–${meta.max} photos` : ''}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <Button variant="secondary" size="sm" icon="upload" onClick={() => refInputRef.current && refInputRef.current.click()} disabled={refBusy}>
-                {refBusy ? 'Detecting…' : refImage ? 'Change reference' : 'Upload reference'}
-              </Button>
-              {refSlots.length >= 2 && (
-                <Button variant="primary" size="sm" icon="grid" onClick={startRefCollage}>
-                  Start ({refSlots.length} slots)
-                </Button>
+
+            {/* Custom layout from a reference image */}
+            <div className="rounded-ink border border-line bg-surface-2/60 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[11px] font-bold text-fg">Collage / Custom layout</div>
+                  <div className="mt-0.5 text-[9px] text-mute">Upload a reference collage — the layout is detected, then you add photos in the editor</div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button variant="secondary" size="sm" icon="upload" onClick={() => refInputRef.current && refInputRef.current.click()} disabled={refBusy}>
+                    {refBusy ? 'Detecting…' : refImage ? 'Change reference' : 'Upload reference'}
+                  </Button>
+                  {refSlots.length >= 2 && (
+                    <Button variant="primary" size="sm" icon="grid" onClick={startRefCollage}>
+                      Start ({refSlots.length} slots)
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <input
+                ref={refInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files && e.target.files[0]
+                  e.target.value = ''
+                  if (!f || !f.type.startsWith('image/')) return
+                  const r = new FileReader()
+                  r.onload = async () => {
+                    setRefImage(r.result)
+                    await detectRef(r.result)
+                  }
+                  r.readAsDataURL(f)
+                }}
+              />
+              {refImage && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="relative aspect-[4/3] overflow-hidden rounded-ink border border-line">
+                    <img src={refImage} alt="reference" className="h-full w-full object-contain opacity-30" />
+                    {refSlots.map((s, i) => (
+                      <span key={i} className="absolute border-2 border-white/90" style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, width: `${s.w * 100}%`, height: `${s.h * 100}%` }} />
+                    ))}
+                  </div>
+                  <div className="flex flex-col justify-center gap-1">
+                    <span className="label-xs text-dim">{refSlots.length >= 2 ? `${refSlots.length} slots detected` : refBusy ? 'Detecting layout…' : 'No clear layout found'}</span>
+                    <span className="text-[9px] leading-relaxed text-mute">{refSlots.length >= 2 ? 'Start opens the editor with this layout — your photos fill the boxes.' : 'Try a reference with clear gaps/gutters between photos.'}</span>
+                  </div>
+                </div>
               )}
             </div>
           </div>
-          <input
-            ref={refInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={async (e) => {
-              const f = e.target.files && e.target.files[0]
-              e.target.value = ''
-              if (!f || !f.type.startsWith('image/')) return
-              const r = new FileReader()
-              r.onload = async () => {
-                setRefImage(r.result)
-                await detectRef(r.result)
-              }
-              r.readAsDataURL(f)
-            }}
-          />
-          {refImage && (
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="relative aspect-[4/3] overflow-hidden rounded-ink border border-line">
-                <img src={refImage} alt="reference" className="h-full w-full object-contain opacity-30" />
-                {refSlots.map((s, i) => (
-                  <span key={i} className="absolute border-2 border-white/90" style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, width: `${s.w * 100}%`, height: `${s.h * 100}%` }} />
-                ))}
-              </div>
-              <div className="flex flex-col justify-center gap-1">
-                <span className="label-xs text-dim">{refSlots.length >= 2 ? `${refSlots.length} slots detected` : refBusy ? 'Detecting layout…' : 'No clear layout found'}</span>
-                <span className="text-[9px] leading-relaxed text-mute">{refSlots.length >= 2 ? 'Start opens the editor with this layout — your photos fill the boxes.' : 'Try a reference with clear gaps/gutters between photos.'}</span>
-              </div>
-            </div>
-          )}
         </div>
       </Modal>
     </div>
@@ -558,6 +670,53 @@ function ProjectCard({ project, onOpen, confirmDelete, onAskDelete, onCancelDele
         </div>
         {project.status === 'edited' && <Chip>Edited</Chip>}
       </div>
+    </div>
+  )
+}
+
+/* size card for the Templates modal — real aspect-ratio mini canvas */
+function TemplateTile({ t, query = '', onHover, onStart }) {
+  const r = fitRect(t.w, t.h, 44, 44)
+  return (
+    <button
+      type="button"
+      onMouseEnter={onHover}
+      onClick={onStart}
+      title={`${t.name} — ${t.w}×${t.h} · ${t.ratio}${t.use ? ' (' + t.use + ')' : ''}`}
+      className="group flex flex-col items-center gap-1 rounded-ink border border-line p-2 text-left transition-colors hover:border-white"
+    >
+      <span className="flex h-14 w-full items-center justify-center">
+        <span
+          className="flex items-center justify-center rounded-[3px] border border-line-2 bg-surface-2 text-mute transition-colors group-hover:border-white/70 group-hover:text-fg"
+          style={{ width: r.width, height: r.height }}
+        >
+          <Icon name={PLATFORM_ICONS[t.platform] || 'grid'} size={12} />
+        </span>
+      </span>
+      <span className="w-full truncate text-center text-[9px] font-bold uppercase tracking-[0.05em] text-fg">
+        <Highlight text={t.name} query={query} />
+      </span>
+      <span className="text-[8px] text-mute">{t.w}×{t.h}</span>
+    </button>
+  )
+}
+
+/* mini collage layout preview — slot boxes at the layout's real proportions */
+function CollageMini({ lid, big = false }) {
+  const meta = COLLAGE_LAYOUTS.find((l) => l.id === lid)
+  if (!meta) return null
+  const slots = computeSlots(lid, meta.min, 1, 1, { circlePos: 'br' })
+  return (
+    <div className={cn('relative h-full w-full overflow-hidden rounded-[3px]', meta.whiteBack ? 'bg-white' : 'bg-white/10')}>
+      {slots.map((s, i) => (
+        <span
+          key={i}
+          className={cn('absolute overflow-hidden', s.circle ? (big ? 'rounded-full shadow-[0_0_0_3px_#fff]' : 'rounded-full') : 'rounded-[2px]')}
+          style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, width: `${s.w * 100}%`, height: `${s.h * 100}%` }}
+        >
+          <span className={cn('block h-full w-full', s.circle ? 'bg-white/90' : 'bg-white/70')} />
+        </span>
+      ))}
     </div>
   )
 }

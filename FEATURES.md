@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.30
+> **Version**: v0.17.31
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.30)
+> **Updated**: 2026-08-12 (v0.17.31)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -31,10 +31,13 @@ on-device processing. No backend, no account, no data leaves your device.
   hover actions (Open, Delete with confirm)
 - **Open / Add Media** — import an image from device (persistable, survives
   reloads; large files downscaled)
-- **Templates & Layouts** — blank canvas at **any export size** (platform
-  groups + your custom sizes), **collage quick-starts** (Grid 2/4, Hero +
-  Sidekick, Circle Inset) and **custom layout from a reference image**
-  (auto-detect slots → Start)
+- **Templates & Layouts** — a designed picker, not a long text list: every
+  platform size is a **real aspect-ratio card** (exact canvas proportions),
+  grouped by platform with **ratio quick-filters** (Square · Portrait ·
+  Landscape · Story · Wide), a **live preview stage** on desktop (hover any
+  size to see it big with dimensions + use), visual **collage quick-starts**
+  (Grid 2/4, Hero + Sidekick, Circle Inset drawn as slot layouts) and
+  **custom layout from a reference image** (auto-detect slots → Start)
 - **Delete** — per-project with a two-step confirm (no accidental loss)
 
 ## 2. Editor — Canvas & Workspace
@@ -985,3 +988,21 @@ layers, quick actions, AI suite, collage, versioning all present.
   goals + steps expand + goal acts, all 6 tabs labelled in panel & rail,
   all 15 dock tools labelled, search collapses/expands, thumb saved to
   storage, gallery shows live thumb, zero console errors)
+
+### v0.17.31 — Templates & Layouts redesigned (no more long text list)
+- The platform-size list is gone. Every template is now a **visual card that
+  shows its real aspect ratio** (a mini canvas drawn at the exact
+  w×h proportions), grouped by platform with count chips
+- **Ratio quick-filters** — Square · Portrait · Landscape · Story · Wide —
+  cut the list down instantly (e.g. 27 sizes → 7 story sizes)
+- **Live preview stage** (desktop): hover any size and it appears large on
+  the left with name, dimensions, ratio and use; collage quick-starts show
+  their **slot layout** on the stage instead
+- **Collage quick-starts** are now drawn as real slot previews (Grid 2 /
+  Grid 4 / Hero + Sidekick / Circle Inset), not text rows
+- Custom sizes live in their own Custom group; custom-from-reference block
+  kept, more compact
+- Tap any size → blank canvas at exactly that size (same one-click flow)
+- 8-step automated audit passes (modal opens, 27 tiles rendered, hover
+  updates stage, Story filter 27→7, collage previews, click starts a blank
+  template, zero console errors)
