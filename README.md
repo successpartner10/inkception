@@ -30,8 +30,10 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
 - **Recipes** — save any repeated steps as a named one-click task; the app
   learns your "most used", predicts your next step, and nudges you to save
   repeated chains as recipes
-- **Effects Gallery** — see every effect as a live thumbnail of YOUR photo,
-  wipe-compare, click to apply
+- **Effects Gallery** — every effect as a live thumbnail of YOUR photo with
+  fast streaming previews (tiles appear as they render, cached), category
+  filters + search, and accurate per-effect previews; picking one collapses
+  the panel instantly on mobile so you see the result land on the image
 - **Tunable Enhance** — strength slider + Reduce chips + region-only, so
   it's never too strong
 - **Visual Templates & Layouts** — every platform size as a real

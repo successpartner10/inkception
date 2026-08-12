@@ -3,7 +3,7 @@
 // canvas, before/after divider, bottom tool ribbon, adjust sliders, AI
 // action grid and AI layer segmentation stack.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, Circle, Ellipse, IText, Line, PencilBrush, Polygon, Rect, Triangle, Image as FabricImage } from 'fabric'
 import { Icon } from '../components/Icon'
 import { GlobalSearch } from '../components/GlobalSearch'
@@ -2157,12 +2157,15 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   }
 
   // Effects gallery: apply the chosen look to the full image + OK/Undo bar.
+  // On mobile the modal + panel get out of the way FIRST so the result is
+  // visible the moment the effect lands on the image.
   const applyGalleryAction = (id) => {
     const a = ACTIONS.find((x) => x.id === id)
     if (!a) return
+    setGalleryOpen(false)
+    if (!isDesktop) setPanelCollapsed(true)
     runAction(id)
     setConfirmBar({ label: a.name })
-    setGalleryOpen(false)
   }
 
   /* ------------------- intelligent region select + enhance ------------- */
@@ -4149,9 +4152,14 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                 <div className="h-[2px] w-40 overflow-hidden bg-line-2">
                   <div className="h-full bg-white transition-all duration-300" style={{ width: `${busy.progress}%` }} />
                 </div>
-                <span className="label-xs text-mute underline-offset-2 hover:text-white hover:underline">
-                  Tap anywhere to skip
-                </span>
+                <button
+                  type="button"
+                  onClick={skipAi}
+                  className="rounded-ink bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-black transition-colors hover:bg-[#e8e8e8]"
+                >
+                  ✕ Skip — see my image
+                </button>
+                <span className="label-xs text-mute">Tap anywhere to skip</span>
               </div>
             )}
 
@@ -5730,20 +5738,46 @@ function EnhanceModal({ open, onClose, amt, setAmt, redux, setRedux, onApply, on
 /* --------------------------- effects gallery modal -------------------------- */
 // Every local Action rendered as a live thumbnail of YOUR photo. Hover = wipe
 // between original and effect; click = apply to the full image (undoable).
+//
+// SPEED: previews STREAM IN — the first tiles appear within a second and the
+// grid fills while you browse (rAF-batched, cached per image). Category chips
+// render only that subset, and search filters instantly, so you're never
+// waiting on all ~360 at once. Picking a tile dismisses the modal first and
+// the busy overlay has a visible "Skip" button on mobile.
 function EffectsGalleryModal({ open, onClose, src, onPick }) {
   const [thumbs, setThumbs] = useState([])
   const [origUrl, setOrigUrl] = useState(null)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [pos, setPos] = useState(null) // { id, pos }
   const [err, setErr] = useState(null)
+  const [cat, setCat] = useState('all')
+  const [q, setQ] = useState('')
+  const stopRef = useRef({ stopped: false })
+  const accRef = useRef([]) // thumbs waiting to be flushed to state
+  const flushRef = useRef(false)
+
+  const catCounts = useMemo(() => {
+    const m = {}
+    for (const a of ACTIONS) if (a.fe === 'local') m[a.cat || 'Other'] = (m[a.cat || 'Other'] || 0) + 1
+    return m
+  }, [])
+  const catNames = useMemo(() => ['all', ...ACTION_CATS], [])
 
   useEffect(() => {
     if (!open || !src) return
+    stopRef.current.stopped = true // cancel any previous stream
+    const stop = { stopped: false }
+    stopRef.current = stop
     let alive = true
     setThumbs([])
     setProgress({ done: 0, total: 0 })
     setErr(null)
     setOrigUrl(null)
+    accRef.current = []
+    const list = ACTIONS
+      .filter((a) => a.fe === 'local' && (cat === 'all' || (a.cat || 'Other') === cat))
+      .map((a) => ({ id: a.id, name: a.name, icon: a.icon, cat: a.cat || 'Other' }))
+    setProgress({ done: 0, total: list.length })
     // original thumbnail for the comparison wipe
     const im = new Image()
     im.onload = () => {
@@ -5755,21 +5789,79 @@ function EffectsGalleryModal({ open, onClose, src, onPick }) {
       if (alive) setOrigUrl(cv.toDataURL('image/jpeg', 0.82))
     }
     im.src = src
-    const list = ACTIONS.filter((a) => a.fe === 'local').map((a) => ({ id: a.id, name: a.name, icon: a.icon, cat: a.cat }))
-    buildGalleryThumbs(list, src, 150, (done, total) => alive && setProgress({ done, total }))
-      .then((t) => { if (alive) { setThumbs(t); setProgress({ done: t.length, total: t.length }) } })
+    // stream in rAF-batched appends — the grid fills up as previews render
+    const flush = () => {
+      flushRef.current = false
+      const arr = accRef.current
+      accRef.current = []
+      if (arr.length) setThumbs((prev) => [...prev, ...arr])
+    }
+    buildGalleryThumbs(list, src, 128, {
+      stop,
+      onThumb: (t) => {
+        if (!alive || stop.stopped) return
+        accRef.current.push(t)
+        if (!flushRef.current) {
+          flushRef.current = true
+          requestAnimationFrame(flush)
+        }
+      },
+      onProgress: (done, total) => { if (alive) setProgress({ done, total }) },
+    })
+      .then(() => { if (alive) setProgress({ done: list.length, total: list.length }) })
       .catch(() => alive && setErr('Could not render previews for this image'))
-    return () => { alive = false }
-  }, [open, src])
+    return () => { alive = false; stop.stopped = true }
+  }, [open, src, cat])
 
+  const ql = q.trim().toLowerCase()
+  const visible = ql ? thumbs.filter((t) => t.name.toLowerCase().includes(ql)) : thumbs
   const building = progress.total > 0 && progress.done < progress.total
 
   return (
     <Modal open={open} onClose={onClose} title="Effects Gallery" subtitle="Every local effect on YOUR photo — hover to compare, click to apply" width="max-w-3xl">
+      {/* search + live count */}
+      <div className="mb-2 flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white">
+          <Icon name="search" size={13} className="shrink-0 text-mute" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search effects…"
+            aria-label="Search effects"
+            className="h-8 w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+          />
+          {q && (
+            <button type="button" onClick={() => setQ('')} aria-label="Clear" className="shrink-0 text-mute hover:text-fg">
+              <Icon name="close" size={12} />
+            </button>
+          )}
+        </div>
+        <span className="label-xs shrink-0 text-mute">
+          {ql ? `${visible.length}/${thumbs.length} shown` : `${thumbs.length || progress.done}/${progress.total}`}
+        </span>
+      </div>
+
+      {/* category chips — render only one category at a time → instant */}
+      <div className="no-scrollbar -mt-1 mb-2 flex gap-1 overflow-x-auto pb-1">
+        {catNames.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setCat(c)}
+            className={cn(
+              'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+              cat === c ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
+            )}
+          >
+            {c === 'all' ? 'All' : c} · {c === 'all' ? ACTIONS.filter((a) => a.fe === 'local').length : catCounts[c] || 0}
+          </button>
+        ))}
+      </div>
+
       {building && (
-        <div className="mb-3">
+        <div className="mb-2">
           <div className="mb-1 flex justify-between text-[9px] text-mute">
-            <span>Rendering {progress.done}/{progress.total} previews…</span>
+            <span>Rendering {progress.done}/{progress.total} previews — they appear as they're ready</span>
             <span>{Math.round((progress.done / progress.total) * 100)}%</span>
           </div>
           <div className="h-1 overflow-hidden rounded-full bg-surface-2">
@@ -5778,13 +5870,15 @@ function EffectsGalleryModal({ open, onClose, src, onPick }) {
         </div>
       )}
       {err && <p className="py-4 text-center text-xs text-mute">{err}</p>}
-      {thumbs.length > 0 && (
+      {visible.length > 0 ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {thumbs.map((t) => (
+          {visible.map((t) => (
             <GalleryCard key={t.id} t={t} orig={origUrl} pos={pos} setPos={setPos} onPick={onPick} />
           ))}
         </div>
-      )}
+      ) : !building ? (
+        <p className="py-6 text-center text-xs text-mute">{ql ? `No effect matches “${q}”` : 'No effects in this category yet'}</p>
+      ) : null}
       <p className="mt-3 text-[9px] leading-relaxed text-mute">
         Move your pointer across a tile to compare before/after. Tap applies it to your full image — Undo (⌘Z) reverts.
       </p>
@@ -5806,10 +5900,10 @@ function GalleryCard({ t, orig, pos, setPos, onPick }) {
       }}
       onPointerLeave={() => setPos(null)}
     >
-      <img src={t.url} alt={t.name} draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+      <img src={t.url} alt={t.name} draggable={false} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
       {orig && (
         <div className="absolute inset-0" style={{ clipPath: `inset(0 ${100 - p}% 0 0)` }}>
-          <img src={orig} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+          <img src={orig} alt="" draggable={false} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
           <div className="absolute inset-y-0 border-l border-white/80" style={{ left: `${p}%` }} />
         </div>
       )}

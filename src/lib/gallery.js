@@ -3,6 +3,17 @@
 // image, so you can pick a look visually instead of reading names. Runs
 // 100% locally on a small downscaled copy; clicking applies the real
 // action to the full image through the normal pipeline.
+//
+// SPEED (v0.17.32): thumbnails are rendered in rAF batches and streamed to
+// the UI one batch per frame — the first tiles appear almost instantly and
+// the grid fills in while you browse, instead of blocking until all ~360
+// are done. Rendered thumbs are cached per image so re-opening the gallery
+// is instant.
+//
+// ACCURACY: the engine for each action is resolved by the SAME names the
+// editor's runner uses (fx field), with a camelCase probe into the pixel
+// engine — so every generated action previews a real effect, never the
+// untouched original.
 
 import * as PX from './pxengine'
 import { DEFAULT_FILTERS, cssFilterString } from './filters'
@@ -72,113 +83,6 @@ const PX_MAP = {
   goldbarreal: (d, w, h) => PX.goldBar(d, w, h),
   diamondbright: (d, w, h) => PX.crystalBright(d, w, h),
   liquidrich: (d, w, h) => PX.liquidRich(d, w, h),
-  // fx-aliased ids reuse their engines by name
-  shoeluxe: (d, w, h) => PX.luxuryGrade(d, w, h),
-  shoematte: (d, w, h) => PX.matteFinish(d, w, h),
-  shoeclean: (d, w, h) => PX.spotCleaner(d, w, h),
-  shoescuff: (d, w, h) => PX.scratchRemove(d, w, h),
-  leatherrich: (d, w, h) => PX.fabricEnhance(d, w, h),
-  shoead: (d, w, h) => PX.adGrade(d, w, h),
-  ironoutfit: (d, w, h) => PX.clothSmooth(d, w, h),
-  steampress: (d, w, h) => PX.clothSmooth(d, w, h),
-  lintoff: (d, w, h) => PX.spotCleaner(d, w, h),
-  stainoff: (d, w, h) => PX.spotCleaner(d, w, h),
-  fashionlux: (d, w, h) => PX.luxuryGrade(d, w, h),
-  silkier: (d, w, h) => PX.silkSheen(d, w, h),
-  fabricmatte: (d, w, h) => PX.matteFinish(d, w, h),
-  denimpro: (d, w, h) => PX.denimPop(d, w, h),
-  premiumleather: (d, w, h) => PX.fabricEnhance(d, w, h),
-  editorialfit: (d, w, h) => PX.adGrade(d, w, h),
-  bagscuff: (d, w, h) => PX.scratchRemove(d, w, h),
-  bagleather: (d, w, h) => PX.fabricEnhance(d, w, h),
-  hardwareshine: (d, w, h) => PX.metalShine(d, w, h),
-  bagdust: (d, w, h) => PX.spotCleaner(d, w, h),
-  bagbrandnew: (d, w, h) => PX.productClean(d, w, h),
-  goldluxe: (d, w, h) => PX.luxuryGrade(d, w, h),
-  jewelshine: (d, w, h) => PX.metalShine(d, w, h),
-  jewelscuff: (d, w, h) => PX.scratchRemove(d, w, h),
-  fingerprintoff: (d, w, h) => PX.spotCleaner(d, w, h),
-  platinumshine: (d, w, h) => PX.metalShine(d, w, h),
-  jewelad: (d, w, h) => PX.adGrade(d, w, h),
-  goldbarshine: (d, w, h) => PX.goldRich(d, w, h),
-  goldbarclean: (d, w, h) => PX.productClean(d, w, h),
-  watchshine: (d, w, h) => PX.metalShine(d, w, h),
-  watchface: (d, w, h) => PX.sharpenMore(d, w, h),
-  braceletpolish: (d, w, h) => PX.metalShine(d, w, h),
-  watchcuff: (d, w, h) => PX.scratchRemove(d, w, h),
-  productrestore: (d, w, h) => PX.productClean(d, w, h),
-  fraglux: (d, w, h) => PX.luxuryGrade(d, w, h),
-  bottleclean: (d, w, h) => PX.spotCleaner(d, w, h),
-  bottlescuff: (d, w, h) => PX.scratchRemove(d, w, h),
-  packsharp: (d, w, h) => PX.sharpenMore(d, w, h),
-  labelclear: (d, w, h) => PX.sharpenMore(d, w, h),
-  beautyad: (d, w, h) => PX.adGrade(d, w, h),
-  sunlight: (d, w, h) => PX.windowLight(d, w, h),
-  docscan: (d, w, h) => PX.planSharp(d, w, h),
-  glassclean: (d, w, h) => PX.screenClean(d, w, h),
-  lensshine: (d, w, h) => PX.glassGloss(d, w, h),
-  framepolish: (d, w, h) => PX.metalShine(d, w, h),
-  screenclean: (d, w, h) => PX.screenClean(d, w, h),
-  deviceshine: (d, w, h) => PX.glassGloss(d, w, h),
-  devicebrandnew: (d, w, h) => PX.productClean(d, w, h),
-  techsharp: (d, w, h) => PX.sharpenMore(d, w, h),
-  techad: (d, w, h) => PX.adGrade(d, w, h),
-  foodpop: (d, w, h) => PX.foodAppetize(d, w, h),
-  foodvibrant: (d, w, h) => PX.gemVibrance(d, w, h),
-  plateclean: (d, w, h) => PX.spotCleaner(d, w, h),
-  drinkrich: (d, w, h) => PX.liquidRich(d, w, h),
-  beveragead: (d, w, h) => PX.adGrade(d, w, h),
-  condensation: (d, w, h) => PX.sparkle(d, w, h),
-  candleclean: (d, w, h) => PX.spotCleaner(d, w, h),
-  soappro: (d, w, h) => PX.sharpenMore(d, w, h),
-  bathlux: (d, w, h) => PX.luxuryGrade(d, w, h),
-  homead: (d, w, h) => PX.adGrade(d, w, h),
-  carpaint: (d, w, h) => PX.carShine(d, w, h),
-  carinterior: (d, w, h) => PX.luxuryGrade(d, w, h),
-  cardetail: (d, w, h) => PX.sharpenMore(d, w, h),
-  carbrandnew: (d, w, h) => PX.productClean(d, w, h),
-  carad: (d, w, h) => PX.adGrade(d, w, h),
-  skypop: (d, w, h) => PX.skyPop(d, w, h),
-  exteriorbright: (d, w, h) => PX.roomBrighten(d, w, h),
-  realtorlux: (d, w, h) => PX.luxuryGrade(d, w, h),
-  listingsharp: (d, w, h) => PX.planSharp(d, w, h),
-  posterclean: (d, w, h) => PX.posterClean(d, w, h),
-  makeupLook: (d, w, h) => PX.makeupPop(d, w, h),
-  makeuplook: (d, w, h) => PX.makeupPop(d, w, h),
-  patternpop: (d, w, h) => PX.patternPop(d, w, h),
-  shirtcrisp: (d, w, h) => PX.clothSmooth(d, w, h),
-  suitpressed: (d, w, h) => PX.clothSmooth(d, w, h),
-  jacketrich: (d, w, h) => PX.fabricEnhance(d, w, h),
-  tieshine: (d, w, h) => PX.silkSheen(d, w, h),
-  scarfsoft: (d, w, h) => PX.fluffSoften(d, w, h),
-  hatfresh: (d, w, h) => PX.spotCleaner(d, w, h),
-  sportpro: (d, w, h) => PX.denimPop(d, w, h),
-  swimvibrant: (d, w, h) => PX.gemVibrance(d, w, h),
-  knitsoft: (d, w, h) => PX.fluffSoften(d, w, h),
-  sockcrisp: (d, w, h) => PX.sharpenMore(d, w, h),
-  outfiteditorial: (d, w, h) => PX.adGrade(d, w, h),
-  lugscuff: (d, w, h) => PX.scratchRemove(d, w, h),
-  lugclean: (d, w, h) => PX.spotCleaner(d, w, h),
-  lugleather: (d, w, h) => PX.fabricEnhance(d, w, h),
-  backpackpro: (d, w, h) => PX.sharpenMore(d, w, h),
-  lugbrandnew: (d, w, h) => PX.productClean(d, w, h),
-  beltleather: (d, w, h) => PX.fabricEnhance(d, w, h),
-  beltbuckle: (d, w, h) => PX.metalShine(d, w, h),
-  walletrich: (d, w, h) => PX.luxuryGrade(d, w, h),
-  walletclean: (d, w, h) => PX.spotCleaner(d, w, h),
-  skinclear: (d, w, h) => PX.glassGloss(d, w, h),
-  serumgloss: (d, w, h) => PX.glassGloss(d, w, h),
-  creamclean: (d, w, h) => PX.spotCleaner(d, w, h),
-  beautypro: (d, w, h) => PX.sharpenMore(d, w, h),
-  drawingclean: (d, w, h) => PX.posterClean(d, w, h),
-  receiptclear: (d, w, h) => PX.planSharp(d, w, h),
-  invoicebright: (d, w, h) => PX.posterClean(d, w, h),
-  magcover: (d, w, h) => PX.adGrade(d, w, h),
-  editorialgrade: (d, w, h) => PX.adGrade(d, w, h),
-  motoshine: (d, w, h) => PX.carShine(d, w, h),
-  artvibrant: (d, w, h) => PX.gemVibrance(d, w, h),
-  canvasbright: (d, w, h) => PX.roomBrighten(d, w, h),
-  frameshine: (d, w, h) => PX.glassGloss(d, w, h),
   // beauty / body / restore (need segmentation or full-res) — run best-effort
   teeth: (d, w, h) => PX.whitenTeeth(d, w, h, 0.6),
   pimples: (d, w, h) => PX.removePimples(d, w, h, 0.5),
@@ -216,38 +120,91 @@ const FX_CSS = {
 
 const MIRROR = new Set(['mirror'])
 
-/** Render a thumbnail (dataURL) for one action id. */
-// Engine lookup by the SAME names the editor's runner uses (fx field on
-// generated actions) — so auto-generated actions get live gallery previews.
-const ENGINE_FNS = {
-  'Spot Clean': PX.spotCleaner, 'Scratch Remover': PX.scratchRemove, 'Metal Shine': PX.metalShine,
-  'Shoe Gloss': PX.shoeGloss, 'Matte Finish': PX.matteFinish, 'Fluff Soften': PX.fluffSoften,
-  'Glamour': PX.glamour, 'Denim Pop': PX.denimPop, 'Silk Sheen': PX.silkSheen,
-  'Smooth Fabric': PX.clothSmooth, 'Product Sharpen': PX.sharpenMore, 'Rich Gold': PX.goldRich,
-  'Gold Bar': PX.goldBar, 'Brand New': PX.productClean, 'Bright Silver': PX.silverBright,
-  'Luxury Grade': PX.luxuryGrade, 'Screen Clean': PX.screenClean, 'Glass Gloss': PX.glassGloss,
-  'Diamond Bright': PX.crystalBright, 'Diamond Sparkle': PX.diamondSparkle, 'Room Brighten': PX.roomBrighten,
-  'Floor Clean': PX.floorClean, 'Fabric Rich': PX.fabricEnhance, 'Gemstone Vibrance': PX.gemVibrance,
-  'Poster Clean': PX.posterClean, 'Plan Sharp': PX.planSharp, 'Food Appetize': PX.foodAppetize,
-  'Liquid Rich': PX.liquidRich, 'Crystal Bright': PX.crystalBright, 'De-Reflect': PX.deReflect,
-  'Car Shine': PX.carShine, 'Sky Pop': PX.skyPop, 'Makeup Pop': PX.makeupPop, 'Pattern Pop': PX.patternPop,
-  'Sole Brighten': PX.soleBrighten, 'Catalog Look': PX.adGrade, 'Luxury Interior': PX.interiorLux,
-  'Window Light': PX.windowLight, 'Vignette': PX.vignette, 'Kaleidoscope': PX.kaleido,
-  'Duotone': PX.duotone, 'Split Tone': PX.splitTone, 'Dehaze': PX.dehaze, 'Zoom Blur': PX.zoomBlur,
-  'Glitch': PX.glitch, 'Eyes': PX.eyes, 'Lips': PX.lips, 'Charcoal': PX.charcoal, 'Posterize': PX.posterize || PX.addNoise,
-  'Cyanotype': PX.cyanotype, 'Teal & Orange': PX.tealOrange, 'Cross Process': PX.crossProcess,
-  'Infrared': PX.infrared, 'Red Pop': PX.colorPop, 'Ice Blue': PX.ice, 'Sunset Glow': PX.sunset,
-  'Flat Matte': PX.matte, 'Noir': PX.noir, 'Bleach Bypass': PX.bleach, 'Lomo': PX.lomo, 'Pastel': PX.pastel,
-  'Scanlines': PX.scanlines, 'Dither': PX.dither, 'Blueprint': PX.blueprint, 'Add Sparkle': PX.sparkle,
+/* engine-name aliases where the fx name ≠ a camelCase PX export */
+const ENGINE_ALIASES = {
+  'Catalog Look': PX.adGrade,
+  'Luxury Interior': PX.interiorLux,
+  'Teal & Orange': PX.tealOrange,
+  'Cross Process': PX.crossProcess,
+  'Red Pop': PX.colorPop,
+  'Ice Blue': PX.ice,
+  'Sunset Glow': PX.sunset,
+  'Flat Matte': PX.matte,
+  'Bleach Bypass': PX.bleach,
+  'Zoom Blur': PX.zoomBlur,
+  'Split Tone': PX.splitTone,
+  'Shoe Gloss': PX.shoeGloss,
+  'Sole Brighten': PX.soleBrighten,
+  'De-Reflect': PX.deReflect,
+  'Plan Sharp': PX.planSharp,
+  'Screen Clean': PX.screenClean,
+  'Poster Clean': PX.posterClean,
+  'Makeup Pop': PX.makeupPop,
+  'Pattern Pop': PX.patternPop,
+  'Diamond Bright': PX.crystalBright,
+  'Diamond Sparkle': PX.diamondSparkle,
+  'Room Brighten': PX.roomBrighten,
+  'Floor Clean': PX.floorClean,
+  'Food Appetize': PX.foodAppetize,
   'Liquid Rich': PX.liquidRich,
+  'Crystal Bright': PX.crystalBright,
+  'Car Shine': PX.carShine,
+  'Sky Pop': PX.skyPop,
+  'Brand New': PX.productClean,
+  'Matte Finish': PX.matteFinish,
+  'Rich Gold': PX.goldRich,
+  'Gold Bar': PX.goldBar,
+  'Bright Silver': PX.silverBright,
+  'Luxury Grade': PX.luxuryGrade,
+  'Smooth Fabric': PX.clothSmooth,
+  'Fabric Rich': PX.fabricEnhance,
+  'Gemstone Vibrance': PX.gemVibrance,
+  'Product Sharpen': PX.sharpenMore,
+  'Scratch Remover': PX.scratchRemove,
+  'Spot Clean': PX.spotCleaner,
+  'Metal Shine': PX.metalShine,
+  'Glass Gloss': PX.glassGloss,
+  'Denim Pop': PX.denimPop,
+  'Silk Sheen': PX.silkSheen,
+  'Fluff Soften': PX.fluffSoften,
+  'Glamour': PX.glamour,
+  'Add Sparkle': PX.sparkle,
+  'Window Light': PX.windowLight,
+  'Vignette': PX.vignette,
+  'Kaleidoscope': PX.kaleido,
+  'Duotone': PX.duotone,
+  'Dehaze': PX.dehaze,
+  'Glitch': PX.glitch,
+  'Eyes': PX.eyes,
+  'Lips': PX.lips,
+  'Charcoal': PX.charcoal,
+  'Posterize': PX.posterize || PX.addNoise,
+  'Cyanotype': PX.cyanotype,
+  'Infrared': PX.infrared,
+  'Noir': PX.noir,
+  'Lomo': PX.lomo,
+  'Pastel': PX.pastel,
+  'Scanlines': PX.scanlines,
+  'Dither': PX.dither,
+  'Blueprint': PX.blueprint,
+}
+
+/** Resolve an engine by the SAME human name the editor's runner uses. */
+function engineByName(name) {
+  if (!name) return null
+  if (ENGINE_ALIASES[name]) return ENGINE_ALIASES[name]
+  const cc = name.replace(/[^A-Za-z0-9]+(.)/g, (m, c) => c.toUpperCase())
+  const key = cc[0] ? cc[0].toLowerCase() + cc.slice(1) : cc
+  const fn = PX[key] || PX[name] || PX[cc]
+  return typeof fn === 'function' ? fn : null
 }
 
 function applyThumb(ctx, img, w, h, id, fx) {
-  const fn = PX_MAP[id] || (fx && ENGINE_FNS[fx])
+  const fn = PX_MAP[id] || engineByName(fx)
   if (fn) {
     const data = ctx.getImageData(0, 0, w, h)
     const out = fn(data.data, w, h)
-    ctx.putImageData(new ImageData(out, w, h), 0, 0)
+    if (out) ctx.putImageData(new ImageData(out, w, h), 0, 0)
     return
   }
   if (FILTER_MAP[id]) {
@@ -284,27 +241,66 @@ function loadImage(src) {
   })
 }
 
+/* ---- thumbnail cache (per source image) ---------------------------------- */
+const thumbCache = new Map() // `${srcKey}|${id}|${w}x${h}` → dataURL
+function keyOf(src) {
+  // cheap but decent fingerprint: sample chars + length (no full hash cost on
+  // multi-hundred-KB data URLs)
+  let h = 5381
+  const step = Math.max(1, Math.floor(src.length / 96))
+  for (let i = 0; i < src.length; i += step) h = ((h << 5) + h + src.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36) + ':' + src.length
+}
+function cacheGet(k) {
+  const v = thumbCache.get(k)
+  // bump recency
+  if (v) { thumbCache.delete(k); thumbCache.set(k, v) }
+  return v
+}
+function cacheSet(k, v) {
+  if (thumbCache.size > 12000) thumbCache.clear()
+  thumbCache.set(k, v)
+}
+
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+
 /**
- * Build one thumbnail per action, sequentially (yields between frames so the
- * UI stays responsive). Returns [{ id, name, icon, cat, url }].
+ * Build thumbnails for `list`, rendered in rAF batches and streamed via
+ * opts.onThumb(thumb, done, total) as soon as each is ready. Returns the
+ * full array when finished. Pass opts.stop = { stopped:false } and set
+ * .stopped = true to cancel (modal closed / unmounted).
  */
-export async function buildGalleryThumbs(list, src, size = 150, onProgress) {
+export async function buildGalleryThumbs(list, src, size = 128, opts = {}) {
+  const { onThumb, onProgress, stop } = opts
   const img = await loadImage(src)
   const scale = Math.min(1, size / Math.max(img.naturalWidth || 1, img.naturalHeight || 1))
   const w = Math.max(2, Math.round((img.naturalWidth || 1) * scale))
   const h = Math.max(2, Math.round((img.naturalHeight || 1) * scale))
+  const key = keyOf(src)
+  const total = list.length
   const out = []
+  const BATCH = 3 // thumbs per frame — keeps the UI smooth
   for (let i = 0; i < list.length; i++) {
+    if (stop && stop.stopped) break
     const a = list[i]
-    const cv = document.createElement('canvas')
-    cv.width = w
-    cv.height = h
-    const ctx = cv.getContext('2d')
-    ctx.drawImage(img, 0, 0, w, h)
-    try { applyThumb(ctx, img, w, h, a.id, a.fx) } catch { /* skip broken */ }
-    out.push({ id: a.id, name: a.name, icon: a.icon, cat: a.cat, url: cv.toDataURL('image/jpeg', 0.82) })
-    if (onProgress) onProgress(i + 1, list.length)
-    await new Promise((r) => setTimeout(r, 0))
+    const ck = `${key}|${a.id}|${w}x${h}`
+    let url = cacheGet(ck)
+    if (!url) {
+      const cv = document.createElement('canvas')
+      cv.width = w
+      cv.height = h
+      const ctx = cv.getContext('2d')
+      ctx.drawImage(img, 0, 0, w, h)
+      try { applyThumb(ctx, img, w, h, a.id, a.fx) } catch { /* keep original */ }
+      url = cv.toDataURL('image/jpeg', 0.78)
+      cacheSet(ck, url)
+    }
+    const t = { id: a.id, name: a.name, icon: a.icon, cat: a.cat, url }
+    out.push(t)
+    if (onThumb) onThumb(t, i + 1, total)
+    if (onProgress && (i % 8 === 7 || i === total - 1)) onProgress(i + 1, total)
+    if (i % BATCH === BATCH - 1) await nextFrame()
   }
+  if (onProgress) onProgress(total, total)
   return out
 }

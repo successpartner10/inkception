@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.31
+> **Version**: v0.17.32
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.31)
+> **Updated**: 2026-08-12 (v0.17.32)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -142,9 +142,21 @@ input; applies live to selected text and to new text.
 
 ## 4e. Effects Gallery & tunable Enhance
 
-- **Effects Gallery** (Actions tab → Gallery): ~40 local effects rendered as
-  live thumbnails of your photo; hover/drag wipes original ↔ effect; click
-  applies to the full image with an Undo bar
+- **Effects Gallery** (Actions tab → Gallery): every local effect as a live
+  thumbnail of your photo; hover/drag wipes original ↔ effect; click applies
+  to the full image with an Undo bar
+- **Fast streaming previews** (v0.17.32): thumbnails render in rAF batches
+  and **appear as they're ready** — the first tiles show within ~0.1 s and
+  the grid fills while you browse, instead of waiting for all ~360. Results
+  are cached per image, so reopening the gallery is instant
+- **Accurate previews** (v0.17.32): every action's effect engine resolves by
+  name (alias + camelCase probe), so generated actions preview a real
+  effect — never the untouched original
+- **Category chips + search** (v0.17.32): filter to one category at a time
+  (instant) or search by name, so you're never facing the full wall at once
+- **Mobile speed** (v0.17.32): picking a tile collapses the panel and closes
+  the modal immediately so the result is visible the moment it lands; the
+  busy overlay has a visible **✕ Skip — see my image** button
 - **Auto Enhance settings** (Enhance modal): strength 0–100 (default 60),
   Reduce chips (−Saturation / −Warmth / −Brightness), and "Region only"
   when a region is selected
@@ -1006,3 +1018,24 @@ layers, quick actions, AI suite, collage, versioning all present.
 - 8-step automated audit passes (modal opens, 27 tiles rendered, hover
   updates stage, Story filter 27→7, collage previews, click starts a blank
   template, zero console errors)
+
+### v0.17.32 — Effects Gallery: fast streaming previews + accurate tiles
+- **Previews stream in** — thumbnails render 3 per frame (rAF-batched) and
+  push to the grid as they finish: ~96 tiles visible in ~0.1 s, the full
+  ~360 by a few seconds, instead of a blank screen until everything is done.
+  Cached per image (bounded LRU) → reopening is instant
+- **Accurate previews** — the engine for every action is resolved by the
+  same names the editor uses (ENGINE_ALIASES + camelCase probe into the
+  pixel engine). Static check: all 30 distinct fx engines + every curated
+  id resolve to a real effect — the old code silently showed the
+  *untouched original* for any unaliased engine (the "inaccurate previews")
+- **Category chips + search** — filter to one category at a time (renders
+  only that subset → instant) or type to filter by name, with a live
+  "shown/total" counter. No more facing all ~360 at once
+- **Mobile: menu gets out of the way fast** — picking a tile collapses the
+  panel and closes the modal FIRST so the effect is visible the moment it
+  lands on the uploaded image; the busy overlay now has a visible
+  **✕ Skip — see my image** button (plus tap-anywhere)
+- 8-step automated audit passes (modal opens, ~96 tiles in 0.1 s → 716 by
+  3 s, category filter → 8 tiles, search narrows, pick → modal closed +
+  OK/Undo bar, mobile panel collapses on pick, zero console errors)
