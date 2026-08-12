@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn, fileToDataUrl, formatDate } from '../lib/utils'
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS } from '../lib/export'
+import { loadCustomPresets } from '../lib/presets'
 import { Icon } from '../components/Icon'
 import { Button, Chip, Highlight, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
@@ -35,6 +36,8 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
   const [templateGroup, setTemplateGroup] = useState('all')
   const [importing, setImporting] = useState(false)
   const [gallerySearch, setGallerySearch] = useState('')
+  const customPresets = loadCustomPresets()
+  const allTemplates = [...EXPORT_PRESETS, ...customPresets]
   // first-run hint — one-time, dismissible
   const [showIntro, setShowIntro] = useState(() => {
     try { return localStorage.getItem('inkception.intro') !== '1' } catch { return true }
@@ -76,7 +79,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
     .filter(matchProject)
     .sort((a, b) => new Date(b.opened || b.date || 0) - new Date(a.opened || a.date || 0))
     .slice(0, 5)
-  const templatePresets = EXPORT_PRESETS.filter((p) => (templateGroup === 'all' || p.platform === templateGroup) && matchPreset(p))
+  const templatePresets = allTemplates.filter((p) => (templateGroup === 'all' || p.platform === templateGroup) && matchPreset(p))
 
   const onFile = async (e) => {
     const f = e.target.files && e.target.files[0]
@@ -110,7 +113,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
         <GlobalSearch
           items={[
             ...projects.map((p) => ({ id: 'proj-' + p.id, label: p.name, group: 'Projects', sub: p.layers + ' layers', icon: 'image', act: () => onOpen(p.id) })),
-            ...EXPORT_PRESETS.slice(0, 27).map((t) => ({ id: 'tpl-' + t.id, label: t.name + ' Template', group: 'Templates', sub: `${t.w}×${t.h} · ${t.platform}`, icon: PLATFORM_ICONS[t.platform], act: () => onTemplate(t) })),
+            ...allTemplates.map((t) => ({ id: 'tpl-' + t.id, label: t.name + ' Template', group: 'Templates', sub: `${t.w}×${t.h} · ${t.platform}`, icon: PLATFORM_ICONS[t.platform] || 'grid', act: () => onTemplate(t) })),
             ...SAMPLE_PHOTOS.map((sp) => ({ id: 'smp-' + sp.src, label: sp.name, group: 'Samples', sub: 'Start from a sample', icon: 'image', act: () => onImportMedia(sp.src) })),
             { id: 'new', label: 'New Project', group: 'Actions & more', sub: 'Blank canvas', icon: 'plus', act: () => onNew() },
             { id: 'open', label: 'Open / Add Media', group: 'Actions & more', sub: 'Import an image', icon: 'folder', act: () => fileRef.current && fileRef.current.click() },
@@ -347,7 +350,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
               templateGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
             )}
           >
-            All · {EXPORT_PRESETS.length}
+            All · {allTemplates.length}
           </button>
           {EXPORT_GROUPS.map((g) => (
             <button
@@ -359,7 +362,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                 templateGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
               )}
             >
-              {g} · {EXPORT_PRESETS.filter((p) => p.platform === g).length}
+              {g} · {allTemplates.filter((p) => p.platform === g).length}
             </button>
           ))}
         </div>
@@ -373,7 +376,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                     <span className="h-px flex-1 bg-line" />
                   </div>
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {EXPORT_PRESETS.filter((p) => p.platform === g).map((t) => (
+                    {allTemplates.filter((p) => p.platform === g).map((t) => (
                       <button
                         key={t.id}
                         type="button"

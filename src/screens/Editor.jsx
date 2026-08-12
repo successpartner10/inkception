@@ -32,6 +32,7 @@ import {
   isDefaultFilters,
 } from '../lib/filters'
 import { EXPORT_GROUPS, EXPORT_PRESETS, PLATFORM_ICONS, renderExport } from '../lib/export'
+import { allPresets, findPreset, loadCustomPresets, makeCustomPreset, saveCustomPresets } from '../lib/presets'
 import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectBBox } from '../lib/segment'
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
 import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas, zipFiles } from '../lib/encode'
@@ -224,9 +225,28 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   const [exportOpen, setExportOpen] = useState(false)
   const [preset, setPreset] = useState('yt-thumb')
   const [exportGroup, setExportGroup] = useState('all')
+  const [customPresets, setCustomPresets] = useState(loadCustomPresets)
+  const [addPresetOpen, setAddPresetOpen] = useState(false)
+  const [presetForm, setPresetForm] = useState({ platform: 'Custom', name: '', w: 1080, h: 1080 })
   // multi-size export: checked presets → one zip ("pick the sizes you need")
   const [selPresets, setSelPresets] = useState([])
   const [zipRequested, setZipRequested] = useState(false) // bundle multi-size into one .zip only if asked
+  const mergedPresets = allPresets(customPresets)
+  const addCustomPreset = () => {
+    const p = makeCustomPreset(presetForm)
+    const list = [...customPresets, p]
+    setCustomPresets(list)
+    saveCustomPresets(list)
+    setPresetForm({ platform: 'Custom', name: '', w: 1080, h: 1080 })
+    setAddPresetOpen(false)
+    showToast('Custom size added — ' + p.name + ' ' + p.w + '×' + p.h, 'check')
+  }
+  const removeCustomPreset = (id) => {
+    const list = customPresets.filter((p) => p.id !== id)
+    setCustomPresets(list)
+    saveCustomPresets(list)
+    showToast('Custom size removed', 'trash')
+  }
   // global search — one query filters AI, Quick, Export, Templates, Layers
   const [globalSearch, setGlobalSearch] = useState('')
   const [replaceOpen, setReplaceOpen] = useState(false)
@@ -1281,7 +1301,10 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         let used = meta ? urls.slice(0, meta.max) : urls
         // Circle Inset with a single photo → reuse it in the circle too
         if (layoutId === 'circleinset' && used.length === 1) used = [used[0], used[0]]
-        const slots = computeSlots(layoutId, used.length, W, H, { circlePos })
+        const slots =
+          layoutId === 'custom' && opts.customSlots && opts.customSlots.length
+            ? opts.customSlots.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }))
+            : computeSlots(layoutId, used.length, W, H, { circlePos })
         const rot =
           layoutId === 'polaroid'
             ? [-6, 6, 5, -5, 4]
@@ -3124,7 +3147,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       const p =
         preset === 'original'
           ? { id: 'original', name: 'Original', w: naturalRef.current.w, h: naturalRef.current.h }
-          : EXPORT_PRESETS.find((x) => x.id === preset)
+          : findPreset(preset, customPresets)
       if (!p || !p.w || !p.h) throw new Error('invalid preset')
       const base = slug(project.name)
       const ts = new Date()
@@ -3347,7 +3370,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     })
   }
   const selAllInGroup = (g) => {
-    const ids = EXPORT_PRESETS.filter((p) => p.platform === g && matchesExport(p)).map((p) => p.id)
+    const ids = mergedPresets.filter((p) => p.platform === g && matchesExport(p)).map((p) => p.id)
     setSelPresets((prev) => {
       const allOn = ids.every((x) => prev.includes(x))
       const keep = prev.filter((x) => !ids.includes(x))
@@ -3356,7 +3379,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   }
   const setAllSel = (on) => {
     if (on) {
-      const ids = EXPORT_PRESETS.filter((p) => matchesExport(p)).map((p) => p.id)
+      const ids = mergedPresets.filter((p) => matchesExport(p)).map((p) => p.id)
       setSelPresets((prev) => Array.from(new Set([...prev, ...ids])))
     } else setSelPresets([])
   }
@@ -3387,7 +3410,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         const p =
           id === 'original'
             ? { id: 'original', name: 'Original', platform: 'original', w: naturalRef.current.w, h: naturalRef.current.h }
-            : EXPORT_PRESETS.find((x) => x.id === id)
+            : findPreset(id, customPresets)
         if (!p || !p.w || !p.h) continue
         done++
         setBusy({ kind: 'real', title: `Export ${done}/${ids.length}`, step: `${p.name} — ${p.w}×${p.h}`, progress: 10 + Math.round((done / ids.length) * 70) })
@@ -3516,7 +3539,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     { id: 'tool-spherical', label: 'Spherical', group: 'Filter', icon: 'focus', go: () => runFilter('spherical') },
     { id: 'tool-sharpenedges', label: 'Sharpen Edges', group: 'Filter', icon: 'focus', go: () => runFilter('sharpenEdges') },
     ...HOWTOS.map((h) => ({ id: 'how-' + h.id, label: h.q, group: 'How do I…?', icon: 'sparkle', go: () => { setHowtoOpen(true) } })),
-    ...EXPORT_PRESETS.slice(0, 27).map((p) => ({ id: 'preset-' + p.id, label: `${p.platform} — ${p.name}`, group: 'Export sizes', sub: `${p.w}×${p.h} · ${p.ratio}`, icon: PLATFORM_ICONS[p.platform], go: () => { openModal(setExportOpen); setPreset(p.id) } })),
+    ...mergedPresets.map((p) => ({ id: 'preset-' + p.id, label: `${p.platform} — ${p.name}`, group: 'Export sizes', sub: `${p.w}×${p.h} · ${p.ratio}`, icon: PLATFORM_ICONS[p.platform] || 'grid', go: () => { openModal(setExportOpen); setPreset(p.id) } })),
     ...recipes.map((r) => ({ id: 'recipe-' + r.id, label: 'Run recipe: ' + r.name, group: 'Recipes', icon: 'bookmark', go: () => runRecipe(r) })),
   ]
 
@@ -3560,6 +3583,10 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           setAmt={setEffectAmt}
           onQuickEnhance={() => openModal(setEnhanceOpen)}
           onQuickRemoveBg={() => setRemoveBgOpen(true)}
+          onQuickUpscale={() => openModal(setUpscaleOpen)}
+          onQuickDenoise={() => openModal(setDenoiseOpen)}
+          onQuickRetouch={() => openModal(setRetouchOpen)}
+          onQuickSharpen={() => runFilter('sharpenMore')}
         />
       )
     }
@@ -4307,7 +4334,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         subtitle="2–12 photos · 12 AI layouts"
         width="max-w-xl"
       >
-        <CollageBody onBuild={buildCollage} showToast={showToast} search={globalSearch} />
+        <CollageBody onBuild={buildCollage} showToast={showToast} search={globalSearch} presets={mergedPresets} />
       </Modal>
 
       {/* ----------------------------- upscale modal ------------------------------ */}
@@ -4384,7 +4411,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         subtitle="Platform presets — cover-cropped to exact size"
         width="max-w-2xl"
       >
-        <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-1">
           <button
             type="button"
             onClick={() => setExportGroup('all')}
@@ -4393,7 +4420,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
               exportGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
             )}
           >
-            All · {EXPORT_PRESETS.length}
+            All · {mergedPresets.length}
           </button>
           {EXPORT_GROUPS.map((g) => (
             <button
@@ -4405,15 +4432,34 @@ export function Editor({ project, onBack, onRename = () => {} }) {
                 exportGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
               )}
             >
-              {g} · {EXPORT_PRESETS.filter((p) => p.platform === g).length}
+              {g} · {mergedPresets.filter((p) => p.platform === g).length}
             </button>
           ))}
+          {customPresets.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setExportGroup('Custom')}
+              className={cn(
+                'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                exportGroup === 'Custom' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
+              )}
+            >
+              Custom · {customPresets.length}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setAddPresetOpen(true)}
+            className="shrink-0 rounded-ink border border-dashed border-line px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-dim transition-colors hover:border-white hover:text-fg"
+          >
+            ＋ Add size
+          </button>
         </div>
 
         {/* checked-count + select all / clear */}
         <div className="mt-2 flex items-center gap-2">
           <span className="label-xs text-mute">
-            {selPresets.length} of {EXPORT_PRESETS.length} checked
+            {selPresets.length} of {mergedPresets.length} checked
           </span>
           <span className="h-px flex-1 bg-line" />
           <button type="button" onClick={() => setAllSel(true)} className="label-xs text-dim transition-colors hover:text-white">
@@ -4426,13 +4472,15 @@ export function Editor({ project, onBack, onRename = () => {} }) {
 
         <div className="mt-3">
           {exportGroup === 'all'
-            ? EXPORT_GROUPS.map((g) => {
-                const gids = EXPORT_PRESETS.filter((p) => p.platform === g && matchesExport(p))
+            ? [...EXPORT_GROUPS, ...(customPresets.length ? ['Custom'] : [])].map((g) => {
+                const gids = g === 'Custom'
+                  ? mergedPresets.filter((p) => p.custom && matchesExport(p))
+                  : mergedPresets.filter((p) => p.platform === g && matchesExport(p))
                 const gOn = gids.length > 0 && gids.every((p) => selPresets.includes(p.id))
                 return (
                   <div key={g} className="mb-4 last:mb-0">
                     <div className="mb-2 flex items-center gap-2">
-                      <Icon name={PLATFORM_ICONS[g]} size={13} className="text-mute" />
+                      <Icon name={PLATFORM_ICONS[g] || 'grid'} size={13} className="text-mute" />
                       <span className="label-xs text-dim">{g}</span>
                       <span className="h-px flex-1 bg-line" />
                       <button
@@ -4445,14 +4493,16 @@ export function Editor({ project, onBack, onRename = () => {} }) {
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {gids.map((p) => (
-                        <PresetRow key={p.id} p={p} checked={selPresets.includes(p.id)} onToggle={() => toggleSel(p.id)} query={globalSearch} />
+                        <PresetRow key={p.id} p={p} checked={selPresets.includes(p.id)} onToggle={() => toggleSel(p.id)} query={globalSearch} onRemove={p.custom ? removeCustomPreset : undefined} />
                       ))}
                     </div>
                   </div>
                 )
               })
             : (() => {
-                const gids = EXPORT_PRESETS.filter((p) => p.platform === exportGroup && matchesExport(p))
+                const gids = exportGroup === 'Custom'
+                  ? mergedPresets.filter((p) => p.custom && matchesExport(p))
+                  : mergedPresets.filter((p) => p.platform === exportGroup && matchesExport(p))
                 const gOn = gids.length > 0 && gids.every((p) => selPresets.includes(p.id))
                 return (
                   <>
@@ -4470,7 +4520,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {gids.map((p) => (
-                        <PresetRow key={p.id} p={p} checked={selPresets.includes(p.id)} onToggle={() => toggleSel(p.id)} query={globalSearch} />
+                        <PresetRow key={p.id} p={p} checked={selPresets.includes(p.id)} onToggle={() => toggleSel(p.id)} query={globalSearch} onRemove={p.custom ? removeCustomPreset : undefined} />
                       ))}
                     </div>
                   </>
@@ -4577,6 +4627,37 @@ export function Editor({ project, onBack, onRename = () => {} }) {
               {exporting ? 'Rendering…' : `Export ${format.toUpperCase()}`}
             </Button>
           )}
+        </div>
+      </Modal>
+
+      {/* add custom export size */}
+      <Modal open={addPresetOpen} onClose={() => setAddPresetOpen(false)} title="Add Custom Size" subtitle="Your own platform + dimensions — saved on this device" width="max-w-sm">
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="label-xxs text-dim">Platform</span>
+              <input value={presetForm.platform} onChange={(e) => setPresetForm({ ...presetForm, platform: e.target.value })} placeholder="e.g. LinkedIn" className="rounded-ink border border-line bg-surface px-2.5 py-1.5 text-xs text-fg focus:border-white focus:outline-none" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="label-xxs text-dim">Name</span>
+              <input value={presetForm.name} onChange={(e) => setPresetForm({ ...presetForm, name: e.target.value })} placeholder="e.g. Company Post" className="rounded-ink border border-line bg-surface px-2.5 py-1.5 text-xs text-fg focus:border-white focus:outline-none" />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="label-xxs text-dim">Width (px)</span>
+              <input type="number" min={16} max={8192} value={presetForm.w} onChange={(e) => setPresetForm({ ...presetForm, w: e.target.value })} className="rounded-ink border border-line bg-surface px-2.5 py-1.5 text-xs text-fg focus:border-white focus:outline-none" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="label-xxs text-dim">Height (px)</span>
+              <input type="number" min={16} max={8192} value={presetForm.h} onChange={(e) => setPresetForm({ ...presetForm, h: e.target.value })} className="rounded-ink border border-line bg-surface px-2.5 py-1.5 text-xs text-fg focus:border-white focus:outline-none" />
+            </label>
+          </div>
+          <p className="text-[9px] text-mute">It appears in Export, Templates and global search — usable everywhere a size is picked.</p>
+          <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
+            <Button variant="ghost" onClick={() => setAddPresetOpen(false)}>Cancel</Button>
+            <Button variant="primary" icon="plus" onClick={addCustomPreset}>Add Size</Button>
+          </div>
         </div>
       </Modal>
 
@@ -4691,7 +4772,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
 }
 
 /* ------------------------------ export preset ---------------------------- */
-function PresetRow({ p, checked, onToggle, query = '' }) {
+function PresetRow({ p, checked, onToggle, query = '', onRemove }) {
   return (
     <button
       type="button"
@@ -4716,9 +4797,21 @@ function PresetRow({ p, checked, onToggle, query = '' }) {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[11px] font-semibold"><Highlight text={p.name} query={query} /></span>
         <span className="mt-0.5 block text-[9px] text-mute">
-          {p.w}×{p.h} · {p.ratio}
+          {p.w}×{p.h} · {p.ratio}{p.custom ? ' · custom' : ''}
         </span>
       </span>
+      {onRemove && (
+        <span
+          role="button"
+          tabIndex={0}
+          title="Remove custom size"
+          onClick={(e) => { e.stopPropagation(); onRemove(p.id) }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onRemove(p.id) } }}
+          className="shrink-0 rounded-ink p-1 text-mute transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <Icon name="close" size={12} />
+        </span>
+      )}
     </button>
   )
 }
@@ -4746,7 +4839,7 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
 // Everything advanced lives here so the main one-click tabs stay clean.
 // The global search also finds these.
 /* ------------------------------ tab: Actions (gallery) -------------------- */
-function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt = () => {}, onQuickEnhance, onQuickRemoveBg }) {
+function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt = () => {}, onQuickEnhance, onQuickRemoveBg, onQuickUpscale, onQuickDenoise, onQuickRetouch, onQuickSharpen }) {
   const [cat, setCat] = useState('all')
   const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default
   const [type, setType] = useState('auto') // auto-detected photo type filter
@@ -4835,30 +4928,27 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
         )}
       </div>
 
-      {/* Quick pick — the most-used actions, always one tap away */}
-      <div className="mb-2 grid grid-cols-2 gap-1.5">
-        <button
-          type="button"
-          onClick={onQuickEnhance}
-          className="flex items-center gap-2 rounded-ink border border-white/30 bg-white/5 px-2.5 py-2 text-left transition-colors hover:border-white"
-        >
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-ink bg-white text-black"><Icon name="sparkle" size={13} /></span>
-          <span className="min-w-0">
-            <span className="block text-[11px] font-bold text-fg">Auto Enhance</span>
-            <span className="block text-[9px] text-mute">Balance light + color</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={onQuickRemoveBg}
-          className="flex items-center gap-2 rounded-ink border border-white/30 bg-white/5 px-2.5 py-2 text-left transition-colors hover:border-white"
-        >
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-ink bg-white text-black"><Icon name="scissors" size={13} /></span>
-          <span className="min-w-0">
-            <span className="block text-[11px] font-bold text-fg">Remove Background</span>
-            <span className="block text-[9px] text-mute">Hair & edge options</span>
-          </span>
-        </button>
+      {/* Quick pick — the AI Auto family, always one tap away */}
+      <div className="mb-2 grid grid-cols-3 gap-1.5">
+        {[
+          [onQuickEnhance, 'sparkle', 'Auto Enhance', 'Light + color'],
+          [onQuickUpscale, 'expand', 'Auto Upscale', '2× · 4× · 8×'],
+          [onQuickDenoise, 'wind', 'Auto Denoise', 'Clean noise'],
+          [onQuickRetouch, 'droplet', 'Auto Retouch', 'Portrait skin'],
+          [onQuickSharpen, 'focus', 'Auto Sharpen', 'Crisp detail'],
+          [onQuickRemoveBg, 'scissors', 'Remove BG', 'Hair options'],
+        ].map(([fn, icon, title, sub]) => (
+          <button
+            key={title}
+            type="button"
+            onClick={fn}
+            className="flex flex-col items-start gap-1 rounded-ink border border-white/25 bg-white/5 px-2 py-1.5 text-left transition-colors hover:border-white"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-ink bg-white text-black"><Icon name={icon} size={12} /></span>
+            <span className="text-[10px] font-bold leading-tight text-fg">{title}</span>
+            <span className="text-[8px] leading-tight text-mute">{sub}</span>
+          </button>
+        ))}
       </div>
 
       {/* Row 2 — photo-type filter */}
@@ -6636,7 +6726,7 @@ function WarpModalBody({ src, onApply }) {
   )
 }
 
-function CollageBody({ onBuild, showToast, search = '' }) {
+function CollageBody({ onBuild, showToast, search = '', presets }) {
   const q = String(search || '').trim().toLowerCase()
   const [photos, setPhotos] = useState([]) // { url, name }
   const [layout, setLayout] = useState('grid4')
@@ -6647,6 +6737,12 @@ function CollageBody({ onBuild, showToast, search = '' }) {
   const [circlePos, setCirclePos] = useState('br') // br|bl|tr|tl|c — Circle Inset frame position
   const userPickedLayout = useRef(false) // user chose a template → don't auto-override
   const inputRef = useRef(null)
+  // custom layout — draw your own slots (optionally over a reference image)
+  const [customSlots, setCustomSlots] = useState([]) // fractions {x,y,w,h}
+  const [refImage, setRefImage] = useState(null) // dataURL shown faintly to trace
+  const customRef = useRef(null) // draw area element
+  const dragStart = useRef(null) // {x,y} fractions while drawing
+  const refInputRef = useRef(null)
 
   const addFiles = (files) => {
     const add = [...files].slice(0, 12 - photos.length).map((f) => ({ url: URL.createObjectURL(f), name: f.name }))
@@ -6665,11 +6761,40 @@ function CollageBody({ onBuild, showToast, search = '' }) {
     }
   }
 
+  // custom-layout drawing: pointer on the draw area → rect slots (fractions)
+  const drawDown = (e) => {
+    const r = customRef.current.getBoundingClientRect()
+    if (!r.width || !r.height) return
+    dragStart.current = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, drew: false }
+    e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const drawMove = (e) => {
+    if (!dragStart.current) return
+    const r = customRef.current.getBoundingClientRect()
+    if (!r.width || !r.height) return
+    const nx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+    const ny = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+    const x = Math.min(dragStart.current.x, nx)
+    const y = Math.min(dragStart.current.y, ny)
+    const w = Math.abs(nx - dragStart.current.x)
+    const h = Math.abs(ny - dragStart.current.y)
+    if (w < 0.015 && h < 0.015) return
+    if (!dragStart.current.drew) {
+      // first move of this drag → push a fresh slot
+      dragStart.current.drew = true
+      setCustomSlots((prev) => [...prev, { x, y, w, h }])
+    } else {
+      // later moves → update the slot we just drew
+      setCustomSlots((prev) => [...prev.slice(0, -1), { x, y, w, h }])
+    }
+  }
+  const drawUp = () => { dragStart.current = null }
+
   const current = COLLAGE_LAYOUTS.find((l) => l.id === layout)
   // a single photo always works (full-bleed); grids need their min count
-  const fits = photos.length >= 1 && (photos.length === 1 || (photos.length >= (current?.min ?? 99) && photos.length <= (current?.max ?? 0)))
-  const size = EXPORT_PRESETS.find((p) => p.id === collagePreset) || EXPORT_PRESETS[0]
-  const sizePresets = EXPORT_PRESETS.filter((p) => collageGroup === 'all' || p.platform === collageGroup)
+  const fits = photos.length >= 1 && (photos.length === 1 ? true : layout === 'custom' ? customSlots.length >= 1 : photos.length >= (current?.min ?? 99) && photos.length <= (current?.max ?? 0))
+  const size = (presets || EXPORT_PRESETS).find((p) => p.id === collagePreset) || (presets || EXPORT_PRESETS)[0]
+  const sizePresets = (presets || EXPORT_PRESETS).filter((p) => collageGroup === 'all' || p.platform === collageGroup)
 
   const build = () => {
     // one photo → place it full-bleed on the canvas (no grid needed)
@@ -6687,6 +6812,7 @@ function CollageBody({ onBuild, showToast, search = '' }) {
       size: placement === 'new' ? { w: size.w, h: size.h } : null,
       append: placement === 'current' && append,
       circlePos,
+      customSlots: layout === 'custom' ? customSlots : null,
     })
   }
 
@@ -6770,7 +6896,7 @@ function CollageBody({ onBuild, showToast, search = '' }) {
                 collageGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
               )}
             >
-              All · {EXPORT_PRESETS.length}
+              All · {(presets || EXPORT_PRESETS).length}
             </button>
             {EXPORT_GROUPS.map((g) => (
               <button
@@ -6782,7 +6908,7 @@ function CollageBody({ onBuild, showToast, search = '' }) {
                   collageGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
                 )}
               >
-                {g} · {EXPORT_PRESETS.filter((p) => p.platform === g).length}
+                {g} · {(presets || EXPORT_PRESETS).filter((p) => p.platform === g).length}
               </button>
             ))}
           </div>
@@ -6826,6 +6952,11 @@ function CollageBody({ onBuild, showToast, search = '' }) {
       {/* Layouts — collage template list with visual previews */}
       <div className="mt-4 flex items-center gap-2">
         <span className="label-xs text-dim">Collage Templates</span>
+        {(() => {
+          const fits = COLLAGE_LAYOUTS.filter((l) => photos.length >= l.min && photos.length <= l.max)
+          const best = fits[0]
+          return best ? <span className="label-xxs text-mute">Suggested: {best.name} ({photos.length} photos)</span> : null
+        })()}
         <span className="h-px flex-1 bg-line" />
       </div>
       <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
@@ -6875,7 +7006,72 @@ function CollageBody({ onBuild, showToast, search = '' }) {
             </button>
           )
         })}
+        {/* Custom layout tile */}
+        <button
+          type="button"
+          onClick={() => { setLayout('custom'); userPickedLayout.current = true }}
+          className={cn('group rounded-ink border border-dashed p-1.5 transition-colors', layout === 'custom' ? 'border-white bg-surface-2' : 'border-line hover:border-white')}
+          title="Draw your own layout"
+        >
+          <div className="relative flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 rounded-[4px] bg-white/10 text-dim group-hover:text-white">
+            <Icon name="plus" size={18} />
+            <span className="text-[9px] font-bold uppercase tracking-[0.05em]">Custom</span>
+            <span className="text-[7px] text-mute">draw your own</span>
+          </div>
+        </button>
       </div>
+
+      {/* Custom layout editor — draw slots, optionally over a reference image */}
+      {layout === 'custom' && (
+        <div className="mt-3 rounded-ink border border-line bg-surface-2/60 p-2.5">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="label-xs text-dim">Draw your layout — drag boxes on the grid</span>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" icon="upload" onClick={() => refInputRef.current && refInputRef.current.click()}>
+                {refImage ? 'Change ref' : 'Reference image'}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setCustomSlots([])} disabled={!customSlots.length}>Clear</Button>
+            </div>
+          </div>
+          <input
+            ref={refInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files && e.target.files[0]
+              if (f) { const r = new FileReader(); r.onload = () => setRefImage(r.result); r.readAsDataURL(f) }
+              e.target.value = ''
+            }}
+          />
+          <div
+            ref={customRef}
+            onPointerDown={drawDown}
+            onPointerMove={drawMove}
+            onPointerUp={drawUp}
+            onPointerCancel={drawUp}
+            className="relative aspect-[4/3] w-full cursor-crosshair touch-none select-none overflow-hidden rounded-ink border border-line bg-black/40"
+          >
+            {refImage && <img src={refImage} alt="reference" draggable={false} className="absolute inset-0 h-full w-full object-contain opacity-25" />}
+            {customSlots.map((s, i) => (
+              <span key={i} className="absolute rounded-[2px] border-2 border-white/90 bg-white/20" style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, width: `${s.w * 100}%`, height: `${s.h * 100}%` }} />
+            ))}
+            {customSlots.length === 0 && <span className="absolute inset-0 flex items-center justify-center text-[10px] text-mute">Drag to draw photo slots · use a reference image to copy its layout</span>}
+          </div>
+          {customSlots.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              <span className="label-xxs text-mute">{customSlots.length} slot{customSlots.length === 1 ? '' : 's'}</span>
+              {customSlots.map((s, i) => (
+                <button key={i} type="button" onClick={() => setCustomSlots(customSlots.filter((_, ix) => ix !== i))} className="flex items-center gap-1 rounded-ink bg-white/10 px-1.5 py-0.5 text-[9px] text-dim hover:bg-white/20 hover:text-white">
+                  {i + 1} <Icon name="close" size={9} />
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="mt-1.5 text-[8px] text-mute">Tip: upload a collage you like as the reference, then trace its boxes — your photos fill them exactly.</p>
+        </div>
+      )}
+
       {q && COLLAGE_LAYOUTS.filter((l) => l.name.toLowerCase().includes(q)).length === 0 && (
         <p className="py-3 text-center text-xs text-mute">No collage template matches “{search}”</p>
       )}

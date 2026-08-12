@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.24
+> **Version**: v0.17.25
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.24)
+> **Updated**: 2026-08-12 (v0.17.25)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -866,3 +866,21 @@ layers, quick actions, AI suite, collage, versioning all present.
 - **Panel widened** 340 → 360px on desktop for a roomier Actions list
 - 10-step audit passes (Quick Pick opens both modals, dock consolidated +
   functional, panel width, remove-bg options, zero console errors)
+
+### v0.17.25 — AI Auto family, custom export presets, custom collage layouts
+- **AI Auto Quick Pick expanded to 6** (Actions tab, always one tap):
+  Auto Enhance · Auto Upscale (2×/4×/8×) · Auto Denoise · Auto Retouch ·
+  Auto Sharpen · Remove BG — each opens its settings or runs instantly
+- **Custom export platforms & sizes**: Export → **＋ Add size** — your own
+  platform + name + width/height, saved on-device. They appear in Export
+  (new **Custom** group chip + removable rows), the Templates gallery,
+  the collage size picker and global search — usable everywhere a size is
+  picked
+- **Custom collage layout**: a **＋ Custom** tile in the collage templates —
+  **draw your own photo slots** (drag boxes), optionally **upload a
+  reference collage image** to trace its layout, then build. Slots fill
+  exactly like built-in layouts
+- **Collage suggestion hint**: "Suggested: Grid 2 (2 photos)" above the
+  template grid based on your photo count
+- 18-step audit passes (6 AI Auto cards + modals, custom preset add/select/
+  export, custom slots drawn + built, suggestion, zero console errors)
