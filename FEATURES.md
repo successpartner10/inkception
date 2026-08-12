@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.21
+> **Version**: v0.17.22
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.21)
+> **Updated**: 2026-08-12 (v0.17.22)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -819,3 +819,15 @@ layers, quick actions, AI suite, collage, versioning all present.
   Before/After, zoom, AI cards, Text/Layers controls
 - 9-step audit passes (yellow fixed, cuts applied, search still reaches
   both, AI tab intact, zero console errors)
+
+### v0.17.22 — Text tool: edit immediately
+- Clicking the canvas with the **Text** tool now drops straight into
+  editing — the text is selected AND the cursor is active so you can type
+  right away (previously it only placed "Text" as a selected-but-locked
+  object)
+- **Double-clicking any existing text** re-enters edit mode in place to
+  change the wording
+- The font/size/bold/italic/align/color/letter-spacing controls still apply
+  live to the selected text
+- 5-step audit passes (edit on create, typed text captured, double-click
+  re-edit, zero console errors)

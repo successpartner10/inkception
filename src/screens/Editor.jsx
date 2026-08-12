@@ -624,6 +624,10 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         c.add(it)
         c.setActiveObject(it)
         setActiveText(true)
+        // drop straight into editing so the user can type their text
+        it.enterEditing()
+        it.selectAll()
+        c.requestRenderAll()
       }
     })
 
@@ -679,6 +683,16 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     c.on('selection:created', syncTextSelection)
     c.on('selection:updated', syncTextSelection)
     c.on('selection:cleared', () => setActiveText(false))
+
+    // double-click any text object → edit it in place
+    c.on('mouse:dblclick', (o) => {
+      const t = o.target
+      if (t && isTextObject(t)) {
+        t.enterEditing()
+        t.selectAll()
+        c.requestRenderAll()
+      }
+    })
 
     // Circle Inset: keep the white ring frame glued to its circular photo
     // when the user drags/scales/rotates the photo (manual manipulation).
