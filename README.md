@@ -16,7 +16,7 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
 ## Highlights
 
 - **Free & private** — no account, no backend, no data leaves the device
-- **78 one-click Actions** + real on-device AI (subject matting, inpainting,
+- **133 one-click Actions** + real on-device AI (subject matting, inpainting,
   smart crop) — honest about what needs a paid model
 - **Recipes** — save any repeated steps as a named one-click task; the app
   learns your "most used", predicts your next step, and nudges you to save
@@ -49,7 +49,7 @@ release (in the workspace root):
 1. Copy `inkception-offline.zip` to your laptop and extract it into a folder
    (keep `inkception.html` and `mediapipe/` side by side).
 2. Double-click `inkception.html` — the editor opens in your browser.
-   Everything works offline: 78 Actions, recipes, collage, filters, all
+   Everything works offline: 133 Actions, recipes, collage, filters, all
    exports (PNG/JPG/WebP/GIF/PDF/PSD/SVG), themes.
 3. **Only** the AI-segmentation features (Remove Background, Replace
    Background, Magic Eraser, Smart Crop, Decompose, Motion Blur BG) need a

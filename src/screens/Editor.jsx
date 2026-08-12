@@ -96,6 +96,8 @@ const RECIPE_SAFE_KEYS = new Set([
   'enhance', 'crop-square', 'crop-portrait', 'remove-bg', 'sharpen', 'text-color',
   'bw', 'warm', 'cool', 'brighten', 'darken', 'contrast', 'saturate', 'desaturate',
 ])
+// any catalog action backed by a local engine (fx/alias) is recipe-safe
+ACTIONS.filter((a) => a.fe === 'local' && (a.fx || a.alias)).forEach((a) => RECIPE_SAFE_KEYS.add(a.id))
 
 export const TOOLS = [
   { id: 'select', label: 'Select', key: 'V' },
@@ -328,6 +330,10 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   }, [enhanceAmt, enhanceRedux])
   // effects gallery — every Action previewed on YOUR image
   const [galleryOpen, setGalleryOpen] = useState(false)
+  // global effect strength for one-click actions (Actions-tab Amount slider)
+  const [effectAmt, setEffectAmt] = useState(60)
+  const effectAmtRef = useRef(60)
+  useEffect(() => { effectAmtRef.current = effectAmt }, [effectAmt])
   // rename project inline in the header
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(project.name)
@@ -2003,13 +2009,19 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     }
     const a = ACTIONS.find((x) => x.id === id)
     const label = a ? a.name : id
-    if (map[id]) {
-      const before = snapshot()
-      commandStackRef.current.push({ phrase: label, before })
-      setCommandCount(commandStackRef.current.length)
-      recordRecent(id, label)
-      map[id]()
-    } else showToast('This action needs more work — hidden for now', 'info')
+    const amt = effectAmtRef.current / 100 // 0..1 strength from the Actions-tab slider
+    const runIt = () => {
+      if (map[id]) return map[id]()
+      // catalog fallback: `fx` runs a pixel engine, `alias` runs another action
+      if (a && a.fx) return runPxAction(a.fx, amt)
+      if (a && a.alias) return runAction(a.alias)
+      showToast('This action needs more work — hidden for now', 'info')
+    }
+    const before = snapshot()
+    commandStackRef.current.push({ phrase: label, before })
+    setCommandCount(commandStackRef.current.length)
+    recordRecent(id, label)
+    runIt()
   }
 
   // Effects gallery: apply the chosen look to the full image + OK/Undo bar.
@@ -2098,7 +2110,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   }
 
   /* Run a generic pxengine action by name. */
-  const runPxAction = async (name) => {
+  const runPxAction = async (name, amt) => {
     const src = imageSrcRef.current
     if (!src || busyRef.current) return
     setBusy({ kind: 'real', title: name, step: `Applying ${name.toLowerCase()}…`, progress: 40 })
@@ -2121,8 +2133,11 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         'Denim Pop': PX.denimPop, 'Silk Sheen': PX.silkSheen, 'Smooth Fabric': PX.clothSmooth,
         'Scratch Remover': PX.scratchRemove, 'Spot Clean': PX.spotCleaner, 'Room Brighten': PX.roomBrighten,
         'Luxury Interior': PX.interiorLux, 'Window Light': PX.windowLight, 'Floor Clean': PX.floorClean,
+        'Shoe Gloss': PX.shoeGloss, 'Sole Brighten': PX.soleBrighten, 'Fluff Soften': PX.fluffSoften,
+        'De-Reflect': PX.deReflect, 'Plan Sharp': PX.planSharp, 'Gold Bar': PX.goldBar,
+        'Crystal Bright': PX.crystalBright, 'Liquid Rich': PX.liquidRich,
       }
-      if (fns[name]) out = fns[name](L.data.data, L.w, L.h)
+      if (fns[name]) out = fns[name](L.data.data, L.w, L.h, amt || undefined)
       if (!out) return
       L.ctx.putImageData(new ImageData(out, L.w, L.h), 0, 0)
       await loadIntoCanvas(L.toDataUrl())
@@ -2479,8 +2494,8 @@ export function Editor({ project, onBack, onRename = () => {} }) {
       for (let i = 0; i < r.steps.length; i++) {
         const s = r.steps[i]
         const fn = RECIPE_RUNNERS[s.key]
-        if (!fn) { showToast(`Skipped "${s.label}" — needs your input`, 'info'); continue }
-        try { await fn() } catch { showToast(`Step "${s.label}" failed — continuing`, 'close') }
+        if (!fn && !execActionKey(s.key, 0.6)) { showToast(`Skipped "${s.label}" — needs your input`, 'info'); continue }
+        try { if (fn) await fn() } catch { showToast(`Step "${s.label}" failed — continuing`, 'close') }
       }
     } finally {
       recipeGuardRef.current = false
@@ -2494,12 +2509,20 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   }
 
   // Run a single step from the Most-used row / recent chips (1-click).
+  // Generic runner for any action id — catalog `fx`/`alias` fallback.
+  const execActionKey = (id, amt = 0.6) => {
+    const a = ACTIONS.find((x) => x.id === id)
+    if (a && a.fx) { runPxAction(a.fx, amt); return true }
+    if (a && a.alias) { runAction(a.alias); return true }
+    return false
+  }
+
   const runStepKey = (key) => {
     const lib = recipeLibrary.find((x) => x.key === key)
     recordRecent(key, lib ? lib.label : key)
     const fn = RECIPE_RUNNERS[key]
     if (fn) fn()
-    else showToast('This step needs your input', 'info')
+    else if (!execActionKey(key)) showToast('This step needs your input', 'info')
   }
 
   /* ---- builder (create / edit a recipe) ---- */
@@ -3497,6 +3520,8 @@ export function Editor({ project, onBack, onRename = () => {} }) {
           imageSrc={imageSrc}
           onRun={(id) => runAction(id)}
           onGallery={() => openModal(setGalleryOpen)}
+          amt={effectAmt}
+          setAmt={setEffectAmt}
         />
       )
     }
@@ -4706,7 +4731,7 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
 // Everything advanced lives here so the main one-click tabs stay clean.
 // The global search also finds these.
 /* ------------------------------ tab: Actions (gallery) -------------------- */
-function ActionsTab({ search = '', imageSrc, onRun, onGallery }) {
+function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt = () => {} }) {
   const [cat, setCat] = useState('all')
   const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default
   const [type, setType] = useState('auto') // auto-detected photo type filter
@@ -4780,6 +4805,11 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery }) {
         <span className="ml-auto text-[8px] text-mute">
           {detected && !detected.loading ? (detected.manual ? `${detected.label} (manual)` : `Detected: ${detected.label}`) : ''}
         </span>
+      </div>
+
+      {/* effect strength — how strong one-click actions apply */}
+      <div className="mb-2 rounded-ink border border-line px-2 py-1">
+        <Slider label="Effect strength" value={amt} min={0} max={100} defaultValue={60} format={(v) => `${Math.round(v)}%`} onChange={setAmt} />
       </div>
 
       {/* category chips */}

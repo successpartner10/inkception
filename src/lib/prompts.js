@@ -251,6 +251,41 @@ export function matchPrompt(raw) {
   if ((has('interior') || has('room')) && has('luxury')) return { action: 'runaction', payload: { key: 'interiorlux' } }
   if (has('window') && (has('light') || has('bright'))) return { action: 'runaction', payload: { key: 'windowlight' } }
   if (has('floor') && (has('clean') || has('cleaner'))) return { action: 'runaction', payload: { key: 'floorclean' } }
+  // ---- fashion / luxury / fragrance (v0.17.9) ----
+  if (has('shoe') && (has('gloss') || has('shiny'))) return { action: 'runaction', payload: { key: 'shoegloss' } }
+  if (has('shoe') && (has('lux') || has('luxurious') || has('expensive'))) return { action: 'runaction', payload: { key: 'shoeluxe' } }
+  if (has('shoe') && (has('matte') || has('not shiny'))) return { action: 'runaction', payload: { key: 'shoematte' } }
+  if (has('shoe') && (has('clean') || has('dirty'))) return { action: 'runaction', payload: { key: 'shoeclean' } }
+  if (has('shoe') && (has('scratch') || has('scuff'))) return { action: 'runaction', payload: { key: 'shoescuff' } }
+  if (has('sole') && (has('clean') || has('bright'))) return { action: 'runaction', payload: { key: 'solebright' } }
+  if (has('leather') && (has('rich') || has('better'))) return { action: 'runaction', payload: { key: 'leatherrich' } }
+  if (has('slipper') || (has('fluffy') || has('fluff'))) return { action: 'runaction', payload: { key: 'fluffsoft' } }
+  if ((has('outfit') || has('shirt') || has('cloth')) && (has('wrinkle') || has('crease') || has('iron') || has('steam'))) return { action: 'runaction', payload: { key: 'ironoutfit' } }
+  if ((has('lint') || has('dust')) && has('cloth')) return { action: 'runaction', payload: { key: 'lintoff' } }
+  if (has('stain') && (has('remove') || has('clean'))) return { action: 'runaction', payload: { key: 'stainoff' } }
+  if ((has('fabric') || has('silk')) && has('silkier')) return { action: 'runaction', payload: { key: 'silkier' } }
+  if (has('denim')) return { action: 'runaction', payload: { key: 'denimpro' } }
+  if ((has('handbag') || has('bag')) && has('scratch')) return { action: 'runaction', payload: { key: 'bagscuff' } }
+  if ((has('handbag') || has('bag')) && has('leather')) return { action: 'runaction', payload: { key: 'bagleather' } }
+  if ((has('hardware') || has('zipper') || has('buckle')) && (has('shine') || has('shiny'))) return { action: 'runaction', payload: { key: 'hardwareshine' } }
+  if ((has('handbag') || has('bag')) && (has('dust') || has('dirty'))) return { action: 'runaction', payload: { key: 'bagdust' } }
+  if ((has('handbag') || has('bag')) && has('brand new')) return { action: 'runaction', payload: { key: 'bagbrandnew' } }
+  if (has('diamond') && (has('bright') || has('brighter'))) return { action: 'runaction', payload: { key: 'diamondbright' } }
+  if ((has('jewelry') || has('ring') || has('necklace')) && has('shine')) return { action: 'runaction', payload: { key: 'jewelshine' } }
+  if ((has('jewelry') || has('ring')) && has('scratch')) return { action: 'runaction', payload: { key: 'jewelscuff' } }
+  if ((has('fingerprint') || has('smudge')) && has('remove')) return { action: 'runaction', payload: { key: 'fingerprintoff' } }
+  if (has('reflection') && (has('remove') || has('reduce'))) return { action: 'runaction', payload: { key: 'dereflect' } }
+  if (has('gold') && has('bar')) return { action: 'runaction', payload: { key: 'goldbarreal' } }
+  if ((has('watch') || has('bracelet')) && has('shine')) return { action: 'runaction', payload: { key: 'watchshine' } }
+  if (has('watch') && (has('face') || has('dial')) && (has('clear') || has('sharp'))) return { action: 'runaction', payload: { key: 'watchface' } }
+  if (has('perfume') && (has('lux') || has('luxurious'))) return { action: 'runaction', payload: { key: 'fraglux' } }
+  if ((has('bottle') || has('glass')) && (has('fingerprint') || has('dirty'))) return { action: 'runaction', payload: { key: 'bottleclean' } }
+  if (has('liquid') && (has('rich') || has('deeper') || has('color'))) return { action: 'runaction', payload: { key: 'liquidrich' } }
+  if ((has('packaging') || has('package')) && (has('sharp') || has('clear'))) return { action: 'runaction', payload: { key: 'packsharp' } }
+  if ((has('label') || has('text')) && (has('clear') || has('readable'))) return { action: 'runaction', payload: { key: 'labelclear' } }
+  if ((has('floor plan') || has('blueprint') && has('sharp')) || (has('plan') && has('sharp'))) return { action: 'runaction', payload: { key: 'plansharp' } }
+  if ((has('document') || has('scan') || has('receipt')) && (has('clean') || has('sharp') || has('readable'))) return { action: 'runaction', payload: { key: 'docscan' } }
+  if ((has('catalog') || has('ecommerce') || has('ad')) && has('look')) return { action: 'runaction', payload: { key: 'catalog' } }
 
   // ---- adjust ----
   if (has('warm')) return { action: 'filters', payload: { temperature: 45 } }

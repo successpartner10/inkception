@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.8
+> **Version**: v0.17.9
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.8)
+> **Updated**: 2026-08-11 (v0.17.9)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -598,3 +598,24 @@ layers, quick actions, AI suite, collage, versioning all present.
 - 18-step audit passes (78 free actions render, type chips, portrait-only
   actions hidden for products, prompt phrases, gallery previews, collage,
   single-file export, zero console errors)
+
+### v0.17.9 — 55 more Actions (141 total) + effect-strength slider
+- **55 new one-click Actions** (133 free / 141 total) mapped from the
+  commercial library — **Fashion** (Shoe Gloss, Shoe Luxe, Shoe Matte, Shoe
+  Cleaner, Sole Brighten, Fluff Soften, Iron Outfit, Steam Press, Lint &
+  Dust Off, Stain Remover, Silkier, Fabric Matte, Denim Pro, Premium
+  Leather, Editorial Fashion, Bag Scratch Repair, Hardware Shine, Brand New
+  Bag…), **Luxury** (Diamond Bright, Gold Luxe, Jewelry Shine, Fingerprint
+  Off, Platinum Shine, De-Reflect, Watch Shine, Bracelet Polish, Fragrance
+  Luxe, Bottle Clean, Liquid Rich, Packaging Sharp, Label Clarity, Beauty Ad,
+  Gold Bar Real…), and **Interior/Document** (Natural Sunlight, Plan Sharp,
+  Document Scan Clean). All free/local; catalog entries map to a pixel
+  engine (`fx`) or an existing action (`alias`) so they run anywhere —
+  grid, Recipes, Effects Gallery, prompts
+- **Effect-strength slider** (Actions tab, "Effect strength" 0–100, default
+  60): one-click actions now apply at your chosen strength and remember it
+- ~30 new command phrases: "make the gold bar shine", "clean the soles",
+  "iron my shirt", "remove fingerprints", "sharpen the floor plan"…
+- 19-step audit passes (133 render, slider 0–100, fx + alias runners, new
+  prompts, gallery previews, recipes, collage, single-file export, zero
+  console errors)

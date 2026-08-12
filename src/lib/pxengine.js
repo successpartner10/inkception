@@ -1507,3 +1507,99 @@ export function spotCleaner(d, w, h) {
   }
   return out
 }
+
+/* ------------------- more commercial engines (v0.17.9) --------------------- */
+
+/** Shoe gloss — strong speculars + slight saturation. */
+export function shoeGloss(d, w, h) {
+  const b = highlightBoost(d, w, h, 0.55)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = b[j], g = b[j + 1], bl = b[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * bl
+    out[j] = Math.min(255, l + (r - l) * 1.08)
+    out[j + 1] = Math.min(255, l + (g - l) * 1.08)
+    out[j + 2] = Math.min(255, l + (bl - l) * 1.08)
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Sole brighten — lifts the lower band + despeckle (shoes, soles). */
+export function soleBrighten(d, w, h) {
+  const m = medianFilter(d, w, h, 1)
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    const k = 1 + Math.max(0, (y / h - 0.55)) * 0.22
+    for (let x = 0; x < w; x++) {
+      const j = (y * w + x) * 4
+      out[j] = Math.min(255, m[j] * k)
+      out[j + 1] = Math.min(255, m[j + 1] * k)
+      out[j + 2] = Math.min(255, m[j + 2] * k)
+      out[j + 3] = 255
+    }
+  }
+  return out
+}
+
+/** Fluff soften — smooth + soft focus (slippers, knitwear, towels). */
+export function fluffSoften(d, w, h) {
+  const m = medianFilter(d, w, h, 1)
+  const blur = CONV_FILTERS.blur3(m, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = m[j] * 0.62 + blur[j] * 0.38
+    out[j + 1] = m[j + 1] * 0.62 + blur[j + 1] * 0.38
+    out[j + 2] = m[j + 2] * 0.62 + blur[j + 2] * 0.38
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** De-reflect — removes distracting reflections (matte + highlight cap). */
+export function deReflect(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const cap = Math.min(l, 205)
+    const m = cap * 0.84 + 34
+    out[j] = m + (r - l) * 0.5
+    out[j + 1] = m + (g - l) * 0.5
+    out[j + 2] = m + (b - l) * 0.5
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Plan sharp — crisp line work for floor plans, documents, drawings. */
+export function planSharp(d, w, h) {
+  const s = CONV_FILTERS.sharpenMore(d, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = Math.min(255, Math.max(0, (s[j] - 128) * 1.16 + 128))
+    out[j + 1] = Math.min(255, Math.max(0, (s[j + 1] - 128) * 1.16 + 128))
+    out[j + 2] = Math.min(255, Math.max(0, (s[j + 2] - 128) * 1.16 + 128))
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Gold bar — rich warm metal with crisp speculars. */
+export function goldBar(d, w, h) {
+  return highlightBoost(goldRich(d, w, h), w, h, 0.4)
+}
+
+/** Crystal bright — extra sparkle + highlights. */
+export function crystalBright(d, w, h) {
+  return highlightBoost(sparkle(d, w, h, 0.6), w, h, 0.55)
+}
+
+/** Liquid rich — deepens colored liquid tones (perfume, drinks). */
+export function liquidRich(d, w, h) {
+  return gemVibrance(d, w, h)
+}

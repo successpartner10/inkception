@@ -112,6 +112,74 @@ export const ACTIONS = [
   { id: 'interiorlux', name: 'Luxury Interior', cat: 'Interior', applies: ['landscape'], desc: 'Warm grade + deep vignette', when: 'High-end interiors, hotels', fe: 'local', icon: 'sparkle' },
   { id: 'windowlight', name: 'Window Light', cat: 'Interior', applies: ['landscape'], desc: 'Brightens the upper frame warmly', when: 'Windows, rooms, architecture', fe: 'local', icon: 'sun' },
   { id: 'floorclean', name: 'Floor Clean', cat: 'Interior', applies: ['landscape'], desc: 'Despeckle + brighten surfaces', when: 'Floors, tiles, surfaces', fe: 'local', icon: 'refresh' },
+  /* ---- Fashion — Shoes & Footwear ---- */
+  { id: 'shoeluxe', name: 'Shoe Luxe', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Premium contrast, texture & lighting for footwear', when: 'Luxury shoe shots', fe: 'local', icon: 'sparkle', fx: 'Luxury Grade', def: 0.6 },
+  { id: 'shoegloss', name: 'Shoe Gloss', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Controlled glossy shine', when: 'Leather shoes, boots', fe: 'local', icon: 'sun', fx: 'Shoe Gloss', def: 0.6 },
+  { id: 'shoematte', name: 'Shoe Matte', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Reduce reflections, flat finish', when: 'Matte sneakers, suede', fe: 'local', icon: 'moon', fx: 'Matte Finish', def: 0.6 },
+  { id: 'shoeclean', name: 'Shoe Cleaner', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Remove dirt, dust and stains', when: 'Worn footwear', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+  { id: 'shoescuff', name: 'Shoe Scuff Repair', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Erase fine scratches and scuffs', when: 'Scuffed shoes', fe: 'local', icon: 'refresh', fx: 'Scratch Remover', def: 0.6 },
+  { id: 'leatherrich', name: 'Leather Rich', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Enhance leather grain and finish', when: 'Leather goods, jackets', fe: 'local', icon: 'layers', fx: 'Fabric Rich', def: 0.6 },
+  { id: 'solebright', name: 'Sole Brighten', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Brighten and clean the sole band', when: 'Shoes, sneakers', fe: 'local', icon: 'sun', fx: 'Sole Brighten', def: 0.6 },
+  { id: 'fluffsoft', name: 'Fluff Soften', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Soft-focus softness for fluffy textures', when: 'Slippers, knitwear, towels', fe: 'local', icon: 'wind', fx: 'Fluff Soften', def: 0.6 },
+  { id: 'shoead', name: 'Shoe Ad Look', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Luxury footwear advertising finish', when: 'Campaign shots', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+  { id: 'shoecutout', name: 'Shoe Cutout', cat: 'Fashion', applies: ['product', 'portrait'], desc: 'Clean product isolation', when: 'Catalog, e-commerce', fe: 'local', alias: 'remove-bg' },
+
+  /* ---- Fashion — Clothing ---- */
+  { id: 'ironoutfit', name: 'Iron Outfit', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Steam/smooth garment wrinkles', when: 'Wrinkled clothes', fe: 'local', icon: 'wind', fx: 'Smooth Fabric', def: 0.6 },
+  { id: 'steampress', name: 'Steam Press', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Polished, crease-free finish', when: 'Formal wear', fe: 'local', icon: 'wind', fx: 'Smooth Fabric', def: 0.7 },
+  { id: 'lintoff', name: 'Lint & Dust Off', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Remove lint, dust and fibers', when: 'Fabrics, dark clothing', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+  { id: 'stainoff', name: 'Stain Remover', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Clean garment stains and spots', when: 'Spots, marks', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.65 },
+  { id: 'fashionlux', name: 'Luxury Fashion', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'High-end fashion retouching', when: 'Premium outfits', fe: 'local', icon: 'sparkle', fx: 'Luxury Grade', def: 0.6 },
+  { id: 'silkier', name: 'Silkier', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Silk/satin highlight enhancement', when: 'Silk, satin, premium fabric', fe: 'local', icon: 'wind', fx: 'Silk Sheen', def: 0.6 },
+  { id: 'fabricmatte', name: 'Fabric Matte', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Reduce unwanted fabric reflections', when: 'Shiny synthetics', fe: 'local', icon: 'moon', fx: 'Matte Finish', def: 0.6 },
+  { id: 'denimpro', name: 'Denim Pro', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Enhanced denim texture and contrast', when: 'Jeans, denim jackets', fe: 'local', icon: 'layers', fx: 'Denim Pop', def: 0.6 },
+  { id: 'premiumleather', name: 'Premium Leather', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Leather grain + highlights', when: 'Jackets, bags, boots', fe: 'local', icon: 'layers', fx: 'Fabric Rich', def: 0.6 },
+  { id: 'editorialfit', name: 'Editorial Fashion', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'High-fashion magazine finish', when: 'Editorial shoots', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+  { id: 'outfitbg', name: 'Outfit Background', cat: 'Fashion', applies: ['portrait', 'product'], desc: 'Clean studio backdrop', when: 'E-commerce outfits', fe: 'local', alias: 'replace-bg' },
+
+  /* ---- Fashion — Handbags & Accessories ---- */
+  { id: 'bagscuff', name: 'Bag Scratch Repair', cat: 'Fashion', applies: ['product'], desc: 'Repair surface damage', when: 'Scratched handbags', fe: 'local', icon: 'refresh', fx: 'Scratch Remover', def: 0.6 },
+  { id: 'bagleather', name: 'Bag Leather', cat: 'Fashion', applies: ['product'], desc: 'Enhance handbag leather', when: 'Leather bags', fe: 'local', icon: 'layers', fx: 'Fabric Rich', def: 0.6 },
+  { id: 'hardwareshine', name: 'Hardware Shine', cat: 'Fashion', applies: ['product'], desc: 'Enhance metal hardware', when: 'Zips, buckles, clasps', fe: 'local', icon: 'focus', fx: 'Metal Shine', def: 0.6 },
+  { id: 'bagdust', name: 'Bag Dust Off', cat: 'Fashion', applies: ['product'], desc: 'Clean dust and grime', when: 'Used handbags', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+  { id: 'bagbrandnew', name: 'Brand New Bag', cat: 'Fashion', applies: ['product'], desc: 'Full luxury product cleanup', when: 'Pre-owned bags', fe: 'local', icon: 'refresh', fx: 'Brand New', def: 0.6 },
+  { id: 'bagcutout', name: 'Bag Cutout', cat: 'Fashion', applies: ['product'], desc: 'Clean product isolation', when: 'Listings', fe: 'local', alias: 'remove-bg' },
+
+  /* ---- Luxury — Jewelry & Diamonds ---- */
+  { id: 'diamondbright', name: 'Diamond Bright', cat: 'Luxury', applies: ['product'], desc: 'Increase controlled highlights', when: 'Diamond close-ups', fe: 'local', icon: 'sun', fx: 'Crystal Bright', def: 0.6 },
+  { id: 'goldluxe', name: 'Gold Luxe', cat: 'Luxury', applies: ['product'], desc: 'Premium gold treatment', when: 'High-end gold', fe: 'local', icon: 'sparkle', fx: 'Luxury Grade', def: 0.6 },
+  { id: 'jewelshine', name: 'Jewelry Shine', cat: 'Luxury', applies: ['product'], desc: 'Enhance jewelry highlights', when: 'Rings, necklaces', fe: 'local', icon: 'focus', fx: 'Metal Shine', def: 0.6 },
+  { id: 'jewelscuff', name: 'Jewelry Scratch Repair', cat: 'Luxury', applies: ['product'], desc: 'Jewelry surface restoration', when: 'Worn pieces', fe: 'local', icon: 'refresh', fx: 'Scratch Remover', def: 0.6 },
+  { id: 'fingerprintoff', name: 'Fingerprint Off', cat: 'Luxury', applies: ['product'], desc: 'Clean reflective surfaces', when: 'Jewelry, screens, glass', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+  { id: 'platinumshine', name: 'Platinum Shine', cat: 'Luxury', applies: ['product'], desc: 'Enhance platinum reflections', when: 'Platinum pieces', fe: 'local', icon: 'moon', fx: 'Metal Shine', def: 0.6 },
+  { id: 'dereflect', name: 'De-Reflect', cat: 'Luxury', applies: ['product'], desc: 'Reduce distracting reflections', when: 'Glassy jewelry, cases', fe: 'local', icon: 'moon', fx: 'De-Reflect', def: 0.6 },
+  { id: 'jewelad', name: 'Jewelry Ad Look', cat: 'Luxury', applies: ['product'], desc: 'High-end jewelry retouch', when: 'Campaign shots', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+  { id: 'goldbarreal', name: 'Gold Bar Real', cat: 'Luxury', applies: ['product'], desc: 'Metallic texture + reflections', when: 'Gold bars, ingots', fe: 'local', icon: 'sun', fx: 'Gold Bar', def: 0.6 },
+  { id: 'goldbarshine', name: 'Gold Bar Shine', cat: 'Luxury', applies: ['product'], desc: 'Premium gold reflection boost', when: 'Bullion shots', fe: 'local', icon: 'sun', fx: 'Rich Gold', def: 0.6 },
+  { id: 'goldbarclean', name: 'Gold Bar Clean', cat: 'Luxury', applies: ['product'], desc: 'Remove scratches, dust, marks', when: 'Refined bars', fe: 'local', icon: 'refresh', fx: 'Brand New', def: 0.6 },
+  { id: 'jewelcutout', name: 'Jewelry Cutout', cat: 'Luxury', applies: ['product'], desc: 'Precision jewelry isolation', when: 'E-commerce', fe: 'local', alias: 'remove-bg' },
+
+  /* ---- Luxury — Watches & Small Goods ---- */
+  { id: 'watchshine', name: 'Watch Shine', cat: 'Luxury', applies: ['product'], desc: 'Enhance watch reflections', when: 'Steel, gold watches', fe: 'local', icon: 'focus', fx: 'Metal Shine', def: 0.6 },
+  { id: 'watchface', name: 'Watch Face Sharp', cat: 'Luxury', applies: ['product'], desc: 'Improve dial clarity', when: 'Dial close-ups', fe: 'local', icon: 'focus', fx: 'Product Sharpen', def: 0.6 },
+  { id: 'braceletpolish', name: 'Bracelet Polish', cat: 'Luxury', applies: ['product'], desc: 'Enhance metal finish', when: 'Watch bracelets, chains', fe: 'local', icon: 'layers', fx: 'Metal Shine', def: 0.6 },
+  { id: 'watchcuff', name: 'Watch Scratch Repair', cat: 'Luxury', applies: ['product'], desc: 'Restore watch surface', when: 'Worn watches', fe: 'local', icon: 'refresh', fx: 'Scratch Remover', def: 0.6 },
+  { id: 'productrestore', name: 'Product Restore', cat: 'Luxury', applies: ['product'], desc: 'Full product restoration', when: 'Any small product', fe: 'local', icon: 'refresh', fx: 'Brand New', def: 0.6 },
+
+  /* ---- Fragrance & Beauty ---- */
+  { id: 'fraglux', name: 'Fragrance Luxe', cat: 'Luxury', applies: ['product'], desc: 'Luxury fragrance retouch', when: 'Perfume bottles', fe: 'local', icon: 'sparkle', fx: 'Luxury Grade', def: 0.6 },
+  { id: 'bottleclean', name: 'Bottle Clean', cat: 'Luxury', applies: ['product'], desc: 'Clean glass surface', when: 'Bottles, jars', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+  { id: 'bottlescuff', name: 'Bottle Scratch Repair', cat: 'Luxury', applies: ['product'], desc: 'Repair bottle surface', when: 'Scratched glass', fe: 'local', icon: 'refresh', fx: 'Scratch Remover', def: 0.6 },
+  { id: 'liquidrich', name: 'Liquid Rich', cat: 'Luxury', applies: ['product'], desc: 'Enhance liquid color depth', when: 'Perfume, drinks, oil', fe: 'local', icon: 'droplet', fx: 'Liquid Rich', def: 0.6 },
+  { id: 'packsharp', name: 'Packaging Sharp', cat: 'Luxury', applies: ['product'], desc: 'Enhance packaging details', when: 'Boxes, cartons', fe: 'local', icon: 'focus', fx: 'Product Sharpen', def: 0.6 },
+  { id: 'labelclear', name: 'Label Clarity', cat: 'Luxury', applies: ['product'], desc: 'Crisp label readability', when: 'Bottle labels', fe: 'local', icon: 'text', fx: 'Product Sharpen', def: 0.65 },
+  { id: 'beautyad', name: 'Beauty Ad Look', cat: 'Luxury', applies: ['product', 'portrait'], desc: 'Premium cosmetics advertising', when: 'Cosmetic campaigns', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+  { id: 'fragcutout', name: 'Fragrance Cutout', cat: 'Luxury', applies: ['product'], desc: 'Product isolation', when: 'Perfume listings', fe: 'local', alias: 'remove-bg' },
+
+  /* ---- Interior & Documents ---- */
+  { id: 'sunlight', name: 'Natural Sunlight', cat: 'Interior', applies: ['landscape'], desc: 'Warm directional daylight', when: 'Rooms with windows', fe: 'local', icon: 'sun', fx: 'Window Light', def: 0.6 },
+  { id: 'plansharp', name: 'Plan Sharp', cat: 'Interior', applies: ['document'], desc: 'Crisp lines for plans and drawings', when: 'Floor plans, blueprints', fe: 'local', icon: 'penTool', fx: 'Plan Sharp', def: 0.6 },
+  { id: 'docscan', name: 'Document Scan Clean', cat: 'Interior', applies: ['document'], desc: 'Clean, sharp, readable scan', when: 'Receipts, docs, pages', fe: 'local', icon: 'image', fx: 'Plan Sharp', def: 0.6 },
 ]
 
-export const ACTION_CATS = ['Artistic', 'Portrait', 'Color', 'Vintage', 'Texture', 'Restore', 'Creative', 'Digital', 'Motion', 'Commercial', 'Interior']
+export const ACTION_CATS = ['Artistic', 'Portrait', 'Color', 'Vintage', 'Texture', 'Restore', 'Creative', 'Digital', 'Motion', 'Commercial', 'Fashion', 'Luxury', 'Interior']
