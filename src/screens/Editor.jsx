@@ -2136,6 +2136,8 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         'Shoe Gloss': PX.shoeGloss, 'Sole Brighten': PX.soleBrighten, 'Fluff Soften': PX.fluffSoften,
         'De-Reflect': PX.deReflect, 'Plan Sharp': PX.planSharp, 'Gold Bar': PX.goldBar,
         'Crystal Bright': PX.crystalBright, 'Liquid Rich': PX.liquidRich,
+        'Car Shine': PX.carShine, 'Food Appetize': PX.foodAppetize, 'Sky Pop': PX.skyPop,
+        'Screen Clean': PX.screenClean, 'Poster Clean': PX.posterClean, 'Add Sparkle': PX.sparkle,
       }
       if (fns[name]) out = fns[name](L.data.data, L.w, L.h, amt || undefined)
       if (!out) return

@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.9
+> **Version**: v0.17.10
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-11 (v0.17.9)
+> **Updated**: 2026-08-11 (v0.17.10)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -619,3 +619,17 @@ layers, quick actions, AI suite, collage, versioning all present.
 - 19-step audit passes (133 render, slider 0–100, fx + alias runners, new
   prompts, gallery previews, recipes, collage, single-file export, zero
   console errors)
+
+### v0.17.10 — 31 more Actions (172 total, 164 free) — eyewear, electronics, food, auto, real estate, art
+- **Eyewear** — Glasses Clean, Lens Shine, Frame Polish
+- **Electronics** — Screen Clean, Device Shine, Device Brand New, Tech Sharp, Tech Ad Look
+- **Food & Beverage** — Food Appetize, Food Vibrant, Plate Clean, Drink Rich, Beverage Ad, Condensation Pop
+- **Home** (candles/soap/bath) — Candle Clean, Soap Pro, Bath Luxe, Home Ad Look
+- **Auto** — Car Paint Shine, Interior Luxe, Detail Sharp, Showroom New, Car Ad Look
+- **Real Estate** — Sky Pop, Exterior Bright, Listing Luxe, Listing Sharp
+- **Artwork** — Poster Clean, Art Vibrant, Canvas Bright, Frame Shine
+- New local engines: Car Shine, Food Appetize, Sky Pop, Screen Clean, Poster Clean
+- ~18 new command phrases ("make the sky richer", "clean my glasses",
+  "make the car paint shine", "appetizing food"…)
+- 14-step audit passes (164 render, new engines run, prompts, gallery
+  previews, zero console errors)

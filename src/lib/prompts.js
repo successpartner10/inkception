@@ -286,6 +286,25 @@ export function matchPrompt(raw) {
   if ((has('floor plan') || has('blueprint') && has('sharp')) || (has('plan') && has('sharp'))) return { action: 'runaction', payload: { key: 'plansharp' } }
   if ((has('document') || has('scan') || has('receipt')) && (has('clean') || has('sharp') || has('readable'))) return { action: 'runaction', payload: { key: 'docscan' } }
   if ((has('catalog') || has('ecommerce') || has('ad')) && has('look')) return { action: 'runaction', payload: { key: 'catalog' } }
+  // ---- eyewear / electronics / food / home / auto / real estate / art (v0.17.10) ----
+  if ((has('glasses') || has('sunglasses') || has('lens')) && (has('clean') || has('smudge'))) return { action: 'runaction', payload: { key: 'glassclean' } }
+  if ((has('glasses') || has('sunglasses')) && (has('shine') || has('gloss'))) return { action: 'runaction', payload: { key: 'lensshine' } }
+  if ((has('frame') && has('polish')) || (has('glasses') && has('frame'))) return { action: 'runaction', payload: { key: 'framepolish' } }
+  if ((has('screen') || has('phone') || has('laptop')) && (has('clean') || has('fingerprint'))) return { action: 'runaction', payload: { key: 'screenclean' } }
+  if ((has('phone') || has('laptop') || has('device') || has('gadget')) && (has('shine') || has('gloss'))) return { action: 'runaction', payload: { key: 'deviceshine' } }
+  if ((has('phone') || has('laptop') || has('device')) && has('brand new')) return { action: 'runaction', payload: { key: 'devicebrandnew' } }
+  if ((has('food') || has('dish') || has('plate')) && (has('appetizing') || has('mouth') || has('pop') || has('better'))) return { action: 'runaction', payload: { key: 'foodpop' } }
+  if ((has('food') || has('ingredient') || has('salad')) && (has('vibrant') || has('colorful') || has('rich'))) return { action: 'runaction', payload: { key: 'foodvibrant' } }
+  if ((has('drink') || has('cocktail') || has('coffee')) && (has('rich') || has('deeper') || has('color'))) return { action: 'runaction', payload: { key: 'drinkrich' } }
+  if ((has('bottle') || has('can')) && has('condensation')) return { action: 'runaction', payload: { key: 'condensation' } }
+  if ((has('candle') || has('soap')) && has('clean')) return { action: 'runaction', payload: { key: 'candleclean' } }
+  if (has('car') && (has('paint') || has('shine') || has('gloss') || has('showroom'))) return { action: 'runaction', payload: { key: 'carpaint' } }
+  if ((has('car') || has('vehicle')) && has('interior')) return { action: 'runaction', payload: { key: 'carinterior' } }
+  if ((has('sky') && (has('pop') || has('richer') || has('blue'))) || (has('exterior') && has('sky'))) return { action: 'runaction', payload: { key: 'skypop' } }
+  if (has('real estate') && (has('lux') || has('premium') || has('better'))) return { action: 'runaction', payload: { key: 'realtorlux' } }
+  if ((has('poster') || has('artwork') || has('print')) && (has('clean') || has('restore') || has('faded'))) return { action: 'runaction', payload: { key: 'posterclean' } }
+  if ((has('painting') || has('art')) && (has('vibrant') || has('rich') || has('color'))) return { action: 'runaction', payload: { key: 'artvibrant' } }
+  if ((has('canvas') || has('artwork')) && (has('bright') || has('faded'))) return { action: 'runaction', payload: { key: 'canvasbright' } }
 
   // ---- adjust ----
   if (has('warm')) return { action: 'filters', payload: { temperature: 45 } }

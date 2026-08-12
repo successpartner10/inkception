@@ -1603,3 +1603,101 @@ export function crystalBright(d, w, h) {
 export function liquidRich(d, w, h) {
   return gemVibrance(d, w, h)
 }
+
+/* ---------------------- more engines (v0.17.10) ---------------------------- */
+
+/** Car paint shine — strong specular + contrast + slight cool. */
+export function carShine(d, w, h) {
+  const c = CONV_FILTERS.sharpenEdges(d, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    let r = (c[j] - 128) * 1.18 + 128 - 6
+    let g = (c[j + 1] - 128) * 1.18 + 128
+    let b = (c[j + 2] - 128) * 1.18 + 128 + 6
+    out[j] = Math.min(255, Math.max(0, r)); out[j + 1] = Math.min(255, Math.max(0, g)); out[j + 2] = Math.min(255, Math.max(0, b)); out[j + 3] = 255
+  }
+  return highlightBoost(out, w, h, 0.6)
+}
+
+/** Food appetize — warm, bright, saturated (makes food pop). */
+export function foodAppetize(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const r = d[j], g = d[j + 1], b = d[j + 2]
+    const l = 0.299 * r + 0.587 * g + 0.114 * b
+    const sat = 1.28
+    let nr = l + (r - l) * sat
+    let ng = l + (g - l) * sat
+    let nb = l + (b - l) * sat
+    nr = Math.min(255, nr * 1.04 + 6)
+    ng = Math.min(255, ng * 1.02 + 4)
+    nb = Math.max(0, nb * 0.96 - 4)
+    out[j] = nr; out[j + 1] = ng; out[j + 2] = nb; out[j + 3] = 255
+  }
+  return out
+}
+
+/** Sky pop — richer blues up top, warmer bottom. */
+export function skyPop(d, w, h) {
+  const out = new Uint8ClampedArray(d.length)
+  for (let y = 0; y < h; y++) {
+    const t = 1 - y / h // 1 at top
+    for (let x = 0; x < w; x++) {
+      const j = (y * w + x) * 4
+      const r = d[j], g = d[j + 1], b = d[j + 2]
+      const l = 0.299 * r + 0.587 * g + 0.114 * b
+      let nr = r, ng = g, nb = b
+      // blue boost in the sky band
+      if (t > 0.35 && b > r && b > 90) {
+        const k = 1 + (t - 0.35) * 0.5
+        nb = Math.min(255, b * k)
+        nr = Math.max(0, r * 0.96)
+      }
+      if (t < 0.4) { // warm the lower band
+        nr = Math.min(255, nr * 1.03 + 4)
+        ng = Math.min(255, ng * 1.02 + 2)
+        nb = Math.max(0, nb * 0.98)
+      }
+      out[j] = Math.min(255, l + (nr - l) * 1.08)
+      out[j + 1] = Math.min(255, l + (ng - l) * 1.08)
+      out[j + 2] = Math.min(255, l + (nb - l) * 1.08)
+      out[j + 3] = 255
+    }
+  }
+  return out
+}
+
+/** Screen clean — despeckle + sharpen, de-reflected. */
+export function screenClean(d, w, h) {
+  const m = medianFilter(d, w, h, 1)
+  const s = CONV_FILTERS.sharpenMore(m, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    const l = 0.299 * s[j] + 0.587 * s[j + 1] + 0.114 * s[j + 2]
+    const cap = Math.min(l, 210)
+    const m2 = cap * 0.9 + 24
+    out[j] = m2 + (s[j] - l) * 0.6
+    out[j + 1] = m2 + (s[j + 1] - l) * 0.6
+    out[j + 2] = m2 + (s[j + 2] - l) * 0.6
+    out[j + 3] = 255
+  }
+  return out
+}
+
+/** Poster clean — brighten, de-haze, sharpen line work. */
+export function posterClean(d, w, h) {
+  const m = medianFilter(dehaze(d, w, h, 0.4), w, h, 1)
+  const s = CONV_FILTERS.sharpenMore(m, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < w * h; i++) {
+    const j = i * 4
+    out[j] = Math.min(255, s[j] * 1.06 + 4)
+    out[j + 1] = Math.min(255, s[j + 1] * 1.06 + 4)
+    out[j + 2] = Math.min(255, s[j + 2] * 1.06 + 4)
+    out[j + 3] = 255
+  }
+  return out
+}

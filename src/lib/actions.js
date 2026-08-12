@@ -180,6 +180,50 @@ export const ACTIONS = [
   { id: 'sunlight', name: 'Natural Sunlight', cat: 'Interior', applies: ['landscape'], desc: 'Warm directional daylight', when: 'Rooms with windows', fe: 'local', icon: 'sun', fx: 'Window Light', def: 0.6 },
   { id: 'plansharp', name: 'Plan Sharp', cat: 'Interior', applies: ['document'], desc: 'Crisp lines for plans and drawings', when: 'Floor plans, blueprints', fe: 'local', icon: 'penTool', fx: 'Plan Sharp', def: 0.6 },
   { id: 'docscan', name: 'Document Scan Clean', cat: 'Interior', applies: ['document'], desc: 'Clean, sharp, readable scan', when: 'Receipts, docs, pages', fe: 'local', icon: 'image', fx: 'Plan Sharp', def: 0.6 },
+  /* ---- Eyewear ---- */
+  { id: 'glassclean', name: 'Glasses Clean', cat: 'Eyewear', applies: ['product', 'portrait'], desc: 'Clear lenses, remove smudges', when: 'Sunglasses, glasses', fe: 'local', icon: 'droplet', fx: 'Screen Clean', def: 0.6 },
+  { id: 'lensshine', name: 'Lens Shine', cat: 'Eyewear', applies: ['product', 'portrait'], desc: 'Bright reflective lenses', when: 'Sunglasses', fe: 'local', icon: 'sun', fx: 'Glass Gloss', def: 0.6 },
+  { id: 'framepolish', name: 'Frame Polish', cat: 'Eyewear', applies: ['product', 'portrait'], desc: 'Metal/acetate frame shine', when: 'Glasses frames', fe: 'local', icon: 'focus', fx: 'Metal Shine', def: 0.6 },
+
+  /* ---- Electronics ---- */
+  { id: 'screenclean', name: 'Screen Clean', cat: 'Electronics', applies: ['product'], desc: 'Crisp, de-reflected display', when: 'Phones, laptops, TVs', fe: 'local', icon: 'droplet', fx: 'Screen Clean', def: 0.6 },
+  { id: 'deviceshine', name: 'Device Shine', cat: 'Electronics', applies: ['product'], desc: 'Glossy premium hardware', when: 'Gadgets, tech products', fe: 'local', icon: 'sun', fx: 'Glass Gloss', def: 0.6 },
+  { id: 'devicebrandnew', name: 'Device Brand New', cat: 'Electronics', applies: ['product'], desc: 'Full tech product cleanup', when: 'Used electronics', fe: 'local', icon: 'refresh', fx: 'Brand New', def: 0.6 },
+  { id: 'techsharp', name: 'Tech Sharp', cat: 'Electronics', applies: ['product'], desc: 'Crisp product detail', when: 'Tech catalog shots', fe: 'local', icon: 'focus', fx: 'Product Sharpen', def: 0.6 },
+  { id: 'techad', name: 'Tech Ad Look', cat: 'Electronics', applies: ['product'], desc: 'Premium electronics advertising', when: 'Launch campaigns', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+
+  /* ---- Food & Beverage ---- */
+  { id: 'foodpop', name: 'Food Appetize', cat: 'Food', applies: ['product'], desc: 'Warm, bright, mouth-watering', when: 'Food photography', fe: 'local', icon: 'sun', fx: 'Food Appetize', def: 0.6 },
+  { id: 'foodvibrant', name: 'Food Vibrant', cat: 'Food', applies: ['product'], desc: 'Rich saturated ingredients', when: 'Salads, produce', fe: 'local', icon: 'droplet', fx: 'Gemstone Vibrance', def: 0.6 },
+  { id: 'plateclean', name: 'Plate Clean', cat: 'Food', applies: ['product'], desc: 'Clean spots and crumbs', when: 'Food styling', fe: 'local', icon: 'refresh', fx: 'Spot Clean', def: 0.6 },
+  { id: 'drinkrich', name: 'Drink Rich', cat: 'Food', applies: ['product'], desc: 'Deep beverage color', when: 'Cocktails, juice, coffee', fe: 'local', icon: 'droplet', fx: 'Liquid Rich', def: 0.6 },
+  { id: 'beveragead', name: 'Beverage Ad', cat: 'Food', applies: ['product'], desc: 'Commercial drink finish', when: 'Beverage campaigns', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+  { id: 'condensation', name: 'Condensation Pop', cat: 'Food', applies: ['product'], desc: 'Crisp cold-drink droplets', when: 'Chilled bottles, cans', fe: 'local', icon: 'sparkle', fx: 'Add Sparkle', def: 0.6 },
+
+  /* ---- Candles, Soap & Bath ---- */
+  { id: 'candleclean', name: 'Candle Clean', cat: 'Home', applies: ['product'], desc: 'Clean wax and packaging', when: 'Candles', fe: 'local', icon: 'droplet', fx: 'Spot Clean', def: 0.6 },
+  { id: 'soappro', name: 'Soap Pro', cat: 'Home', applies: ['product'], desc: 'Crisp clean product shot', when: 'Soap, skincare', fe: 'local', icon: 'focus', fx: 'Product Sharpen', def: 0.6 },
+  { id: 'bathlux', name: 'Bath Luxe', cat: 'Home', applies: ['product'], desc: 'Premium spa-grade finish', when: 'Bathroom products', fe: 'local', icon: 'sparkle', fx: 'Luxury Grade', def: 0.6 },
+  { id: 'homead', name: 'Home Ad Look', cat: 'Home', applies: ['product', 'landscape'], desc: 'Commercial home-product finish', when: 'Home brand campaigns', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+
+  /* ---- Cars & Automotive ---- */
+  { id: 'carpaint', name: 'Car Paint Shine', cat: 'Auto', applies: ['landscape', 'product'], desc: 'Glossy showroom paint', when: 'Cars, motorcycles', fe: 'local', icon: 'sun', fx: 'Car Shine', def: 0.6 },
+  { id: 'carinterior', name: 'Interior Luxe', cat: 'Auto', applies: ['landscape'], desc: 'Premium cabin finish', when: 'Car interiors', fe: 'local', icon: 'sparkle', fx: 'Luxury Grade', def: 0.6 },
+  { id: 'cardetail', name: 'Detail Sharp', cat: 'Auto', applies: ['landscape', 'product'], desc: 'Crisp bodywork detail', when: 'Car close-ups', fe: 'local', icon: 'focus', fx: 'Product Sharpen', def: 0.6 },
+  { id: 'carbrandnew', name: 'Showroom New', cat: 'Auto', applies: ['landscape', 'product'], desc: 'Dealer-fresh cleanup', when: 'Used cars, listings', fe: 'local', icon: 'refresh', fx: 'Brand New', def: 0.6 },
+  { id: 'carad', name: 'Car Ad Look', cat: 'Auto', applies: ['landscape', 'product'], desc: 'Automotive campaign grade', when: 'Car advertising', fe: 'local', icon: 'image', fx: 'Catalog Look', def: 0.6 },
+
+  /* ---- Real Estate & Architecture ---- */
+  { id: 'skypop', name: 'Sky Pop', cat: 'Real Estate', applies: ['landscape'], desc: 'Richer blue sky, warm ground', when: 'Exteriors, architecture', fe: 'local', icon: 'sun', fx: 'Sky Pop', def: 0.6 },
+  { id: 'exteriorbright', name: 'Exterior Bright', cat: 'Real Estate', applies: ['landscape'], desc: 'Brighten facade', when: 'House exteriors', fe: 'local', icon: 'sun', fx: 'Room Brighten', def: 0.6 },
+  { id: 'realtorlux', name: 'Listing Luxe', cat: 'Real Estate', applies: ['landscape'], desc: 'Premium listing grade', when: 'Real estate photos', fe: 'local', icon: 'sparkle', fx: 'Luxury Grade', def: 0.6 },
+  { id: 'listingsharp', name: 'Listing Sharp', cat: 'Real Estate', applies: ['landscape'], desc: 'Crisp property detail', when: 'Listing galleries', fe: 'local', icon: 'focus', fx: 'Plan Sharp', def: 0.6 },
+
+  /* ---- Artwork & Posters ---- */
+  { id: 'posterclean', name: 'Poster Clean', cat: 'Artwork', applies: ['document', 'product'], desc: 'De-haze + sharpen artwork', when: 'Posters, prints', fe: 'local', icon: 'image', fx: 'Poster Clean', def: 0.6 },
+  { id: 'artvibrant', name: 'Art Vibrant', cat: 'Artwork', applies: ['document', 'product'], desc: 'Rich gallery colors', when: 'Paintings, prints', fe: 'local', icon: 'droplet', fx: 'Gemstone Vibrance', def: 0.6 },
+  { id: 'canvasbright', name: 'Canvas Bright', cat: 'Artwork', applies: ['document', 'product'], desc: 'Brighten faded artwork', when: 'Old posters, canvas', fe: 'local', icon: 'sun', fx: 'Room Brighten', def: 0.6 },
+  { id: 'frameshine', name: 'Frame Shine', cat: 'Artwork', applies: ['document', 'product'], desc: 'Polish frame + glass', when: 'Framed art', fe: 'local', icon: 'focus', fx: 'Glass Gloss', def: 0.6 },
 ]
 
-export const ACTION_CATS = ['Artistic', 'Portrait', 'Color', 'Vintage', 'Texture', 'Restore', 'Creative', 'Digital', 'Motion', 'Commercial', 'Fashion', 'Luxury', 'Interior']
+export const ACTION_CATS = ['Artistic', 'Portrait', 'Color', 'Vintage', 'Texture', 'Restore', 'Creative', 'Digital', 'Motion', 'Commercial', 'Fashion', 'Luxury', 'Eyewear', 'Electronics', 'Food', 'Home', 'Auto', 'Real Estate', 'Artwork', 'Interior']
