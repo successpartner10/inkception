@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.19
+> **Version**: v0.17.20
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.19)
+> **Updated**: 2026-08-12 (v0.17.20)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -792,3 +792,12 @@ layers, quick actions, AI suite, collage, versioning all present.
   collage, AI list) so nothing regressed
 - 14-step audit passes (both screens, grouped results, synonym search,
   run-from-palette, keyboard nav, icon tabs, zero console errors)
+
+### v0.17.20 — Search keeps your query (no more resetting to the magnifier)
+- Fixed: picking a result (running an action, opening a file, jumping to a
+  panel) no longer wipes the search box back to the idle magnifying-glass
+  state — the dropdown closes but your query stays, so you can keep typing
+  or refine. Opening/loading an image also leaves the query intact
+- The box only clears when YOU clear it (Clear button or Esc)
+- Verified: query persists after running an action, after picking "Open a
+  file", and after the image actually loads — 7/7, zero console errors

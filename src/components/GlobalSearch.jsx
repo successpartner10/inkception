@@ -75,7 +75,7 @@ export function GlobalSearch({ items = [], includeActions = true, placeholder = 
   const flat = results.flatMap((g) => g.items)
   useEffect(() => { setSel(0) }, [q, results.length])
 
-  const run = (item) => { setQ(''); setOpen(false); item.act && item.act() }
+  const run = (item) => { setOpen(false); item.act && item.act() }
   const onKey = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, Math.max(0, flat.length - 1))) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(0, s - 1)) }
