@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.13
+> **Version**: v0.17.14
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.13)
+> **Updated**: 2026-08-12 (v0.17.14)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -693,3 +693,26 @@ layers, quick actions, AI suite, collage, versioning all present.
 - 11-step audit passes (generated run via fx, search finds them, gallery
   previews, hide-auto hides generated but keeps curated, zero console
   errors)
+
+### v0.17.14 — 61 more generated actions (358 total) + engine wiring fix
+- **61 more curated auto-generated actions** from the remaining taxonomy
+  categories: Cameras & Photography, Audio & Hi-Fi (Speaker Fabric Fresh,
+  Vinyl Record Clean, Headphone Pad Restore, Amp Metal Shine), Gaming
+  (Console Clean, Keycap Crisp, Bezel Clean), Fitness (Dumbbell Steel,
+  Barbell Chrome, Kettlebell Clean, Club Steel), Outdoor & Camping (Tent
+  Fabric Fresh, Sleeping Bag Fluff, Hiking Boot Clean), Pets (Collar
+  Leather, Pet Bowl Clean, Pet Bed Fluff), Tools & Hardware (Drill Clean,
+  Wrench Steel, Saw Blade Shine), Lighting (Chandelier Crystal, Lamp Metal
+  Shine, Warm Glow), Garden & Plants (Leaf Dew Pop, Flower Vivid, Garden
+  Green Pop), Seasonal & Gifts (Ornament Shine, Ribbon Silk, Foil Shine),
+  Instruments (Guitar Polish, Piano Lacquer, Cymbal Shine), Marine (Hull
+  Clean, Teak Polish), Cycling, Golf & Ski, and Packaging (Box Clean, Tube
+  Clean, Bottle Cap Metal)
+- **Engine wiring fix**: generated actions using `Diamond Bright` and
+  `Glamour` engines now run correctly (were missing from the runner map) —
+  Crystal Sparkle and Velvet Luxe verified
+- All 161 auto actions carry the `auto` badge + hide/show toggle, smart
+  filter applies, and search finds them ("guitar polish", "kettlebell",
+  "chandelier", "vinyl"…)
+- 11-step audit passes (358 render, 161 auto, batch-2 search + run, gallery
+  previews, engine fixes, zero console errors)

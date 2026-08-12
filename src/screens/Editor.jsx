@@ -2139,7 +2139,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         'Crystal Bright': PX.crystalBright, 'Liquid Rich': PX.liquidRich,
         'Car Shine': PX.carShine, 'Food Appetize': PX.foodAppetize, 'Sky Pop': PX.skyPop,
         'Screen Clean': PX.screenClean, 'Poster Clean': PX.posterClean, 'Add Sparkle': PX.sparkle,
-        'Makeup Pop': PX.makeupPop, 'Pattern Pop': PX.patternPop,
+        'Makeup Pop': PX.makeupPop, 'Pattern Pop': PX.patternPop, 'Diamond Bright': PX.crystalBright, 'Glamour': PX.glamour,
       }
       if (fns[name]) out = fns[name](L.data.data, L.w, L.h, amt || undefined)
       if (!out) return
