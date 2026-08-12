@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.28
+> **Version**: v0.17.29
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.28)
+> **Updated**: 2026-08-12 (v0.17.29)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -925,3 +925,18 @@ layers, quick actions, AI suite, collage, versioning all present.
   home to a ready layout
 - 16-step audit passes (no New Project primary, quick-starts, reference
   detect → 4 slots → editor preloads 4, zero console errors)
+
+### v0.17.29 — First-run guide: "What do you want to do today?"
+- On first visit a **guided wizard** opens on the home screen: pick a goal —
+  **Edit a photo · Fix / clean an image · Make a collage · Create a
+  template · Export for a platform · Restore an old photo**
+- Picking a goal **acts immediately** (opens the file picker or the
+  Templates modal) AND shows a short **"here's how"** step list (e.g.
+  collage → "Start from a Template → pick a collage layout · or upload a
+  reference…")
+- Persisted after you finish (won't nag), **reopenable anytime** via the
+  **? help button** in the header — perfect for someone who doesn't know
+  the interface yet
+- Replaces the old plain "free & local" banner
+- 13-step audit passes (guide opens, all 6 goals, steps + action, persists,
+  help button, zero console errors)

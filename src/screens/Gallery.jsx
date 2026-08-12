@@ -11,6 +11,7 @@ import { Button, Chip, Highlight, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
 import { detectCollageBoxes } from '../lib/collage'
 import { GlobalSearch } from '../components/GlobalSearch'
+import { OnboardGuide } from '../components/OnboardGuide'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -43,13 +44,14 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
   const refInputRef = useRef(null)
   const customPresets = loadCustomPresets()
   const allTemplates = [...EXPORT_PRESETS, ...customPresets]
-  // first-run hint — one-time, dismissible
-  const [showIntro, setShowIntro] = useState(() => {
-    try { return localStorage.getItem('inkception.intro') !== '1' } catch { return true }
+  // first-run guide — "What do you want to do today?" (one-time, reopenable)
+  const [showOnboard, setShowOnboard] = useState(() => {
+    try { return localStorage.getItem('inkception.onboard') !== '1' } catch { return true }
   })
-  const dismissIntro = () => {
-    try { localStorage.setItem('inkception.intro', '1') } catch { /* ignore */ }
-    setShowIntro(false)
+  // goal → do the thing right here on the home screen
+  const pickGoal = (action) => {
+    if (action === 'open' || action === 'fix' || action === 'restore') fileRef.current && fileRef.current.click()
+    else if (action === 'template' || action === 'collage' || action === 'export') setTemplateOpen(true)
   }
 
   const gq = gallerySearch.trim().toLowerCase()
@@ -143,29 +145,12 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
           placeholder="Search projects, templates, samples…"
           onQueryChange={setGallerySearch}
         />
+        <IconBtn icon="info" title="Help — what do you want to do?" size={15} onClick={() => setShowOnboard(true)} />
         <IconBtn icon="user" title="Profile" size={17} />
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
-          {/* First-run hint — free, local, everything is on-device */}
-          {showIntro && (
-            <div className="mb-6 flex items-start gap-3 rounded-ink-lg border border-white/20 bg-surface p-4 sm:items-center">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ink bg-white text-black">
-                <Icon name="sparkle" size={16} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold">Everything here is free & local.</p>
-                <p className="mt-1 text-[10px] leading-relaxed text-mute">
-                  Open a photo, run one-click Actions (Actions tab), type things like “remove background” or “run my recipe” in the AI bar — no account, no uploads, nothing leaves this device.
-                </p>
-              </div>
-              <button type="button" onClick={dismissIntro} className="shrink-0 rounded-ink border border-line px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-dim transition-colors hover:border-white hover:text-white">
-                Got it
-              </button>
-            </div>
-          )}
-
           {/* Hero */}
           <section className="rounded-ink-lg border border-line bg-surface p-6 sm:p-10">
             <Chip active>AI-First Design Studio</Chip>
@@ -350,6 +335,9 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
           {window.__INKCEPTION_VERSION__ || 'v-dev'} · © 2026 Inkception
         </span>
       </footer>
+
+      {/* First-run guide — what do you want to do today? */}
+      <OnboardGuide open={showOnboard} onClose={() => setShowOnboard(false)} onPick={pickGoal} hasProjects={projects.length > 0} />
 
       {/* Template picker — blank canvas at any export size (grouped) */}
       <Modal
