@@ -3513,7 +3513,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     { id: 'tool-spherical', label: 'Spherical', group: 'Filter', icon: 'focus', go: () => runFilter('spherical') },
     { id: 'tool-sharpenedges', label: 'Sharpen Edges', group: 'Filter', icon: 'focus', go: () => runFilter('sharpenEdges') },
     ...HOWTOS.map((h) => ({ id: 'how-' + h.id, label: h.q, group: 'How do I…?', icon: 'sparkle', go: () => { setHowtoOpen(true) } })),
-    ...EXPORT_PRESETS.slice(0, 27).map((p) => ({ id: 'preset-' + p.id, label: p.name, group: 'Export size', icon: PLATFORM_ICONS[p.platform], go: () => { openModal(setExportOpen); setPreset(p.id) } })),
+    ...EXPORT_PRESETS.slice(0, 27).map((p) => ({ id: 'preset-' + p.id, label: `${p.platform} — ${p.name}`, group: 'Export sizes', sub: `${p.w}×${p.h} · ${p.ratio}`, icon: PLATFORM_ICONS[p.platform], go: () => { openModal(setExportOpen); setPreset(p.id) } })),
     ...recipes.map((r) => ({ id: 'recipe-' + r.id, label: 'Run recipe: ' + r.name, group: 'Recipes', icon: 'bookmark', go: () => runRecipe(r) })),
   ]
 
@@ -4795,7 +4795,35 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
 
   return (
     <div className="p-4">
-      {/* photo-type filter — shows only applicable actions */}
+      {/* Row 1 — Free/All + Auto toggle + Gallery */}
+      <div className="mb-2 flex items-center gap-1">
+        <button type="button" onClick={() => setFeat('local')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'local' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
+          Free ({counts.local})
+        </button>
+        <button type="button" onClick={() => setFeat('all')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
+          All ({counts.all})
+        </button>
+        <button
+          type="button"
+          onClick={() => setHideAuto((v) => !v)}
+          className={cn('flex items-center gap-1 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', !hideAuto ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+          title="Generated actions reuse the same engines with product-specific names"
+        >
+          <Icon name="sparkle" size={11} /> Auto ({ACTIONS.filter((a) => a.auto).length})
+        </button>
+        {onGallery && (
+          <button
+            type="button"
+            onClick={onGallery}
+            className="ml-auto flex items-center gap-1 rounded-ink border border-line px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-fg"
+            title="See every effect on YOUR photo, then pick"
+          >
+            <Icon name="grid" size={11} /> Gallery
+          </button>
+        )}
+      </div>
+
+      {/* Row 2 — photo-type filter */}
       <div className="mb-2 flex items-center gap-1">
         {PHOTO_TYPES.map((t) => (
           <button
@@ -4812,38 +4840,24 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
         </span>
       </div>
 
-      {/* auto-generated actions toggle */}
-      <div className="mb-2 flex items-center gap-1.5 rounded-ink border border-line px-2 py-1">
-        <button
-          type="button"
-          onClick={() => setHideAuto((v) => !v)}
-          className={cn('flex items-center gap-1 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', !hideAuto ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
-          title="Generated actions reuse the same engines with product-specific names"
-        >
-          <Icon name="sparkle" size={11} /> Auto ({ACTIONS.filter((a) => a.auto).length})
-        </button>
-        <span className="text-[8px] text-mute">generated from the material vocabulary — same engines, product names</span>
-      </div>
-
-      {/* self-explaining: relevant count + Show all */}
-      {!q && (
-        <div className="mb-2 flex items-center justify-between rounded-ink border border-line px-2 py-1">
-          <span className="text-[9px] text-mute">
-            {typeName ? (
-              <>Showing <b className="text-dim">{best.length}</b> actions for {typeName} · {rest.length} hidden</>
-            ) : (
-              <>Showing <b className="text-dim">{best.length}</b> actions · {rest.length} hidden</>
-            )}
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            className="label-xs text-dim transition-colors hover:text-white"
-          >
-            {showAll ? 'Show relevant only' : 'Show all'}
-          </button>
+      {/* Row 3 — strength + relevance (one compact line) */}
+      <div className="mb-2 flex items-center gap-3 rounded-ink border border-line px-2 py-1">
+        <span className="label-xs shrink-0 text-dim">Amount</span>
+        <div className="min-w-0 flex-1">
+          <Slider label="Effect strength" value={amt} min={0} max={100} defaultValue={60} format={(v) => `${Math.round(v)}%`} onChange={setAmt} />
         </div>
-      )}
+        {!q && (
+          <span className="shrink-0 text-[8px] text-mute">
+            {typeName ? `Showing ${best.length} for ${typeName} · ${rest.length} hidden` : `Showing ${best.length} · ${rest.length} hidden`}
+          </span>
+        )}
+        {!q && (
+          <button type="button" onClick={() => setShowAll((v) => !v)} className="label-xs shrink-0 text-dim transition-colors hover:text-white">
+            {showAll ? 'Relevant only' : 'Show all'}
+          </button>
+        )}
+        {q && <span className="label-xs shrink-0 text-dim">{searchHits ? searchHits.length : 0} matches</span>}
+      </div>
       {q && (
         <div className="mb-2 flex items-center justify-between rounded-ink border border-line px-2 py-1">
           <span className="text-[9px] text-mute">
@@ -4852,11 +4866,6 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
           <button type="button" onClick={() => setLocalQ('')} className="label-xs text-dim transition-colors hover:text-white">Clear</button>
         </div>
       )}
-
-      {/* effect strength — how strong one-click actions apply */}
-      <div className="mb-2 rounded-ink border border-line px-2 py-1">
-        <Slider label="Effect strength" value={amt} min={0} max={100} defaultValue={60} format={(v) => `${Math.round(v)}%`} onChange={setAmt} />
-      </div>
 
       {/* category chips */}
       <div className="no-scrollbar flex gap-1 overflow-x-auto pb-1">

@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.22
+> **Version**: v0.17.23
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.22)
+> **Updated**: 2026-08-12 (v0.17.23)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -831,3 +831,20 @@ layers, quick actions, AI suite, collage, versioning all present.
   live to the selected text
 - 5-step audit passes (edit on create, typed text captured, double-click
   re-edit, zero console errors)
+
+### v0.17.23 — Full audit: fixed Free/All toggle + platform search
+- **Thorough functional audit (76 checks)**: every tool (select/rect/
+  ellipse/line/text/brush/eyedropper/crop/blur/erase/zoom/fit), the 6
+  Adjust sliders (drag + reset), Actions (358, type chips, auto toggle,
+  amount, relevance, run), all 13 AI cards, Layers, Text, all 8 export
+  formats + presets + groups + original-size, Collage (templates, Circle
+  Inset, placement), Recipes, Settings (themes/shortcuts/privacy), global
+  search, mobile (no overflow), zero console errors
+- **Fixed: Free/All toggle missing** from the Actions tab (lost in the
+  search refactor) — restored so users can view AI/needs-model actions
+- **Design: Actions tab decluttered** — the 5 stacked control rows are now
+  3 compact rows: (1) Free/All · Auto · Gallery, (2) photo-type chips,
+  (3) Amount slider + "Showing N for X · M hidden" + Show all on one line
+- **Fixed: platform search** — searching "instagram" now surfaces the
+  Instagram export sizes (preset labels now include the platform:
+  "Instagram — Feed Square")
