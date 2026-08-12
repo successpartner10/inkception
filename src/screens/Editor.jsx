@@ -174,7 +174,7 @@ const LAYER_DEFAULTS = [
   { id: 'backdrop', name: 'Backdrop', type: 'Fill', visible: true, locked: false },
 ]
 
-export function Editor({ project, onBack, onRename = () => {} }) {
+export function Editor({ project, onBack, onRename = () => {}, pendingCollage = null, onPendingCollageHandled = () => {} }) {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   /* ------------------------------ canvas refs ------------------------------ */
@@ -260,6 +260,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
   const [motionOpen, setMotionOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
   const [collageOpen, setCollageOpen] = useState(false)
+  const [collageInitial, setCollageInitial] = useState(null) // preloaded custom template from Templates
   const [upscaleOpen, setUpscaleOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [paletteColors, setPaletteColors] = useState([])
@@ -463,6 +464,16 @@ export function Editor({ project, onBack, onRename = () => {} }) {
     if (!isDesktop) setPanelCollapsed(true)
     setter(true)
   }
+
+  // Templates → start a collage: preload the custom layout + open the modal
+  useEffect(() => {
+    if (pendingCollage) {
+      setCollageInitial(pendingCollage)
+      setCollageOpen(true)
+      onPendingCollageHandled()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCollage])
 
   /* ------------------------------- autosave -------------------------------- */
   // Persist the live session (image + filters + fx + visible layers) every 15s;
@@ -4407,7 +4418,7 @@ export function Editor({ project, onBack, onRename = () => {} }) {
         subtitle="2–12 photos · 12 AI layouts"
         width="max-w-xl"
       >
-        <CollageBody onBuild={buildCollage} showToast={showToast} search={globalSearch} presets={mergedPresets} />
+        <CollageBody onBuild={buildCollage} showToast={showToast} search={globalSearch} presets={mergedPresets} initial={collageInitial} />
       </Modal>
 
       {/* ----------------------------- upscale modal ------------------------------ */}
@@ -6850,7 +6861,7 @@ function WarpModalBody({ src, onApply }) {
   )
 }
 
-function CollageBody({ onBuild, showToast, search = '', presets }) {
+function CollageBody({ onBuild, showToast, search = '', presets, initial = null }) {
   const q = String(search || '').trim().toLowerCase()
   const [photos, setPhotos] = useState([]) // { url, name }
   const [layout, setLayout] = useState('grid4')
@@ -6864,6 +6875,23 @@ function CollageBody({ onBuild, showToast, search = '', presets }) {
   // custom layout — draw your own slots (optionally over a reference image)
   const [customSlots, setCustomSlots] = useState([]) // fractions {x,y,w,h}
   const [autoDetected, setAutoDetected] = useState(false)
+  // when started from Templates with a custom template, preload it
+  useEffect(() => {
+    if (!initial) return
+    const builtIn = COLLAGE_LAYOUTS.find((l) => l.id === initial.layout)
+    if (builtIn) {
+      setLayout(builtIn.id)
+      userPickedLayout.current = true
+      if (builtIn.preset) setCollagePreset(builtIn.preset)
+    } else if (initial.layout === 'custom' && initial.slots) {
+      setLayout('custom')
+      userPickedLayout.current = true
+      setCustomSlots(initial.slots)
+      setAutoDetected(true)
+    }
+    if (initial.size && initial.size.id) setCollagePreset(initial.size.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial])
   const [refImage, setRefImage] = useState(null) // dataURL shown faintly to trace
   const customRef = useRef(null) // draw area element
   const dragStart = useRef(null) // {x,y} fractions while drawing

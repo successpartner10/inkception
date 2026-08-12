@@ -9,6 +9,7 @@ import { loadCustomPresets } from '../lib/presets'
 import { Icon } from '../components/Icon'
 import { Button, Chip, Highlight, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
+import { detectCollageBoxes } from '../lib/collage'
 import { GlobalSearch } from '../components/GlobalSearch'
 
 const FILTERS = [
@@ -29,13 +30,17 @@ const SAMPLE_PHOTOS = [
   { name: 'Mono B&W', src: `${import.meta.env.BASE_URL}samples/bw.jpg` },
 ]
 
-export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTemplate }) {
+export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTemplate, onStartCollage }) {
   const [filter, setFilter] = useState('all')
   const [pendingDelete, setPendingDelete] = useState(null)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [templateGroup, setTemplateGroup] = useState('all')
   const [importing, setImporting] = useState(false)
   const [gallerySearch, setGallerySearch] = useState('')
+  const [refImage, setRefImage] = useState(null) // reference collage for layout detect
+  const [refSlots, setRefSlots] = useState([])
+  const [refBusy, setRefBusy] = useState(false)
+  const refInputRef = useRef(null)
   const customPresets = loadCustomPresets()
   const allTemplates = [...EXPORT_PRESETS, ...customPresets]
   // first-run hint — one-time, dismissible
@@ -81,6 +86,22 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
     .slice(0, 5)
   const templatePresets = allTemplates.filter((p) => (templateGroup === 'all' || p.platform === templateGroup) && matchPreset(p))
 
+  const detectRef = async (src) => {
+    setRefBusy(true)
+    try {
+      const boxes = await detectCollageBoxes(src)
+      setRefSlots(boxes && boxes.length >= 2 ? boxes : [])
+      return boxes && boxes.length >= 2 ? boxes : null
+    } catch { setRefSlots([]); return null } finally { setRefBusy(false) }
+  }
+  const startRefCollage = async () => {
+    // start a sized canvas, then open the editor's collage with the detected slots
+    const size = EXPORT_PRESETS.find((p) => p.id === 'ig-square') || EXPORT_PRESETS[0]
+    const slots = refSlots
+    setTemplateOpen(false)
+    onStartCollage({ name: 'Custom Layout', w: size.w, h: size.h, layout: 'custom', slots })
+  }
+
   const onFile = async (e) => {
     const f = e.target.files && e.target.files[0]
     e.target.value = ''
@@ -115,7 +136,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
             ...projects.map((p) => ({ id: 'proj-' + p.id, label: p.name, group: 'Projects', sub: p.layers + ' layers', icon: 'image', act: () => onOpen(p.id) })),
             ...allTemplates.map((t) => ({ id: 'tpl-' + t.id, label: t.name + ' Template', group: 'Templates', sub: `${t.w}×${t.h} · ${t.platform}`, icon: PLATFORM_ICONS[t.platform] || 'grid', act: () => onTemplate(t) })),
             ...SAMPLE_PHOTOS.map((sp) => ({ id: 'smp-' + sp.src, label: sp.name, group: 'Samples', sub: 'Start from a sample', icon: 'image', act: () => onImportMedia(sp.src) })),
-            { id: 'new', label: 'New Project', group: 'Actions & more', sub: 'Blank canvas', icon: 'plus', act: () => onNew() },
+            { id: 'new', label: 'Blank canvas', group: 'Actions & more', sub: 'Start empty', icon: 'plus', act: () => onNew() },
             { id: 'open', label: 'Open / Add Media', group: 'Actions & more', sub: 'Import an image', icon: 'folder', act: () => fileRef.current && fileRef.current.click() },
           ]}
           includeActions={false}
@@ -158,11 +179,8 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
               focus.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-4">
-              <Button variant="primary" size="lg" icon="plus" onClick={() => onNew()}>
-                New Project
-              </Button>
               <Button
-                variant="secondary"
+                variant="primary"
                 size="lg"
                 icon="upload"
                 onClick={() => fileRef.current && fileRef.current.click()}
@@ -170,12 +188,12 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
               >
                 {importing ? 'Importing…' : 'Open / Add Media'}
               </Button>
-              <Button variant="ghost" size="lg" icon="grid" onClick={() => setTemplateOpen(true)}>
-                Templates
+              <Button variant="secondary" size="lg" icon="grid" onClick={() => setTemplateOpen(true)}>
+                Start from a Template
               </Button>
-              <span className="hidden text-[10px] font-semibold uppercase tracking-[0.14em] text-mute sm:block">
-                ⌘N
-              </span>
+              <Button variant="ghost" size="lg" icon="plus" onClick={() => onNew()}>
+                Blank canvas
+              </Button>
             </div>
             {/* Sample photos — one click to start editing */}
             <div className="mt-8">
@@ -272,7 +290,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                     </span>
                     <p className="text-sm text-dim">Nothing here yet.</p>
                     <Button variant="secondary" size="sm" icon="plus" onClick={() => onNew()}>
-                      New Project
+                      Blank canvas
                     </Button>
                   </div>
                 ) : (
@@ -305,8 +323,8 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                   Start with a new project, open an image, or pick a template.
                 </p>
                 <div className="mt-1 flex flex-wrap justify-center gap-3">
-                  <Button variant="primary" size="sm" icon="plus" onClick={() => onNew()}>
-                    New Project
+                  <Button variant="secondary" size="sm" icon="plus" onClick={() => onNew()}>
+                    Blank canvas
                   </Button>
                   <Button
                     variant="secondary"
@@ -337,8 +355,8 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
       <Modal
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
-        title="Open Template"
-        subtitle="Blank canvas at any export size — grouped by platform"
+        title="Templates & Layouts"
+        subtitle="Start from a platform size, a collage layout, or a reference image"
         width="max-w-2xl"
       >
         <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
@@ -422,10 +440,90 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
               </div>
             )}
         </div>
-        <p className="mt-3 text-[10px] leading-relaxed text-mute">
-          Opens the editor with a blank document — then use Collage Studio to add photos, or Open
-          to import an image.
-        </p>
+        {/* Collage quick-starts */}
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-center gap-2">
+            <Icon name="grid" size={13} className="text-mute" />
+            <span className="label-xs text-dim">Collage layouts</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {[
+              ['grid2', 'Grid 2', 'ig-portrait', 'Two photos side by side'],
+              ['grid4', 'Grid 4', 'ig-square', '2×2 square grid'],
+              ['hero', 'Hero + Sidekick', 'fb-cover', 'Big + small'],
+              ['circleinset', 'Circle Inset', 'ig-square', 'White bg + circle frame'],
+            ].map(([lid, lname, presetId, ldesc]) => {
+              const sz = EXPORT_PRESETS.find((p) => p.id === presetId) || EXPORT_PRESETS[0]
+              return (
+                <button
+                  key={lid}
+                  type="button"
+                  onClick={() => {
+                    setTemplateOpen(false)
+                    onStartCollage({ name: lname, w: sz.w, h: sz.h, layout: lid, slots: null })
+                  }}
+                  className="flex flex-col gap-1 rounded-ink border border-line px-2 py-2 text-left transition-colors hover:border-white"
+                >
+                  <span className="text-[10px] font-bold text-fg">{lname}</span>
+                  <span className="text-[8px] leading-tight text-mute">{ldesc}</span>
+                  <span className="text-[8px] text-mute">{sz.w}×{sz.h}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Custom layout from a reference image */}
+        <div className="mt-4 rounded-ink border border-line bg-surface-2/60 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-bold text-fg">Collage / Custom layout</div>
+              <div className="mt-0.5 text-[9px] text-mute">Upload a reference collage — the layout is detected, then you add photos in the editor</div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button variant="secondary" size="sm" icon="upload" onClick={() => refInputRef.current && refInputRef.current.click()} disabled={refBusy}>
+                {refBusy ? 'Detecting…' : refImage ? 'Change reference' : 'Upload reference'}
+              </Button>
+              {refSlots.length >= 2 && (
+                <Button variant="primary" size="sm" icon="grid" onClick={startRefCollage}>
+                  Start ({refSlots.length} slots)
+                </Button>
+              )}
+            </div>
+          </div>
+          <input
+            ref={refInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files && e.target.files[0]
+              e.target.value = ''
+              if (!f || !f.type.startsWith('image/')) return
+              const r = new FileReader()
+              r.onload = async () => {
+                setRefImage(r.result)
+                await detectRef(r.result)
+              }
+              r.readAsDataURL(f)
+            }}
+          />
+          {refImage && (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="relative aspect-[4/3] overflow-hidden rounded-ink border border-line">
+                <img src={refImage} alt="reference" className="h-full w-full object-contain opacity-30" />
+                {refSlots.map((s, i) => (
+                  <span key={i} className="absolute border-2 border-white/90" style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, width: `${s.w * 100}%`, height: `${s.h * 100}%` }} />
+                ))}
+              </div>
+              <div className="flex flex-col justify-center gap-1">
+                <span className="label-xs text-dim">{refSlots.length >= 2 ? `${refSlots.length} slots detected` : refBusy ? 'Detecting layout…' : 'No clear layout found'}</span>
+                <span className="text-[9px] leading-relaxed text-mute">{refSlots.length >= 2 ? 'Start opens the editor with this layout — your photos fill the boxes.' : 'Try a reference with clear gaps/gutters between photos.'}</span>
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   )

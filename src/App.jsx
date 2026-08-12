@@ -41,6 +41,7 @@ export default function App() {
   const [projects, setProjects] = useState(loadProjects)
   const [view, setView] = useState('gallery')
   const [currentId, setCurrentId] = useState(null)
+  const [pendingCollage, setPendingCollage] = useState(null) // {layout:'custom', slots, size, name} opened from Templates
 
   useEffect(() => {
     try {
@@ -74,6 +75,11 @@ export default function App() {
     setView('editor')
   }
 
+  const startCollage = (tpl) => {
+    createProject(null, { w: tpl.w, h: tpl.h, label: tpl.name || 'Collage' })
+    setPendingCollage({ layout: tpl.layout || 'custom', slots: tpl.slots || null, size: { w: tpl.w, h: tpl.h }, name: tpl.name || 'Custom Collage' })
+  }
+
   const openProject = (id) => {
     setCurrentId(id)
     setView('editor')
@@ -98,7 +104,7 @@ export default function App() {
   }, [])
 
   if (view === 'editor' && current) {
-    return <Editor key={current.id} project={current} onBack={() => setView('gallery')} onRename={(name) => renameProject(current.id, name)} />
+    return <Editor key={current.id} project={current} onBack={() => setView('gallery')} onRename={(name) => renameProject(current.id, name)} pendingCollage={pendingCollage} onPendingCollageHandled={() => setPendingCollage(null)} />
   }
 
   return (
@@ -109,6 +115,7 @@ export default function App() {
       onDelete={deleteProject}
       onImportMedia={(url) => createProject(url)}
       onTemplate={(t) => createProject(null, t)}
+      onStartCollage={startCollage}
     />
   )
 }

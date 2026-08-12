@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.27
+> **Version**: v0.17.28
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.27)
+> **Updated**: 2026-08-12 (v0.17.28)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -910,3 +910,18 @@ layers, quick actions, AI suite, collage, versioning all present.
 - Verified end-to-end: build a 2-photo grid → click photo → bar shows
   [Replace, Fill, Fit, ↻, Remove] → Replace keeps 2 slots → Remove drops
   to 1 with the grid intact — zero console errors; auto-detect unaffected
+
+### v0.17.28 — Templates-first: no New Project, collage lives in Templates
+- **"New Project" is gone as the primary action** — the home screen now leads
+  with **Open / Add Media** and **Start from a Template**; blank canvas is a
+  small secondary link (also relabeled in empty-states and search)
+- **Templates & Layouts** modal (home) is now the single starting point:
+  platform sizes · **Collage layouts** (Grid 2, Grid 4, Hero + Sidekick,
+  Circle Inset — tap to open the editor with that layout preloaded) ·
+  **Custom from a reference** (upload a collage → auto-detect slots →
+  Start)
+- Starting any of these opens the editor **with the collage modal already
+  preloaded** (built-in layout or detected custom slots) — one click from
+  home to a ready layout
+- 16-step audit passes (no New Project primary, quick-starts, reference
+  detect → 4 slots → editor preloads 4, zero console errors)
