@@ -11,7 +11,7 @@ import { Button, Chip, Highlight, IconBtn, Modal } from '../components/ui'
 import { Logo } from '../components/Logo'
 import { detectCollageBoxes } from '../lib/collage'
 import { GlobalSearch } from '../components/GlobalSearch'
-import { OnboardGuide } from '../components/OnboardGuide'
+import { GoalMenu } from '../components/GoalMenu'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -145,7 +145,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
           placeholder="Search projects, templates, samples…"
           onQueryChange={setGallerySearch}
         />
-        <IconBtn icon="info" title="Help — what do you want to do?" size={15} onClick={() => setShowOnboard(true)} />
+        <GoalMenu onPick={pickGoal} autoOpen={showOnboard} />
         <IconBtn icon="user" title="Profile" size={17} />
       </header>
 
@@ -204,38 +204,35 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
           </section>
 
-          {/* Recent files */}
+          {/* Recent files — compact thumbnail strip (image-first, live previews) */}
           {recent.length > 0 && (
             <section className="mt-10">
               <div className="flex items-center gap-3">
                 <h2 className="label-sm text-fg">Recent Files</h2>
                 <Chip active>{recent.length}</Chip>
               </div>
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="no-scrollbar mt-4 flex gap-3 overflow-x-auto pb-1">
                 {recent.map((p) => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => onOpen(p.id)}
-                    className="group flex items-center gap-3 rounded-ink border border-line p-2.5 text-left transition-colors hover:border-white"
+                    className="group w-40 shrink-0 text-left"
                   >
-                    <div className="h-11 w-11 shrink-0 overflow-hidden rounded-ink border border-line bg-surface-2">
-                      {p.img && !p.template ? (
-                        <img src={p.img} alt="" className="h-full w-full object-cover" />
+                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-ink border border-line bg-surface-2 transition-colors group-hover:border-white">
+                      {p.thumb || (p.img && !p.template) ? (
+                        <img src={p.thumb || p.img} alt="" draggable={false} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-mute">
                           <Icon name="grid" size={16} />
                         </div>
                       )}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-semibold text-fg"><Highlight text={p.name} query={gallerySearch} /></div>
-                      <div className="mt-0.5 text-[10px] text-mute">
-                        {p.template ? `${p.template.w}×${p.template.h}` : `${p.layers} Layers`} ·{' '}
-                        {formatDate(p.opened || p.date)}
-                      </div>
+                    <div className="mt-1.5 truncate text-[11px] font-semibold text-fg"><Highlight text={p.name} query={gallerySearch} /></div>
+                    <div className="mt-0.5 text-[9px] text-mute">
+                      {p.template ? `${p.template.w}×${p.template.h}` : `${p.layers} Layers`} ·{' '}
+                      {formatDate(p.opened || p.date)}
                     </div>
-                    <Icon name="chevronRight" size={14} className="shrink-0 text-mute opacity-0 transition-opacity group-hover:opacity-100" />
                   </button>
                 ))}
               </div>
@@ -335,9 +332,6 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
           {window.__INKCEPTION_VERSION__ || 'v-dev'} · © 2026 Inkception
         </span>
       </footer>
-
-      {/* First-run guide — what do you want to do today? */}
-      <OnboardGuide open={showOnboard} onClose={() => setShowOnboard(false)} onPick={pickGoal} hasProjects={projects.length > 0} />
 
       {/* Template picker — blank canvas at any export size (grouped) */}
       <Modal
@@ -521,12 +515,18 @@ function ProjectCard({ project, onOpen, confirmDelete, onAskDelete, onCancelDele
   return (
     <div className="group cursor-pointer" onClick={onOpen}>
       <div className="relative aspect-[4/3] overflow-hidden rounded-ink-lg border border-line bg-surface-2 transition-colors duration-150 group-hover:border-white">
-        <img
-          src={project.img}
-          alt={project.name}
-          draggable={false}
-          className="h-full w-full object-cover opacity-90 transition-opacity duration-150 group-hover:opacity-100"
-        />
+        {project.thumb || (project.img && !project.template) ? (
+          <img
+            src={project.thumb || project.img}
+            alt={project.name}
+            draggable={false}
+            className="h-full w-full object-cover opacity-90 transition-opacity duration-150 group-hover:opacity-100"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-mute">
+            <Icon name="grid" size={22} />
+          </div>
+        )}
         <div className="absolute inset-0 flex items-end justify-between bg-gradient-to-t from-black/55 to-transparent p-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
           <span className="label-xs text-white/80">Open →</span>
           {confirmDelete ? (

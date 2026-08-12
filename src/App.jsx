@@ -91,6 +91,11 @@ export default function App() {
   const renameProject = (id, name) =>
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name } : p)))
 
+  // live thumbnail — the Gallery preview reflects the current canvas state
+  // (separate from `img`, the original source, so re-opening keeps full res)
+  const updateThumb = (id, thumb) =>
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, thumb } : p)))
+
   // ⌘N → new project from anywhere
   useEffect(() => {
     const h = (e) => {
@@ -104,7 +109,7 @@ export default function App() {
   }, [])
 
   if (view === 'editor' && current) {
-    return <Editor key={current.id} project={current} onBack={() => setView('gallery')} onRename={(name) => renameProject(current.id, name)} pendingCollage={pendingCollage} onPendingCollageHandled={() => setPendingCollage(null)} />
+    return <Editor key={current.id} project={current} onBack={() => setView('gallery')} onRename={(name) => renameProject(current.id, name)} pendingCollage={pendingCollage} onPendingCollageHandled={() => setPendingCollage(null)} onThumb={(thumb) => updateThumb(current.id, thumb)} />
   }
 
   return (

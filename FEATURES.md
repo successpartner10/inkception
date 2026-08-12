@@ -1,9 +1,9 @@
 # Inkception — Features & Functionality
 
-> **Version**: v0.17.29
+> **Version**: v0.17.30
 > **Live**: https://successpartner10.github.io/inkception/
 > **Repo**: github.com/successpartner10/inkception
-> **Updated**: 2026-08-12 (v0.17.29)
+> **Updated**: 2026-08-12 (v0.17.30)
 
 Inkception is a monochrome, AI-first design studio that runs entirely in the
 browser. Pure black canvas, Zen-minimal UI (Raleway wordmark, Plus Jakarta Sans
@@ -14,18 +14,27 @@ on-device processing. No backend, no account, no data leaves your device.
 
 ## 1. Gallery / Home
 
-- **Clean start** — no sample projects; empty state offers **New Project /
-  Open / Add Media / Templates**
-- **Recent Files** — your last 5 opened/created projects, sorted by last
-  opened, one-click reopen (thumbnail + layer count + date)
+- **Clean start** — no sample projects; empty state offers **Open / Add Media,
+  Start from a Template, Blank canvas**
+- **“What do you want to do today?”** — a persistent dropdown in the header
+  (opens automatically on first visit). Shows the six goals (Edit a photo ·
+  Fix / clean · Make a collage · Create a template · Export · Restore an old
+  photo); picking one **acts immediately**, and each goal expands to a short
+  “here's how” step list. Always available — never a one-time modal
+- **Accurate live previews** — every project card (and the Recent strip)
+  shows a thumbnail of the **current canvas state**, captured automatically
+  while you edit (debounced, on Back and on tab close). No more stale
+  originals
+- **Recent Files** — your last 5 opened/created projects as an image-first
+  thumbnail strip (one-click reopen, name + layer count + date)
 - **Project grid** — all projects with filters (All / Recent / Archived),
   hover actions (Open, Delete with confirm)
-- **New Project** — blank document (sample image on desktop; template option)
 - **Open / Add Media** — import an image from device (persistable, survives
   reloads; large files downscaled)
-- **Templates** — blank canvas at **any of the 27 export sizes**, grouped by
-  platform (Web, Instagram, WhatsApp, Google Business, Facebook, Pinterest,
-  YouTube, Email) with filter chips
+- **Templates & Layouts** — blank canvas at **any export size** (platform
+  groups + your custom sizes), **collage quick-starts** (Grid 2/4, Hero +
+  Sidekick, Circle Inset) and **custom layout from a reference image**
+  (auto-detect slots → Start)
 - **Delete** — per-project with a two-step confirm (no accidental loss)
 
 ## 2. Editor — Canvas & Workspace
@@ -33,7 +42,16 @@ on-device processing. No backend, no account, no data leaves your device.
 - **Fabric.js canvas** — infinite pan/zoom (scroll to zoom, drag to pan,
   zoom pill 20%–500%), checkerboard transparency backdrop
 - **Drag & drop** — drop an image file anywhere on the canvas to load it
-- **Empty states** — "No image loaded" (with Open File) and blank-template
+- **Named menus, no mystery icons** — every panel tab shows its **icon +
+  name** (Adjust · Actions · Recipes · AI · Layers · Text) as labelled chips;
+  the collapsed rail keeps tiny labels; the bottom tool dock labels every
+  tool (Select, Rect, Ellipse, Line, Text, Brush, Dropper, Crop, Blur,
+  Erase, Compare, Fit, Import, AI, Layers)
+- **Search defaults to a magnifying glass** — the editor's global search
+  starts as a compact magnifying-glass icon (click, or `/` / ⌘K, to expand
+  into the full “search everything” box); it stays expanded after you pick a
+  result
+- **Empty states** — “No image loaded” (with Open File) and blank-template
   canvas (with Add Photos / Collage CTA)
 - **Manual crop tool** — toolbar Crop → drag a selection on the image, dimmed
   outside area, live pixel-size readout, Apply/Cancel
@@ -940,3 +958,30 @@ layers, quick actions, AI suite, collage, versioning all present.
 - Replaces the old plain "free & local" banner
 - 13-step audit passes (guide opens, all 6 goals, steps + action, persists,
   help button, zero console errors)
+
+### v0.17.30 — Persistent goal menu · no mystery icons · live thumbnails
+- **“What do you want to do today?” is now a persistent dropdown** (in the
+  Gallery header; compact sparkle button in the editor). It auto-opens on
+  first visit like the old wizard, then stays as a button forever — click
+  it any time to see what's possible, pick a goal (acts immediately), or
+  expand any goal for the "here's how" steps. The one-time modal is gone
+- **No more icon-only menus** — every panel tab is a labelled chip (icon +
+  name): **Adjust · Actions · Recipes · AI · Layers · Text**, in both the
+  expanded panel (2×3 chip grid) and the collapsed rail (icon + tiny
+  label). The bottom tool dock is labelled too: **Select, Rect, Ellipse,
+  Line, Text, Brush, Dropper, Crop, Blur, Erase, Compare, Fit, Import, AI,
+  Layers**
+- **Search defaults to a magnifying glass** — the editor's global search
+  bar collapses to a compact 🔍 icon; click it (or press `/` / ⌘K) to
+  expand into the full search box. It stays expanded after picking a
+  result, and Esc/outside-click collapses it again
+- **Accurate gallery previews** — each project card now shows a **live
+  thumbnail of the current canvas** (captured debounced while editing, on
+  Back, and on tab close; stored separately from the source image so
+  re-opening keeps full resolution). Recent Files became an image-first
+  thumbnail strip instead of text rows — the home screen no longer reads
+  as one long list
+- 39-step automated browser audit passes (dropdown opens + all 6 named
+  goals + steps expand + goal acts, all 6 tabs labelled in panel & rail,
+  all 15 dock tools labelled, search collapses/expands, thumb saved to
+  storage, gallery shows live thumb, zero console errors)

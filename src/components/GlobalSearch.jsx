@@ -9,36 +9,62 @@ import { cn } from '../lib/utils'
 import { Icon } from './Icon'
 import { searchActions, scoreQuery } from '../lib/searchdict'
 
-export function GlobalSearch({ items = [], includeActions = true, placeholder = 'Search everything…', onPick, onQueryChange }) {
+export function GlobalSearch({ items = [], includeActions = true, placeholder = 'Search everything…', onPick, onQueryChange, collapsible = false }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const [sel, setSel] = useState(0)
+  // collapsible: the bar starts as a compact magnifying-glass icon (editor);
+  // clicking it (or "/" / ⌘K) expands into the full search box.
+  const [collapsed, setCollapsed] = useState(!!collapsible)
   const inputRef = useRef(null)
   const rootRef = useRef(null)
 
-  // focus from anywhere: "/" or ⌘/Ctrl+K
+  const expand = () => {
+    if (!collapsed) return
+    setCollapsed(false)
+    setOpen(true)
+    // wait a frame so the input is mounted before focusing
+    requestAnimationFrame(() => inputRef.current && inputRef.current.focus())
+  }
+
+  // focus from anywhere: "/" or ⌘/Ctrl+K (expands a collapsed bar first)
   useEffect(() => {
     const h = (e) => {
       const tag = (e.target && e.target.tagName) || ''
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)
       if ((e.key === '/' && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
         e.preventDefault()
-        inputRef.current && inputRef.current.focus()
-        setOpen(true)
+        if (collapsed) {
+          setCollapsed(false)
+          requestAnimationFrame(() => {
+            inputRef.current && inputRef.current.focus()
+            setOpen(true)
+          })
+        } else {
+          inputRef.current && inputRef.current.focus()
+          setOpen(true)
+        }
       } else if (e.key === 'Escape' && document.activeElement === inputRef.current) {
-        setQ(''); setOpen(false); inputRef.current.blur()
+        setQ(''); setOpen(false)
+        if (collapsible) setCollapsed(true)
+        else inputRef.current.blur()
       }
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [])
+  }, [collapsed, collapsible])
 
-  // click outside closes
+  // click outside closes (and collapses a collapsible bar)
   useEffect(() => {
-    const h = (e) => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false) }
+    const h = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) {
+        setOpen(false)
+        if (collapsible) setCollapsed(true)
+      }
+    }
     window.addEventListener('mousedown', h)
     return () => window.removeEventListener('mousedown', h)
-  }, [])
+  }, [collapsible])
 
   const query = q.trim().toLowerCase()
 
@@ -84,31 +110,53 @@ export function GlobalSearch({ items = [], includeActions = true, placeholder = 
 
   return (
     <div ref={rootRef} className="relative min-w-0 flex-1">
-      <div
-        className={cn(
-          'flex h-9 items-center gap-2 rounded-ink border bg-surface px-2.5 transition-all',
-          open ? 'border-white shadow-[0_0_14px_rgba(255,255,255,0.18)]' : 'border-line focus-within:border-white',
-        )}
-      >
-        <Icon name="search" size={14} className="shrink-0 text-mute" />
-        <input
-          ref={inputRef}
-          value={q}
-          onChange={(e) => { setQ(e.target.value); setOpen(true); onQueryChange && onQueryChange(e.target.value) }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={onKey}
-          placeholder={placeholder}
+      {collapsible && collapsed ? (
+        <button
+          type="button"
+          onClick={expand}
+          title="Search everything ( / )"
           aria-label="Search everything"
-          className="h-full w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
-        />
-        {q ? (
-          <button type="button" onClick={() => { setQ(''); setOpen(false); onQueryChange && onQueryChange(''); inputRef.current.focus() }} className="shrink-0 text-mute hover:text-fg" title="Clear" aria-label="Clear search">
-            <Icon name="close" size={12} />
-          </button>
-        ) : (
-          <span className="hidden shrink-0 rounded-ink border border-line px-1.5 py-0.5 text-[9px] font-bold text-mute sm:inline">/</span>
-        )}
-      </div>
+          className="flex h-9 w-9 items-center justify-center rounded-ink border border-line bg-surface text-mute transition-colors hover:border-white hover:text-fg"
+        >
+          <Icon name="search" size={15} />
+        </button>
+      ) : (
+        <div
+          className={cn(
+            'flex h-9 items-center gap-2 rounded-ink border bg-surface px-2.5 transition-all',
+            open ? 'border-white shadow-[0_0_14px_rgba(255,255,255,0.18)]' : 'border-line focus-within:border-white',
+          )}
+        >
+          <Icon name="search" size={14} className="shrink-0 text-mute" />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => { setQ(e.target.value); setOpen(true); onQueryChange && onQueryChange(e.target.value) }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={onKey}
+            placeholder={placeholder}
+            aria-label="Search everything"
+            className="h-full w-full min-w-0 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+          />
+          {q ? (
+            <button type="button" onClick={() => { setQ(''); setOpen(false); onQueryChange && onQueryChange(''); inputRef.current.focus() }} className="shrink-0 text-mute hover:text-fg" title="Clear" aria-label="Clear search">
+              <Icon name="close" size={12} />
+            </button>
+          ) : collapsible ? (
+            <button
+              type="button"
+              onClick={() => { setCollapsed(true); setOpen(false) }}
+              title="Collapse search"
+              aria-label="Collapse search"
+              className="shrink-0 text-mute transition-colors hover:text-fg"
+            >
+              <Icon name="chevronLeft" size={13} />
+            </button>
+          ) : (
+            <span className="hidden shrink-0 rounded-ink border border-line px-1.5 py-0.5 text-[9px] font-bold text-mute sm:inline">/</span>
+          )}
+        </div>
+      )}
 
       {open && query && (
         <div className="absolute right-0 top-full z-[80] mt-1.5 max-h-[70vh] w-full min-w-[320px] overflow-y-auto rounded-ink-lg border border-line bg-surface py-1 shadow-2xl scrollbar-thin sm:min-w-[420px]">

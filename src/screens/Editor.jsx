@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Canvas, Circle, Ellipse, IText, Line, PencilBrush, Polygon, Rect, Triangle, Image as FabricImage } from 'fabric'
 import { Icon } from '../components/Icon'
 import { GlobalSearch } from '../components/GlobalSearch'
+import { GoalMenu } from '../components/GoalMenu'
 import {
   ActionCard,
   Button,
@@ -174,7 +175,7 @@ const LAYER_DEFAULTS = [
   { id: 'backdrop', name: 'Backdrop', type: 'Fill', visible: true, locked: false },
 ]
 
-export function Editor({ project, onBack, onRename = () => {}, pendingCollage = null, onPendingCollageHandled = () => {} }) {
+export function Editor({ project, onBack, onRename = () => {}, pendingCollage = null, onPendingCollageHandled = () => {}, onThumb = () => {} }) {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   /* ------------------------------ canvas refs ------------------------------ */
@@ -443,6 +444,71 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   }, [currentColor])
 
   const showToast = useCallback((msg, icon) => setToast({ msg, icon }), [])
+
+  /* ------------------------- live project thumbnail ------------------------ */
+  // The Gallery card shows the CURRENT canvas state, not the original photo —
+  // a small JPEG is captured whenever the edit changes (debounced), on Back,
+  // and on unload, so the home-screen preview is always accurate.
+  const onThumbRef = useRef(onThumb)
+  useEffect(() => { onThumbRef.current = onThumb }, [onThumb])
+  const thumbTimerRef = useRef(null)
+
+  const captureThumb = useCallback(() => {
+    const c = fabricRef.current
+    if (!c || !onThumbRef.current) return
+    try {
+      // snap back to fit so the thumbnail shows the whole document, then
+      // restore the user's viewport (all synchronous — no visible flash)
+      const vp = c.viewportTransform ? c.viewportTransform.slice() : null
+      const needsReset = vp && (vp[0] !== 1 || vp[4] !== 0 || vp[5] !== 0)
+      if (needsReset) {
+        c.setViewportTransform([1, 0, 0, 1, 0, 0])
+        c.renderAll()
+      }
+      const el = c.getElement()
+      const w = el.width || 0
+      const h = el.height || 0
+      if (!w || !h) return
+      const s = Math.min(1, 320 / Math.max(w, h))
+      const cv = document.createElement('canvas')
+      cv.width = Math.max(2, Math.round(w * s))
+      cv.height = Math.max(2, Math.round(h * s))
+      const ctx = cv.getContext('2d')
+      ctx.fillStyle = '#0d0d0f'
+      ctx.fillRect(0, 0, cv.width, cv.height)
+      ctx.drawImage(el, 0, 0, cv.width, cv.height)
+      onThumbRef.current(cv.toDataURL('image/jpeg', 0.72))
+      if (needsReset && vp) {
+        c.setViewportTransform(vp)
+        c.renderAll()
+      }
+    } catch { /* ignore — preview stays as-is */ }
+  }, [])
+
+  const scheduleThumb = useCallback(() => {
+    clearTimeout(thumbTimerRef.current)
+    thumbTimerRef.current = setTimeout(captureThumb, 700)
+  }, [captureThumb])
+
+  // debounce on edit state (image replacements, filters, quick fx, layers, size)
+  useEffect(() => {
+    if (!imageSrc && extraLayers.length === 0) return
+    scheduleThumb()
+    return () => clearTimeout(thumbTimerRef.current)
+  }, [imageSrc, filters, fx, extraLayers, fit, layers, scheduleThumb])
+
+  // capture on unload so the last state sticks even if the tab closes
+  useEffect(() => {
+    const onUnload = () => { clearTimeout(thumbTimerRef.current); captureThumb() }
+    window.addEventListener('beforeunload', onUnload)
+    return () => window.removeEventListener('beforeunload', onUnload)
+  }, [captureThumb])
+
+  const handleBack = () => {
+    clearTimeout(thumbTimerRef.current)
+    captureThumb()
+    onBack()
+  }
 
   /* Only one modal open at a time (best practice — prevents stacked dialogs
      where a backdrop from an earlier modal blocks clicks on the new one). */
@@ -756,10 +822,16 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     c.on('object:scaling', syncRing)
     c.on('object:rotating', syncRing)
 
+    // live gallery thumbnail — any canvas change schedules an accurate preview
+    c.on('object:added', scheduleThumb)
+    c.on('object:modified', scheduleThumb)
+    c.on('object:removed', scheduleThumb)
+
     return () => {
       c.dispose()
       fabricRef.current = null
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /* tool change → toggle selection/editing mode */
@@ -3793,7 +3865,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     <div className="flex h-full flex-col overflow-x-hidden bg-ink">
       {/* ------------------------------- top bar ------------------------------ */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-3 sm:px-4">
-        <IconBtn icon="chevronLeft" title="Back to gallery" onClick={onBack} />
+        <IconBtn icon="chevronLeft" title="Back to gallery" onClick={handleBack} />
         <div className="ml-2 flex min-w-0 items-center gap-2">
           {editingName ? (
             <input
@@ -3821,10 +3893,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           )}
           <Chip className="hidden sm:inline-flex">{project.layers} Layers</Chip>
         </div>
-        <div className="relative mx-2 flex min-w-0 flex-1 items-center gap-1.5 rounded-ink border border-line bg-surface px-2.5 focus-within:border-white sm:max-w-xs">
+        <div className="mx-2 flex min-w-0 flex-1 justify-end sm:max-w-xs">
           <GlobalSearch
             items={globalItems}
             includeActions
+            collapsible
             placeholder="Search everything — actions, tools, menus, sizes…"
             onPick={onGlobalPick}
             onQueryChange={setGlobalSearch}
@@ -3849,6 +3922,15 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             Export
           </Button>
           <IconBtn icon="gear" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
+          <div className="mx-2 h-5 w-px bg-line" />
+          <GoalMenu
+            compact
+            onPick={(action) => {
+              if (action === 'open' || action === 'fix' || action === 'restore') fileRef.current && fileRef.current.click()
+              else if (action === 'collage' || action === 'template') openModal(setCollageOpen)
+              else if (action === 'export') openModal(setExportOpen)
+            }}
+          />
         </div>
         <div className="flex items-center gap-0.5 lg:hidden">
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
@@ -4137,25 +4219,32 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           className={cn(
             'flex shrink-0 flex-col border-l border-line bg-surface',
             panelCollapsed
-              ? 'w-11'
+              ? 'w-14'
               : isDesktop
                 ? 'w-[360px]'
                 : 'absolute bottom-0 right-0 top-0 z-40 w-[300px] shadow-2xl', // overlay on mobile
           )}
         >
           {panelCollapsed ? (
-            <div className="flex flex-col items-center gap-1 py-2">
+            <div className="flex w-full flex-col items-center gap-1 py-2">
               {TAB_ITEMS.map((t) => (
-                <IconBtn
+                <button
                   key={t.id}
-                  icon={t.icon}
+                  type="button"
                   title={t.label}
-                  active={tab === t.id}
+                  aria-label={t.label}
                   onClick={() => {
                     setTab(t.id)
                     setPanelCollapsed(false)
                   }}
-                />
+                  className={cn(
+                    'flex w-full flex-col items-center gap-1 rounded-ink px-0.5 py-2 transition-colors',
+                    tab === t.id ? 'bg-white text-black' : 'text-mute hover:bg-white/5 hover:text-fg',
+                  )}
+                >
+                  <Icon name={t.icon} size={14} strokeWidth={1.8} />
+                  <span className="w-full truncate text-center text-[6.5px] font-bold uppercase leading-none tracking-[0.03em]">{t.label}</span>
+                </button>
               ))}
               <div className="my-1 h-px w-6 bg-line" />
               <IconBtn icon="chevronLeft" title="Expand panel" onClick={() => setPanelCollapsed(false)} />
@@ -4164,7 +4253,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             <>
               <div className="flex items-center justify-between border-b border-line pr-1">
                 <div className="no-scrollbar min-w-0 flex-1 overflow-x-auto">
-                  <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} iconOnly />
+                  <Segmented items={TAB_ITEMS} value={tab} onChange={setTab} wrap />
                 </div>
                 <IconBtn icon={isDesktop ? 'chevronRight' : 'close'} title="Collapse panel" onClick={() => setPanelCollapsed(true)} />
               </div>
@@ -4179,24 +4268,24 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       </div>
 
       {/* --------------------------- tool dock (2 rows, bottom-center) ----------------- */}
-      {/* tool dock: two centered rows below the canvas.
-          Row 1 = draw/move tools · Row 2 = edit/utility tools. Compact,
-          always visible, canvas is never covered. */}
+      {/* tool dock: two centered rows below the canvas. Every tool shows its
+          icon AND name — no mystery icons. Row 1 = draw/move tools · Row 2 =
+          edit/utility tools. Compact, always visible, canvas is never covered. */}
       <footer className="flex shrink-0 flex-col items-center gap-1 border-t border-line px-2 py-1.5">
         {/* Row 1 — draw + edit tools (consolidated) */}
         <div className="flex flex-wrap items-center justify-center gap-0.5">
-          <IconBtn icon="move" title="Select / Move (V)" active={tool === 'select'} onClick={() => setTool('select')} />
-          <IconBtn icon="shape" title="Rectangle (R)" active={tool === 'rect'} onClick={() => setTool('rect')} />
-          <IconBtn icon="circle" title="Ellipse (E)" active={tool === 'ellipse'} onClick={() => setTool('ellipse')} />
-          <IconBtn icon="minus" title="Line (L)" active={tool === 'line'} onClick={() => setTool('line')} />
-          <IconBtn icon="text" title="Text (T)" active={tool === 'text'} onClick={() => setTool('text')} />
-          <IconBtn icon="brush" title="Brush (B)" active={tool === 'brush'} onClick={() => setTool('brush')} />
-          <IconBtn icon="dropper" title="Eyedropper — pick color from image" active={tool === 'dropper'} onClick={() => setTool('dropper')} />
-          <IconBtn icon="crop" title="Crop (drag to select)" active={tool === 'crop'} onClick={startCrop} />
+          <ToolChip icon="move" label="Select" kbd="V" active={tool === 'select'} onClick={() => setTool('select')} />
+          <ToolChip icon="shape" label="Rect" kbd="R" active={tool === 'rect'} onClick={() => setTool('rect')} />
+          <ToolChip icon="circle" label="Ellipse" kbd="E" active={tool === 'ellipse'} onClick={() => setTool('ellipse')} />
+          <ToolChip icon="minus" label="Line" kbd="L" active={tool === 'line'} onClick={() => setTool('line')} />
+          <ToolChip icon="text" label="Text" kbd="T" active={tool === 'text'} onClick={() => setTool('text')} />
+          <ToolChip icon="brush" label="Brush" kbd="B" active={tool === 'brush'} onClick={() => setTool('brush')} />
+          <ToolChip icon="dropper" label="Dropper" active={tool === 'dropper'} onClick={() => setTool('dropper')} />
+          <ToolChip icon="crop" label="Crop" active={tool === 'crop'} onClick={startCrop} />
           <div className="mx-1 h-5 w-px bg-line" />
-          <IconBtn icon="wind" title="Blur brush — paint to blur" active={eraseMode === 'blur'} onClick={() => startErase('blur')} />
-          <IconBtn icon="eraser" title="Erase brush — paint to transparent" active={eraseMode === 'alpha'} onClick={() => startErase('alpha')} />
-          <IconBtn icon="compare" title="Before / After (⌘B)" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
+          <ToolChip icon="wind" label="Blur" active={eraseMode === 'blur'} onClick={() => startErase('blur')} />
+          <ToolChip icon="eraser" label="Erase" active={eraseMode === 'alpha'} onClick={() => startErase('alpha')} />
+          <ToolChip icon="compare" label="Compare" kbd="⌘B" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
         </div>
         {/* Row 2 — zoom + quick access (consolidated) */}
         <div className="flex flex-wrap items-center justify-center gap-0.5">
@@ -4227,11 +4316,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             )}
           </div>
           <IconBtn icon="zoomIn" title="Zoom in" onClick={() => zoomBy(1.25)} />
-          <IconBtn icon="fit" title="Fit screen" onClick={zoomFit} />
+          <ToolChip icon="fit" label="Fit" onClick={zoomFit} />
           <div className="mx-1.5 h-5 w-px bg-line" />
-          <IconBtn icon="upload" title="Import image (⌘O)" onClick={() => fileRef.current && fileRef.current.click()} />
-          <IconBtn icon="ai" title="AI Suite" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
-          <IconBtn icon="layers" title="Layers" active={tab === 'layers'} onClick={() => openTab('layers')} />
+          <ToolChip icon="upload" label="Import" onClick={() => fileRef.current && fileRef.current.click()} />
+          <ToolChip icon="ai" label="AI" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
+          <ToolChip icon="layers" label="Layers" active={tab === 'layers'} onClick={() => openTab('layers')} />
         </div>
         {/* font controls appear between rows when the text tool is active */}
         {(tool === 'text' || activeText) && (
@@ -4934,6 +5023,24 @@ function PresetRow({ p, checked, onToggle, query = '', onRemove }) {
 /* ----------------------------- tab: Quick actions -------------------------- */
 // Spec §7 — 20 one-click effects in 4 groups.
 /* --------------------------- zoom preset row (menu) ------------------------- */
+/* dock tool chip — icon + readable name, so no button is a mystery icon */
+function ToolChip({ icon, label, kbd, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={kbd ? `${label} (${kbd})` : label}
+      aria-label={label}
+      className={cn(
+        'flex h-8 items-center gap-1.5 rounded-ink px-2 text-[9px] font-bold uppercase tracking-[0.08em] transition-colors',
+        active ? 'bg-white text-black' : 'text-dim hover:bg-white/5 hover:text-fg',
+      )}
+    >
+      <Icon name={icon} size={13} />
+      <span>{label}</span>
+    </button>
+  )
+}
 function ZoomMenuRow({ label, kbd, active, onClick }) {
   return (
     <button

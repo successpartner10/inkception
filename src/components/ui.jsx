@@ -91,7 +91,33 @@ export function Chip({ children, active, className }) {
 
 /* --------------------------------- Segmented -------------------------------- */
 
-export function Segmented({ items, value, onChange, className, iconOnly = false }) {
+export function Segmented({ items, value, onChange, className, iconOnly = false, wrap = false }) {
+  // wrap: icon + readable name on every tab (grid) — no more mystery icons
+  if (wrap) {
+    return (
+      <div className={cn('grid grid-cols-3 gap-1 p-1.5', className)}>
+        {items.map((it) => {
+          const isActive = value === it.id
+          return (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => onChange(it.id)}
+              title={it.label}
+              aria-label={it.label}
+              className={cn(
+                'flex min-w-0 flex-col items-center gap-1 rounded-ink px-1 py-1.5 transition-colors',
+                isActive ? 'bg-white text-black' : 'text-mute hover:bg-white/5 hover:text-dim',
+              )}
+            >
+              {it.icon && <Icon name={it.icon} size={14} strokeWidth={1.8} />}
+              <span className="w-full truncate text-center text-[8.5px] font-bold uppercase leading-none tracking-[0.05em]">{it.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
   return (
     <div className={cn('flex border-b border-line', className)}>
       {items.map((it) => {

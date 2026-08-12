@@ -18,6 +18,15 @@ The site deploys automatically whenever `main` is updated (GitHub Actions →
 - **Free & private** — no account, no backend, no data leaves the device
 - **358 one-click Actions** + real on-device AI (subject matting, inpainting,
   smart crop) — honest about what needs a paid model
+- **“What do you want to do today?”** — a persistent dropdown in the header
+  (auto-opens on first visit) that shows everything that's possible; pick a
+  goal and it acts immediately, or expand any goal for the "here's how" steps
+- **No mystery icons** — every menu and tool shows its name: labelled panel
+  tabs (Adjust · Actions · Recipes · AI · Layers · Text), a labelled tool
+  dock, and an editor search that starts as a compact magnifying glass
+  (click, or `/` / ⌘K, to expand)
+- **Accurate gallery previews** — each project card shows a live thumbnail of
+  the current canvas, captured as you edit — no stale originals
 - **Recipes** — save any repeated steps as a named one-click task; the app
   learns your "most used", predicts your next step, and nudges you to save
   repeated chains as recipes
