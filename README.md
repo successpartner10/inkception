@@ -9,8 +9,15 @@ monochromatic palette, Raleway wordmark + Plus Jakarta Sans UI, "Round Eight"
 ## License & status
 
 - **The repo is PRIVATE** — source and full history are visible only to the
-  owner and invited collaborators. The public GitHub Pages site is therefore
-  offline; the product is distributed as paid offline copies (see below).
+  owner and invited collaborators.
+- **Hosted live (public)**: **https://inkception.pages.dev/** — deployed to
+  Cloudflare Pages from this repo's `dist/` (token/account in workspace,
+  `wrangler@3 pages deploy`). Re-deploy after every `npm run build`.
+- **Locking down (planned)**: Cloudflare Access will gate the URL to the 4
+  allowed Gmail accounts (see `cloudflare-access/allowlist.json` + the
+  SETUP doc). **Access is not enabled on the account yet** — enable it in the
+  Zero Trust dashboard, then the Access app + email-allowlist policy gets
+  applied.
 - **License:** see [`LICENSE`](LICENSE). Free for personal, non-commercial
   use. Commercial use requires a paid license. **Redistribution, resale, and
   cloning are prohibited.**
@@ -84,16 +91,12 @@ any public URL — they ship only to buyers / by private hand-off):
 
 - ✅ **Laptop offline version keeps working** — it never touches GitHub.
 - ✅ **Source + history are hidden** from everyone except invited collaborators.
-- ⚠️ **The public site `successpartner10.github.io/inkception/` is offline** —
-  GitHub Pages on the free plan only serves public repos. That is expected;
-  paid offline copies replace it.
+- ✅ **The product is hosted on Cloudflare Pages** (`inkception.pages.dev`)
+  instead of GitHub Pages — Pages serves it even from a private repo, and the
+  URL is locked down with Cloudflare Access (email allowlist) once enabled.
 - ✅ **Pushes still work** — commit + `bash deploy-inkception.sh "msg"` pushes
-  fine to a private repo; the deploy workflow automatically **skips** the
-  Pages step (no red ❌ runs). If you ever flip the repo back to public, the
-  site resumes deploying on its own.
-- Note: the *published site* can never be password-gated on the free plan —
-  for login-restricted access, use the Cloudflare Access route (see
-  `CLOUDFLARE_ACCESS_SETUP.md`).
+  fine to a private repo; the GitHub Pages deploy workflow automatically
+  **skips** (no red ❌ runs).
 
 ## Stack
 
