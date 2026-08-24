@@ -1,0 +1,10 @@
+# Cloudflare Pages config — enables the /api/* AI functions (free lane).
+# The AI binding powers Describe / Copy / Generate on the Workers AI free
+# tier. Deploy with: `npx wrangler pages deploy dist` (the functions/
+# directory is bundled automatically).
+name = "inkception"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "dist"
+
+[ai]
+binding = "AI"

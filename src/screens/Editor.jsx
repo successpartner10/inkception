@@ -41,6 +41,10 @@ import * as PX from '../lib/pxengine'
 import { detectFaceBox } from '../lib/face'
 import { detectTextBlocks } from '../lib/textdetect'
 import { SectionNav } from '../components/SectionNav'
+import { DescribeModal, GenerateModal, CopyModal, AnimateModal } from '../components/AIModals'
+import { FastPathRibbon } from '../components/Onboarding'
+import { fxState, fxStep, fxDraw, FX_KINDS } from '../lib/livex'
+import { hasGeminiKey, getGeminiKey, setGeminiKey, resetAiConsent, workerPing } from '../lib/ailane'
 import { getScale, setScale as persistScale, SCALE_OPTIONS } from '../lib/theme'
 import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
 import { ACTION_CATS, ACTIONS } from '../lib/actions'
@@ -272,6 +276,15 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const [selectedLayer, setSelectedLayer] = useState('subject')
   const [selCollageId, setSelCollageId] = useState(null) // selected collage photo for the on-canvas bar
   const [pixelStudio, setPixelStudio] = useState(false) // Photoshop-style toolset bar
+  const [describeOpen, setDescribeOpen] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
+  const [genPrompt, setGenPrompt] = useState('')
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [animateOpen, setAnimateOpen] = useState(false)
+  const [tipsOn, setTipsOn] = useState(() => { try { return localStorage.getItem('inkception.tips') !== '0' } catch { return true } })
+  const [ribbonHidden, setRibbonHidden] = useState(() => { try { return localStorage.getItem('inkception.ribbon') === '1' } catch { return false } })
+  const [geminiKey, setGeminiKeyState] = useState(getGeminiKey)
+  const [freeLane, setFreeLane] = useState(null) // 'free' | null once pinged
   const [selFrameId, setSelFrameId] = useState(null) // selected framed photo (face frames)
   const frameAwait = useRef(false) // next imported image becomes a framed layer
   const collageReplaceRef = useRef(null) // id being replaced
@@ -325,7 +338,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const [removeBgEdge, setRemoveBgEdge] = useState(2) // hair/edge radius px (0=off)
   const [removeBgDecontam, setRemoveBgDecontam] = useState(0.7) // fringe cleanup 0..1
   const [currentColor, setCurrentColor] = useState('#ffffff') // eyedropper / brush color
-  const [motion, setMotion] = useState({ mode: 'off', speed: 1 })
+  const [motion, setMotion] = useState({ mode: 'off', speed: 1, fx: null }) // fx: {kind,density,speed,off}
   const [extraLayers, setExtraLayers] = useState([])
   const [batchResult, setBatchResult] = useState(null)
   const [format, setFormat] = useState('png')
@@ -2052,9 +2065,74 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
 
   /* #8 — Motion (animated preview) */
   const applyMotion = (mode, speed) => {
-    setMotion({ mode, speed })
+    setMotion((m) => ({ mode, speed, fx: m.fx }))
     setMotionOpen(false)
-    if (mode !== 'off') showToast(`Motion: ${mode} — export is a still frame`, 'play')
+    if (mode !== 'off') showToast(`Motion: ${mode} — animated in GIF/MP4 export`, 'play')
+  }
+
+  const setMotionFx = (fx) => setMotion((m) => ({ ...m, fx }))
+  const toggleFxOff = () => setMotion((m) => ({ ...m, fx: m.fx ? { ...m.fx, off: !m.fx.off } : m.fx }))
+
+  /* Live FX preview — a transparent canvas over the fabric canvas, driven by
+     a rAF loop. Deterministic seed so export matches the preview. When depth
+     motion is on, the person layer sways gently on the fabric canvas. */
+  const fxCanvasRef = useRef(null)
+  const fxRafRef = useRef(0)
+  const depthBaseRef = useRef(null) // { img, left, top }
+  useEffect(() => {
+    const fx = motion.fx
+    const c = fabricRef.current
+    // depth sway setup
+    if (motion.mode === 'depth' && c) {
+      const person = decompRef.current.find((d) => d.id === 'dec-person' || d.id === 'dec-face')
+      if (person && person.img && !depthBaseRef.current) {
+        depthBaseRef.current = { img: person.img, left: person.img.left, top: person.img.top }
+      }
+    } else if (depthBaseRef.current) {
+      // restore exact position
+      const b = depthBaseRef.current
+      if (b.img) b.img.set({ left: b.left, top: b.top })
+      depthBaseRef.current = null
+      if (c) c.requestRenderAll()
+    }
+    const running = fx && !fx.off
+    const cv = fxCanvasRef.current
+    if (!running || !cv) { cancelAnimationFrame(fxRafRef.current); return }
+    const rect = { w: fit.w || 600, h: fit.h || 400 }
+    cv.width = rect.w
+    cv.height = rect.h
+    const ctx = cv.getContext('2d')
+    const st = fxState(fx.kind, fx)
+    let last = performance.now()
+    const loop = (now) => {
+      const dt = Math.min(64, now - last)
+      last = now
+      fxStep(st, (dt / 16.67) * (fx.speed || 1))
+      ctx.clearRect(0, 0, rect.w, rect.h)
+      fxDraw(st, ctx, rect.w, rect.h)
+      // depth sway (fabric side)
+      if (motion.mode === 'depth' && depthBaseRef.current) {
+        const b = depthBaseRef.current
+        const t = now / 1000
+        b.img.set({ left: b.left + Math.sin(t * 0.8) * 7, top: b.top + Math.cos(t * 0.6) * 4 })
+        if (c) c.requestRenderAll()
+      }
+      fxRafRef.current = requestAnimationFrame(loop)
+    }
+    fxRafRef.current = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(fxRafRef.current)
+  }, [motion, fit.w, fit.h])
+
+  /* depth action from the Animate modal — extract layers if needed, then on */
+  const enableDepthMotion = async () => {
+    const have = decompRef.current.some((d) => d.id === 'dec-person' || d.id === 'dec-face')
+    if (!have) {
+      showToast('Extracting layers first (free, a few seconds)…', 'layers')
+      await runDecompose()
+    }
+    setPanelCollapsed(true)
+    applyMotion('depth', 1)
+    setMotionOpen(false)
   }
 
   /* Background-aware text color — reads the image, picks black or white
@@ -3436,6 +3514,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         }
         setBusy({ kind: 'real', title: format === 'gif' ? 'Export GIF' : 'Export MP4', step: 'Rendering animation…', progress: 40 })
         const mode = motion.mode === 'off' ? 'zoom' : motion.mode
+        const bgL = decompRef.current.find((d) => d.id === 'dec-background')
+        const fgL = decompRef.current.find((d) => d.id === 'dec-person' || d.id === 'dec-face')
         const { frames, fps } = await renderMotionFrames({
           src,
           filter: cssFilterString(filtersRef.current),
@@ -3445,6 +3525,9 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           h: H,
           seconds: 2.4,
           fps: 20,
+          fx: motion.fx && !motion.fx.off ? motion.fx : null,
+          bgSrc: mode === 'depth' && bgL ? bgL.dataUrl : null,
+          fgSrc: mode === 'depth' && fgL ? fgL.dataUrl : null,
         })
         if (format === 'gif') {
           const blob = gifEncode(frames, Math.round(1000 / fps))
@@ -3466,6 +3549,21 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       if (!dataUrl) {
         showToast('Nothing to export', 'info')
         return
+      }
+      // Live FX on still exports — composite a representative FX frame
+      if (motion.fx && !motion.fx.off) {
+        try {
+          const fxImg = await loadImageElement(dataUrl)
+          const cv = document.createElement('canvas')
+          cv.width = W
+          cv.height = H
+          const fxCtx = cv.getContext('2d')
+          fxCtx.drawImage(fxImg, 0, 0, W, H)
+          const st = fxState(motion.fx.kind, motion.fx)
+          fxStep(st, 34)
+          fxDraw(st, fxCtx, W, H)
+          dataUrl = cv.toDataURL('image/png')
+        } catch { /* keep the plain frame */ }
       }
       setBusy({ kind: 'real', title: `Export ${format.toUpperCase()}`, step: 'Encoding…', progress: 60 })
 
@@ -3788,6 +3886,46 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     e.target.value = ''
   }
 
+  /* generated image → canvas as a movable layer */
+  const addGeneratedImage = async (dataUrl) => {
+    const c = fabricRef.current
+    if (!c || !fit.w) return
+    const img = await FabricImage.fromURL(dataUrl)
+    const s = Math.min((fit.w * 0.8) / img.width, (fit.h * 0.8) / img.height)
+    img.set({
+      left: (fit.w - img.width * s) / 2,
+      top: (fit.h - img.height * s) / 2,
+      scaleX: s, scaleY: s,
+      selectable: true, evented: true,
+    })
+    c.add(img)
+    const id = `gen-${Date.now()}`
+    decompRef.current.push({ id, img, name: 'AI Image', type: 'AI Image', dataUrl, visible: true })
+    setExtraLayers(decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })))
+    c.setActiveObject(img)
+    c.requestRenderAll()
+  }
+
+  /* AI copy suggestion → real editable text layer */
+  const addTextFromCopy = (text, kind) => {
+    const c = fabricRef.current
+    if (!c || !fit.w) return
+    const t = new IText(text, {
+      left: fit.w / 2,
+      top: fit.h / 2,
+      originX: 'center',
+      originY: 'center',
+      fill: kind === 'cta' ? '#ffffff' : '#ffffff',
+      fontFamily: fontStack(textFont),
+      fontSize: kind === 'cta' ? Math.max(18, Math.round(fit.h * 0.035)) : Math.max(28, Math.round(fit.h * 0.07)),
+      fontWeight: kind === 'cta' ? '600' : '800',
+      textAlign: 'center',
+    })
+    c.add(t)
+    c.setActiveObject(t)
+    c.requestRenderAll()
+  }
+
   /* frame bar actions (selected framed photo) */
   const frameAction = (kind) => {
     const d = decompRef.current.find((x) => x.id === selFrameId)
@@ -3868,6 +4006,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   { id: 'tool-pixelstudio', label: 'Pixel Studio (Photoshop-style editing)', group: 'Tool', icon: 'brush', go: () => goSection('pixel') },
   { id: 'tool-framephoto', label: 'Add Photo in Frame (templates & banners)', group: 'Tool', icon: 'fit', go: () => { frameAwait.current = true; if (fileRef.current) fileRef.current.click() } },
   { id: 'tool-extract', label: 'Extract to Layers (text · face · person · background)', group: 'AI', icon: 'layers', go: () => { setTab('ai'); runDecompose() } },
+  { id: 'tool-describe', label: 'Describe Image (AI writes the prompt)', group: 'AI', icon: 'text', go: () => openModal(setDescribeOpen) },
+  { id: 'tool-generate', label: 'Generate Image (text → image → layer)', group: 'AI', icon: 'sparkle', go: () => openModal(setGenerateOpen) },
+  { id: 'tool-copy', label: 'AI Headlines & CTA (editable text suggestions)', group: 'AI', icon: 'penTool', go: () => openModal(setCopyOpen) },
+  { id: 'tool-animate', label: 'Animate (Live FX · 2.5D · AI video)', group: 'AI', icon: 'play', go: () => openModal(setAnimateOpen) },
+  { id: 'tool-livex', label: 'Live FX (fireworks · sparkles · snow…)', group: 'AI', icon: 'sparkle', go: () => { setPanelCollapsed(true); openModal(setMotionOpen) } },
     { id: 'tool-heal', label: 'Healing Brush', group: 'Retouch', icon: 'brush', go: () => startPaintTool('heal') },
     { id: 'tool-redeye', label: 'Red Eye', group: 'Retouch', icon: 'eye', go: () => startPaintTool('redeye') },
     { id: 'tool-bucket', label: 'Paint Bucket', group: 'Retouch', icon: 'droplet', go: () => startPaintTool('bucket') },
@@ -3976,6 +4119,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           onBatch={() => openModal(setBatchOpen)}
           onDecompose={() => runDecompose()}
           onEraser={(m) => startErase(m)}
+          onDescribe={() => openModal(setDescribeOpen)}
+          onGenerate={() => openModal(setGenerateOpen)}
+          onCopy={() => openModal(setCopyOpen)}
+          onAnimate={() => openModal(setAnimateOpen)}
+          tips={tipsOn}
           onCollage={() => openModal(setCollageOpen)}
           onUpscale={() => openModal(setUpscaleOpen)}
           onPalette={() => runPalette()}
@@ -4142,6 +4290,18 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       {/* website-style section menu — every workflow one obvious click away */}
       <SectionNav items={EDITOR_SECTIONS} onPick={goSection} active={pixelStudio ? 'pixel' : tab} />
 
+      {/* novice fast path: 1-2-3, dismissible */}
+      {tipsOn && !ribbonHidden && (
+        <FastPathRibbon
+          onOpen={() => fileRef.current && fileRef.current.click()}
+          onExport={() => openModal(setExportOpen)}
+          onDismiss={() => {
+            setRibbonHidden(true)
+            try { localStorage.setItem('inkception.ribbon', '1') } catch { /* ignore */ }
+          }}
+        />
+      )}
+
       <div className="relative flex min-h-0 flex-1">
         {/* ------------------------------ canvas area ---------------------------- */}
         <main
@@ -4244,6 +4404,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             >
               <canvas ref={canvasElRef} className="absolute inset-0" />
             </div>
+            {/* Live FX overlay — transparent canvas above the artwork */}
+            <canvas id="ik-fx-canvas" ref={fxCanvasRef} className="pointer-events-none absolute inset-0 z-20" />
             {motion.mode === 'sweep' && (
               <div className="ik-sweep-bar" style={{ animationDuration: `${7 / motion.speed}s` }} />
             )}
@@ -4700,30 +4862,85 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       </Modal>
 
       {/* ------------------------------ motion modal ------------------------------ */}
-      <Modal open={motionOpen} onClose={() => setMotionOpen(false)} title="Motion" subtitle="Animated preview — export is a still frame" width="max-w-sm">
-        <div className="space-y-1.5">
+      <Modal open={motionOpen} onClose={() => setMotionOpen(false)} title="Motion & Live FX" subtitle="Free animation — exports as animated GIF / MP4" width="max-w-md">
+        {tipsOn && (
+          <p className="mb-3 flex items-start gap-2 rounded-ink border border-line bg-surface-2 px-3 py-2 text-[0.8125rem] leading-relaxed text-dim">
+            <Icon name="info" size={14} className="mt-0.5 shrink-0 text-mute" />
+            <span><b>What is this?</b> Make your image move. Camera moves are on top; Live FX are effects that play <i>over</i> the photo. Export as GIF or MP4 to get the animation in the file.</span>
+          </p>
+        )}
+        <label className="label-xs text-dim">Camera motion</label>
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
           {[
             { id: 'off', label: 'Off' },
             { id: 'zoom', label: 'Slow Zoom' },
             { id: 'pan', label: 'Pan' },
             { id: 'sweep', label: 'Light Sweep' },
+            { id: 'depth', label: '2.5D Depth ✨' },
           ].map((m) => (
             <button
               key={m.id}
               type="button"
-              onClick={() => applyMotion(m.id, 1)}
+              onClick={() => {
+                if (m.id === 'depth') { enableDepthMotion(); return }
+                applyMotion(m.id, 1)
+              }}
               className={cn(
-                'flex w-full items-center justify-between rounded-ink border px-3.5 py-2.5 text-left transition-colors',
+                'flex w-full items-center justify-between rounded-ink border px-3 py-2.5 text-left transition-colors',
                 motion.mode === m.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
               )}
             >
-              <span className="text-xs font-semibold">{m.label}</span>
+              <span className="text-xs font-bold">{m.label}</span>
               {motion.mode === m.id && <Icon name="check" size={14} className="text-white" />}
             </button>
           ))}
         </div>
+        {motion.mode === 'depth' && (
+          <p className="mt-1.5 text-[0.75rem] text-mute">2.5D uses your extracted Person/Face layer — run Extract Layers (AI tab) if the drift looks empty.</p>
+        )}
+
+        <div className="mt-5 flex items-center justify-between">
+          <label className="label-xs text-dim">Live FX overlay</label>
+          {motion.fx && (
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={toggleFxOff} className={cn('rounded-ink px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.08em]', motion.fx.off ? 'border border-line text-dim' : 'bg-white text-black')}>
+                {motion.fx.off ? 'Paused' : 'Playing'}
+              </button>
+              <button type="button" onClick={() => setMotionFx(null)} className="rounded-ink border border-line px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim hover:text-fg">Clear</button>
+            </div>
+          )}
+        </div>
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+          {FX_KINDS.map((k) => (
+            <button
+              key={k.id}
+              type="button"
+              title={k.desc}
+              onClick={() => setMotionFx({ kind: k.id, density: 1, speed: 1, seed: Math.floor(Math.random() * 99999), off: false })}
+              className={cn(
+                'flex w-full items-center justify-between rounded-ink border px-3 py-2.5 text-left transition-colors',
+                motion.fx?.kind === k.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+              )}
+            >
+              <span className="text-xs font-bold">{k.label}</span>
+              {motion.fx?.kind === k.id && <Icon name="check" size={14} className="text-white" />}
+            </button>
+          ))}
+        </div>
+        {motion.fx && !motion.fx.off && (
+          <div className="mt-3 space-y-2">
+            <label className="flex items-center gap-3">
+              <span className="label-xs w-16 text-mute">Amount</span>
+              <input type="range" min={0.3} max={2} step={0.1} value={motion.fx.density} onChange={(e) => setMotionFx({ ...motion.fx, density: Number(e.target.value) })} className="h-1.5 flex-1 accent-white" />
+            </label>
+            <label className="flex items-center gap-3">
+              <span className="label-xs w-16 text-mute">Speed</span>
+              <input type="range" min={0.3} max={2.5} step={0.1} value={motion.fx.speed} onChange={(e) => setMotionFx({ ...motion.fx, speed: Number(e.target.value) })} className="h-1.5 flex-1 accent-white" />
+            </label>
+          </div>
+        )}
         <p className="mt-4 text-[0.8125rem] leading-relaxed text-mute">
-          Played back with CSS keyframes in the viewport. Exports render the current frame.
+          Preview plays on the canvas. Export → GIF or MP4 renders the animation (and the Live FX) into the file — free, no AI needed.
         </p>
       </Modal>
 
@@ -5163,6 +5380,38 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         )
       })()}
 
+      {/* AI Create modals — describe / generate / copy / animate */}
+      <DescribeModal
+        open={describeOpen}
+        onClose={() => setDescribeOpen(false)}
+        imageSrc={imageSrc}
+        onUsePrompt={(t) => { setGenPrompt(t); openModal(setGenerateOpen) }}
+        notify={showToast}
+      />
+      <GenerateModal
+        open={generateOpen}
+        onClose={() => setGenerateOpen(false)}
+        initialPrompt={genPrompt}
+        onAddImage={addGeneratedImage}
+        notify={showToast}
+      />
+      <CopyModal
+        open={copyOpen}
+        onClose={() => setCopyOpen(false)}
+        onInsert={addTextFromCopy}
+        notify={showToast}
+      />
+      <AnimateModal
+        open={animateOpen}
+        onClose={() => setAnimateOpen(false)}
+        imageSrc={imageSrc}
+        hasKey={hasGeminiKey()}
+        hasLayers={decompRef.current.some((d) => d.id === 'dec-person' || d.id === 'dec-face')}
+        onLiveFx={() => { setPanelCollapsed(true); openModal(setMotionOpen) }}
+        onDepth={enableDepthMotion}
+        notify={showToast}
+      />
+
       {/* settings — theme presets + AI mode + shortcuts + privacy */}
       <SettingsModal
         open={settingsOpen}
@@ -5170,6 +5419,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         onTheme={changeTheme}
         scale={scale}
         onScale={changeScale}
+        tips={tipsOn}
+        onTips={(v) => { setTipsOn(v); try { localStorage.setItem('inkception.tips', v ? '1' : '0') } catch { /* ignore */ } }}
+        geminiKey={geminiKey}
+        onGeminiKey={(k) => { setGeminiKey(k); setGeminiKeyState(k); }}
+        onResetConsent={() => { resetAiConsent(); showToast('Cloud-AI consent reset — you’ll be asked again', 'check') }}
         justDoIt={justDoIt}
         setJustDoIt={setJustDoIt}
         onClose={() => setSettingsOpen(false)}
@@ -5881,8 +6135,12 @@ const SHORTCUTS = [
   ['⌘/Ctrl + N', 'New project'], ['V · R · E · L · T · B', 'Select · Rect · Ellipse · Line · Text · Brush'],
   ['Delete / Backspace', 'Delete object'], ['Esc', 'Cancel / deselect'],
 ]
-function SettingsModal({ open, theme, onTheme, scale, onScale, justDoIt, setJustDoIt, onClose, onForgetLearning, onClearAll }) {
+function SettingsModal({ open, theme, onTheme, scale, onScale, justDoIt, setJustDoIt, onClose, onForgetLearning, onClearAll, tips, onTips, geminiKey, onGeminiKey, onResetConsent }) {
   const [confirmClear, setConfirmClear] = useState(false)
+  const [keyDraft, setKeyDraft] = useState(geminiKey)
+  const [lane, setLane] = useState('…')
+  useEffect(() => { setKeyDraft(geminiKey) }, [geminiKey, open])
+  useEffect(() => { if (open) workerPing().then((r) => setLane(r || 'off')) }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Modal open={open} onClose={onClose} title="Settings" subtitle="All preferences stay on this device — no account, no cloud" width="max-w-md">
       <div className="flex flex-col gap-5">
@@ -5905,6 +6163,54 @@ function SettingsModal({ open, theme, onTheme, scale, onScale, justDoIt, setJust
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="label-xs text-dim">Beginner tips</label>
+          <p className="mt-0.5 text-[0.8125rem] text-mute">Plain-English hints under every tool, plus the 1-2-3 guide strip. Switch off once you know your way around.</p>
+          <div className="mt-2 flex gap-1">
+            <button
+              type="button"
+              onClick={() => onTips(true)}
+              className={cn('flex-1 rounded-ink px-3 py-2 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors', tips ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
+            >
+              Tips on
+            </button>
+            <button
+              type="button"
+              onClick={() => onTips(false)}
+              className={cn('flex-1 rounded-ink px-3 py-2 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors', !tips ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
+            >
+              Off
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="label-xs text-dim">AI keys — pay only for what you use</label>
+          <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-mute">
+            The <b>free lane</b> {lane === 'free' ? 'is connected ✓' : lane === 'off' ? 'isn’t set up on this deployment yet (no /api functions)' : 'is checking…'} — describe, copy and basic image generation, no key needed.<br />
+            The <b>Pro lane</b> uses your own Google AI key for photoreal images (≈$0.05–0.15/image) and Veo video (≈$0.15/second). Get one at <span className="text-fg">aistudio.google.com → Get API key</span>, add billing there, paste it below. It’s stored only on this device and calls go straight to Google.
+          </p>
+          <div className="mt-2 flex gap-1.5">
+            <input
+              type="password"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              placeholder="Paste your Google AI key (optional)"
+              className="h-10 flex-1 rounded-ink border border-line bg-surface-2 px-3 text-sm text-fg placeholder:text-mute focus:border-white focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => onGeminiKey(keyDraft.trim())}
+              className="rounded-ink bg-white px-3.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black"
+            >
+              Save
+            </button>
+          </div>
+          <button type="button" onClick={onResetConsent} className="mt-2 text-[0.75rem] font-semibold text-mute underline-offset-4 hover:text-fg hover:underline">
+            Reset the cloud-AI consent (ask me again)
+          </button>
         </div>
 
         <div>
@@ -6416,6 +6722,7 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
 function AITab({
   busy, onRemoveBg, onReplaceBg, onEnhance, onVectorize,
   onRetouch, onDenoise, onLut, onCrop, onMotion, onBatch, onDecompose, onEraser,
+  onDescribe, onGenerate, onCopy, onAnimate, tips = true,
   onCollage, onUpscale, onPalette, onAutoTextColor, suggestion, onSuggestion, upscaled, onPromptAction,
   search = '', onRunChain, commandCount = 0, onUndoLast,
   commandStack = [], onRevertTo, highlightTarget, onPropose,
@@ -6452,6 +6759,15 @@ function AITab({
   }
 
   const sections = [
+    {
+      label: 'AI Create',
+      items: [
+        { icon: 'text', title: 'Describe Image', desc: 'AI writes the prompt from your photo', onClick: onDescribe, tag: 'Cloud' },
+        { icon: 'sparkle', title: 'Generate Image', desc: 'Type it → becomes a layer', onClick: onGenerate },
+        { icon: 'penTool', title: 'AI Headlines & CTA', desc: 'Editable text suggestions', onClick: onCopy },
+        { icon: 'play', title: 'Animate', desc: 'Live FX · 2.5D · AI video', onClick: onAnimate },
+      ],
+    },
     {
       label: 'Content-Aware',
       items: [

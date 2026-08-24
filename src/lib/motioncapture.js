@@ -4,11 +4,16 @@
 // animation — the exported file actually moves.
 
 import { loadImageElement } from './utils'
+import { fxState, fxStep, fxDraw } from './livex'
 
 const loadImg = (src) => loadImageElement(src)
 
 /**
  * Render `seconds` × `fps` frames of the image under a motion mode.
+ * mode 'depth' = 2.5D parallax: needs `bgSrc` (clean background layer) and
+ * `fgSrc` (person layer) from Extract Layers; falls back to a slow zoom.
+ * `fx` = { kind, density, speed, seed } Live FX overlay, composited
+ * deterministically so the export matches the on-screen preview exactly.
  * Returns { frames: HTMLCanvasElement[], fps, w, h }.
  */
 export async function renderMotionFrames({
@@ -20,8 +25,15 @@ export async function renderMotionFrames({
   h,
   seconds = 3,
   fps = 24,
+  fx = null,
+  bgSrc = null,
+  fgSrc = null,
 }) {
   const img = await loadImg(src)
+  const bgImg = bgSrc ? await loadImg(bgSrc).catch(() => null) : null
+  const fgImg = fgSrc ? await loadImg(fgSrc).catch(() => null) : null
+  const depth = mode === 'depth' && bgImg && fgImg
+  const fxSt = fx ? fxState(fx.kind, fx) : null
   const total = Math.round(seconds * fps)
   const s = Math.max(w / img.naturalWidth, h / img.naturalHeight) // cover
   const iw = img.naturalWidth * s
@@ -41,8 +53,8 @@ export async function renderMotionFrames({
     let scale = 1
     let ox = 0
     let oy = 0
-    if (mode === 'zoom') {
-      scale = 1 + 0.18 * local
+    if (mode === 'zoom' || (mode === 'depth' && !depth)) {
+      scale = 1 + 0.14 * local
     } else if (mode === 'pan') {
       scale = 1.1
       ox = -(iw * (scale - 1)) * 0.6 * local
@@ -52,7 +64,21 @@ export async function renderMotionFrames({
     }
     const dw = iw * scale
     const dh = ih * scale
-    ctx.drawImage(img, (w - dw) / 2 + ox, (h - dh) / 2 + oy, dw, dh)
+    if (depth) {
+      // 2.5D parallax: background drifts & grows slightly, person sways
+      const bScale = 1.03 + 0.06 * local
+      ctx.drawImage(bgImg, (w - iw * bScale) / 2, (h - ih * bScale) / 2, iw * bScale, ih * bScale)
+      const fScale = 1.05 + 0.02 * Math.sin(local * Math.PI * 2)
+      const fxOff = Math.sin(local * Math.PI * 2) * w * 0.006
+      const fyOff = Math.cos(local * Math.PI * 2) * h * 0.004
+      ctx.drawImage(fgImg, (w - iw * fScale) / 2 + fxOff, (h - ih * fScale) / 2 + fyOff, iw * fScale, ih * fScale)
+    } else {
+      ctx.drawImage(img, (w - dw) / 2 + ox, (h - dh) / 2 + oy, dw, dh)
+    }
+    if (fxSt) {
+      fxStep(fxSt, 1)
+      fxDraw(fxSt, ctx, w, h)
+    }
     if (mode === 'sweep') {
       const barW = w * 0.32
       const x = w * (0.1 + 0.9 * local) - barW / 2

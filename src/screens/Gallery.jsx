@@ -13,6 +13,7 @@ import { COLLAGE_LAYOUTS, computeSlots, detectCollageBoxes } from '../lib/collag
 import { GlobalSearch } from '../components/GlobalSearch'
 import { GoalMenu } from '../components/GoalMenu'
 import { SectionNav } from '../components/SectionNav'
+import { Onboarding } from '../components/Onboarding'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -218,8 +219,26 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
           placeholder="Search projects, templates, samples…"
           onQueryChange={setGallerySearch}
         />
+        <IconBtn icon="info" title="Welcome guide" size={18} onClick={() => setShowOnboard(true)} />
         <IconBtn icon="user" title="Profile" size={18} />
       </header>
+
+      {/* first-visit welcome — three doors, one click each */}
+      {showOnboard && (
+        <Onboarding
+          onAction={(a) => {
+            try { localStorage.setItem('inkception.onboard', '1') } catch { /* ignore */ }
+            setShowOnboard(false)
+            if (a === 'open') fileRef.current && fileRef.current.click()
+            else if (a === 'template') setTemplateOpen(true)
+            else if (a === 'sample') onImportMedia(SAMPLE_PHOTOS[0].src)
+          }}
+          onClose={() => {
+            try { localStorage.setItem('inkception.onboard', '1') } catch { /* ignore */ }
+            setShowOnboard(false)
+          }}
+        />
+      )}
 
       {/* website-style section menu — the "What do you want to do today?"
           dropdown, broken out as visible top-level sections */}

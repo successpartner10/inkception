@@ -100,6 +100,23 @@ any public URL — they ship only to buyers / by private hand-off):
   fine to a private repo; the GitHub Pages deploy workflow automatically
   **skips** (no red ❌ runs).
 
+## AI lanes (v0.19)
+
+- **Free lane — no key, no account:** the `functions/api/` Pages Function
+  (`/api/describe`, `/api/copy`, `/api/generate`) runs on **Workers AI**
+  (free tier, rate-limited per IP). Needs the **AI binding** — it's declared
+  in `wrangler.toml`, or add it in the dashboard: Pages project →
+  Settings → Bindings → Workers AI binding named `AI`.
+- **Pro lane — your own key:** paste a Google AI key
+  ([aistudio.google.com](https://aistudio.google.com) → Get API key, billing
+  required) in Settings → AI keys. Powers photoreal image generation
+  (≈$0.05–0.15/image) and Veo video (≈$0.15/s, ~$1.20 per 8s clip). The key
+  is stored on-device; calls go browser → Google directly.
+- **On-device lane — always free & private:** Extract Layers (person/face/
+  text/background), all 358 actions, Live FX, 2.5D depth animation.
+- First cloud use shows a one-time consent (images leave the device only
+  then). Reset it in Settings.
+
 ## Stack
 
 - **React 19** + **Vite 6**
