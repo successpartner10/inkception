@@ -1,0 +1,49 @@
+# Auto-deploy to Cloudflare Pages (inkception.pages.dev) on every push to main.
+#
+# The Pages project is a "Direct Upload" project (no Git integration), so this
+# workflow replaces the manual `npx wrangler pages deploy` step.
+#
+# ONE-TIME SETUP (≈3 minutes) — add two repository secrets:
+#   GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+#   1. CLOUDFLARE_API_TOKEN   — dash.cloudflare.com → My Profile → API Tokens →
+#                               Create Token → template "Cloudflare Pages — Edit"
+#   2. CLOUDFLARE_ACCOUNT_ID  — dash.cloudflare.com → Workers & Pages →
+#                               right sidebar → Account ID
+#
+# After that: every push to main deploys automatically (this workflow also has
+# a manual "Run workflow" button in the Actions tab).
+
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        run: npx wrangler@3 pages deploy dist --project-name=inkception --branch=main --commit-hash="$GITHUB_SHA"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
