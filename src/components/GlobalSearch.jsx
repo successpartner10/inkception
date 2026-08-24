@@ -161,14 +161,39 @@ export function GlobalSearch({ items = [], includeActions = true, placeholder = 
       {open && query && (
         <div className="absolute right-0 top-full z-[80] mt-1.5 max-h-[70vh] w-full min-w-[320px] overflow-y-auto rounded-ink-lg border border-line bg-surface py-1 shadow-2xl scrollbar-thin sm:min-w-[420px]">
           {flat.length === 0 && <p className="px-4 py-6 text-center text-xs text-mute">Nothing found for “{q}” — try “shine”, “clean”, “face”…</p>}
-          {results.map((g) => (
-            <div key={g.group}>
+          {results.map((g) => {
+            // Help/guides ("How do I…?") must be visually SEPARATE from tools —
+            // dashed zone, question mark badge, italic text and a GUIDE chip so
+            // nobody mistakes an answer for an action.
+            const isHelp = /how do i|help|guide/i.test(g.group)
+            return (
+            <div key={g.group} className={isHelp ? 'mt-1 border-t border-dashed border-line-2' : ''}>
               <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
-                <span className="label-xxs uppercase tracking-[0.12em] text-mute">{g.group} · {g.items.length}</span>
-                <span className="h-px flex-1 bg-line" />
+                {isHelp && <Icon name="info" size={11} className="shrink-0 text-mute" />}
+                <span className={cn('label-xxs uppercase tracking-[0.12em]', isHelp ? 'text-dim' : 'text-mute')}>
+                  {isHelp ? `Help · ${g.group} — guides, not tools` : `${g.group} · ${g.items.length}`}
+                </span>
+                <span className={cn('h-px flex-1', isHelp ? 'border-t border-dashed border-line-2' : 'bg-line')} />
               </div>
               {g.items.map((it) => {
                 const idx = flat.indexOf(it)
+                if (isHelp) {
+                  return (
+                    <button
+                      key={it.id}
+                      type="button"
+                      onMouseEnter={() => setSel(idx)}
+                      onClick={() => run(it)}
+                      className={cn('mx-2 my-1 flex w-[calc(100%-1rem)] items-center gap-2.5 rounded-ink border border-dashed border-line-2 bg-surface-2/60 px-3 py-2 text-left transition-colors', sel === idx ? 'border-white/60 bg-surface-2' : '')}
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-dashed border-line-2 font-extrabold text-mute">?</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[0.875rem] italic text-dim">{it.label}</span>
+                      </span>
+                      <span className="label-xxs shrink-0 rounded-ink bg-surface-3 px-1.5 py-0.5 text-mute">Guide</span>
+                    </button>
+                  )
+                }
                 return (
                   <button
                     key={it.id}
@@ -189,7 +214,8 @@ export function GlobalSearch({ items = [], includeActions = true, placeholder = 
                 )
               })}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
