@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.19.2 — Workflow fixes (user feedback round)
+
+- **Template section no longer opens Collage** — it has its own "Templates & sizes" modal that resizes the current canvas (photos & layers are kept). Collage is its own section.
+- **History panel** (header clock button): every change is a labeled snapshot — list, jump back to any step, Undo/Redo, and Save (explicit feedback + thumbnail sync).
+- **Multi-image documents**: Open/Add Photo now accepts multiple files — the first becomes the base image, the rest become separate movable layers (also via multi-file drag & drop). New dock chip "Add Photo".
+- **PSD export fixed & rewritten** — the previous ag-psd encoder hung forever in the browser (bug present since v0.17). Replaced with a self-contained layered PSD writer (real alpha channels, blend modes, layer names, flattened preview). Bundle is ~295 KB lighter.
+- **Bottom-bar clutter**: the 1-2-3 guide strip auto-hides as soon as a photo is open.
+
 ## 0.19.0 — Novice-first UX · Live FX · AI lanes
 
 **Beginner-first experience**

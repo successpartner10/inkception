@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 // Cache-proof version tag (spec §16): unique per build, injected into HTML
 // meta + available as a compile-time constant. Guarantees no stale HTML.
-const APP_VERSION = `v0.19.1-${Date.now().toString(36)}`
+const APP_VERSION = `v0.19.2-${Date.now().toString(36)}`
 
 const versionPlugin = {
   name: 'inkception-version',
@@ -50,7 +50,6 @@ export default defineConfig({
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-fabric': ['fabric'],
-          'vendor-psd': ['ag-psd'],
         },
       },
     },

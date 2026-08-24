@@ -277,6 +277,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const [selCollageId, setSelCollageId] = useState(null) // selected collage photo for the on-canvas bar
   const [pixelStudio, setPixelStudio] = useState(false) // Photoshop-style toolset bar
   const [describeOpen, setDescribeOpen] = useState(false)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [genPrompt, setGenPrompt] = useState('')
   const [copyOpen, setCopyOpen] = useState(false)
@@ -936,7 +938,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
 
   /* ----------------------------- image loading ----------------------------- */
   const loadIntoCanvas = useCallback(
-    async (src) => {
+    async (src, label = 'Open image') => {
       clearInterval(busyTimerRef.current)
       setBusy(null)
       setUpscaled(false)
@@ -945,7 +947,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       setLayerOpacity(100)
       setBlendMode('normal')
       setIsTemplate(false)
-      pushHistory()
+      pushHistory(label)
       setImageSrc(src)
       imageSrcRef.current = src
       try {
@@ -1056,11 +1058,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     fx: { ...fxRef.current },
   })
 
-  const pushHistory = useCallback(() => {
+  const pushHistory = useCallback((label = 'Edit') => {
     if (skipHistRef.current || recipeGuardRef.current) return
     if (histRef.current.length === 0) return // baseline not established yet
     const arr = histRef.current.slice(0, histPosRef.current + 1)
-    arr.push(snapshot())
+    arr.push({ ...snapshot(), label, ts: Date.now() })
     if (arr.length > 60) arr.shift()
     histRef.current = arr
     histPosRef.current = arr.length - 1
@@ -1088,6 +1090,19 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       setHistVer((v) => v + 1)
     },
     [],
+  )
+
+  /* revert to any point in the snapshot history (History panel) */
+  const revertToSnapIndex = useCallback(
+    (i) => {
+      if (i === histPosRef.current || !histRef.current[i]) return
+      restoreSnap(histRef.current[i])
+      histPosRef.current = i
+      histRef.current = histRef.current.slice(0, i + 1)
+      setHistVer((v) => v + 1)
+      showToast('Reverted', 'undo')
+    },
+    [restoreSnap, showToast],
   )
 
   const undo = useCallback(() => {
@@ -2908,7 +2923,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         return
       }
       if (id === 'fix') { setPanelCollapsed(false); setTab('ai'); return }
-      if (id === 'collage' || id === 'template') { openModal(setCollageOpen); return }
+      if (id === 'collage') { openModal(setCollageOpen); return }
+      if (id === 'template') { openModal(setTemplatesOpen); return }
       if (id === 'export') { openModal(setExportOpen); return }
     },
     [extraLayers.length, openModal, showToast],
@@ -3867,22 +3883,70 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     [fit.w, fit.h, showToast],
   )
 
-  const onFile = async (e) => {
-    const f = e.target.files && e.target.files[0]
-    if (f) {
-      const url = URL.createObjectURL(f)
-      if (frameAwait.current) {
-        frameAwait.current = false
-        try {
-          await addPhotoInFrame(url)
-        } catch {
-          showToast('Could not add that image', 'close')
-        }
-      } else {
-        await loadIntoCanvas(url)
-        showToast('Image imported', 'upload')
+  /* open one image as a movable photo LAYER (multi-image documents) */
+  const addPhotoLayer = useCallback(
+    async (url, name) => {
+      const c = fabricRef.current
+      if (!c || !fit.w) return null
+      const img = await FabricImage.fromURL(url)
+      const s = Math.min((fit.w * 0.8) / img.width, (fit.h * 0.8) / img.height)
+      img.set({
+        left: (fit.w - img.width * s) / 2,
+        top: (fit.h - img.height * s) / 2,
+        scaleX: s,
+        scaleY: s,
+        selectable: true,
+        evented: true,
+      })
+      c.add(img)
+      const id = `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      const clean = (name || 'Photo').replace(/\.[^.]+$/, '').slice(0, 24)
+      decompRef.current.push({ id, img, name: `Photo — ${clean}`, type: 'Photo', dataUrl: url, visible: true })
+      setExtraLayers(decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })))
+      c.setActiveObject(img)
+      c.requestRenderAll()
+      return id
+    },
+    [fit.w, fit.h],
+  )
+
+  /* multi-image open: no photo yet → the first file becomes the base image,
+     every other file becomes its own movable layer (kept in PSD export). */
+  const importFiles = async (fileList) => {
+    let files = Array.from(fileList || []).filter((f) => f && f.type && f.type.startsWith('image/'))
+    if (!files.length) return
+    if (frameAwait.current) {
+      frameAwait.current = false
+      try {
+        await addPhotoInFrame(URL.createObjectURL(files[0]))
+      } catch {
+        showToast('Could not add that image', 'close')
       }
+      return
     }
+    let base = false
+    if (!imageSrcRef.current) {
+      const f = files[0]
+      await loadIntoCanvas(URL.createObjectURL(f), f.name ? `Open — ${f.name.replace(/\.[^.]+$/, '').slice(0, 22)}` : 'Open image')
+      base = true
+      files = files.slice(1)
+    }
+    let added = 0
+    for (const f of files) {
+      try {
+        if (await addPhotoLayer(URL.createObjectURL(f), f.name || 'Photo')) added++
+      } catch { /* skip broken file */ }
+    }
+    showToast(
+      added > 0
+        ? `Added ${added} photo${added === 1 ? '' : 's'} as layers — move/scale each · Export → PSD keeps every layer`
+        : base ? 'Image imported' : 'Nothing new to add',
+      added > 0 ? 'layers' : 'upload',
+    )
+  }
+
+  const onFile = async (e) => {
+    await importFiles(e.target.files)
     e.target.value = ''
   }
 
@@ -3924,6 +3988,28 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     c.add(t)
     c.setActiveObject(t)
     c.requestRenderAll()
+  }
+
+  /* resize the canvas to a platform size — layers are kept */
+  const applyTemplateSize = (t) => {
+    naturalRef.current = { w: t.w, h: t.h }
+    computeFit()
+    setTemplatesOpen(false)
+    showToast(`Canvas → ${t.name} (${t.w}×${t.h}) — your photos & layers are kept`, 'crop')
+  }
+
+  /* explicit Save — thumbnails sync automatically; this gives feedback + a
+     fresh snapshot right now */
+  const saveNow = () => {
+    try {
+      const c = fabricRef.current
+      if (c && onThumbRef.current) {
+        onThumbRef.current(c.toDataURL({ format: 'jpeg', quality: 0.6, multiplier: 260 / Math.max(1, c.getWidth()) }))
+      }
+      showToast('Saved on this device ✓ (everything is always auto-saved)', 'check')
+    } catch {
+      showToast('Nothing to save yet', 'info')
+    }
   }
 
   /* frame bar actions (selected framed photo) */
@@ -4011,6 +4097,9 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   { id: 'tool-copy', label: 'AI Headlines & CTA (editable text suggestions)', group: 'AI', icon: 'penTool', go: () => openModal(setCopyOpen) },
   { id: 'tool-animate', label: 'Animate (Live FX · 2.5D · AI video)', group: 'AI', icon: 'play', go: () => openModal(setAnimateOpen) },
   { id: 'tool-livex', label: 'Live FX (fireworks · sparkles · snow…)', group: 'AI', icon: 'sparkle', go: () => { setPanelCollapsed(true); openModal(setMotionOpen) } },
+  { id: 'tool-addlayer', label: 'Add Photo as Layer (multi-image document)', group: 'Tool', icon: 'image', go: () => { frameAwait.current = false; if (fileRef.current) fileRef.current.click() } },
+  { id: 'tool-history', label: 'History (see every change & revert)', group: 'Actions & more', icon: 'clock', go: () => openModal(setHistoryOpen) },
+  { id: 'tool-templates', label: 'Templates & sizes (resize canvas)', group: 'Actions & more', icon: 'shape', go: () => openModal(setTemplatesOpen) },
     { id: 'tool-heal', label: 'Healing Brush', group: 'Retouch', icon: 'brush', go: () => startPaintTool('heal') },
     { id: 'tool-redeye', label: 'Red Eye', group: 'Retouch', icon: 'eye', go: () => startPaintTool('redeye') },
     { id: 'tool-bucket', label: 'Paint Bucket', group: 'Retouch', icon: 'droplet', go: () => startPaintTool('bucket') },
@@ -4253,6 +4342,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         <div className="hidden items-center gap-0.5 lg:flex">
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
           <IconBtn icon="redo" title="Redo (⌘⇧Z)" disabled={!canRedo} onClick={redo} />
+          <IconBtn icon="clock" title="History — see every change & revert" active={historyOpen} onClick={() => openModal(setHistoryOpen)} />
           <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
           <div className="mx-2 h-5 w-px bg-line" />
           <Button
@@ -4271,6 +4361,9 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           >
             Open
           </Button>
+          <Button variant="secondary" size="sm" icon="download" onClick={saveNow}>
+            Save
+          </Button>
           <Button variant="secondary" size="sm" icon="export" onClick={() => openModal(setExportOpen)}>
             Export
           </Button>
@@ -4278,6 +4371,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         </div>
         <div className="flex items-center gap-0.5 lg:hidden">
           <IconBtn icon="brush" title="Pixel Studio" active={pixelStudio} onClick={() => goSection('pixel')} />
+          <IconBtn icon="clock" title="History — see every change & revert" active={historyOpen} onClick={() => openModal(setHistoryOpen)} />
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
           <IconBtn icon="redo" title="Redo (⌘⇧Z)" disabled={!canRedo} onClick={redo} />
           <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
@@ -4291,7 +4385,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       <SectionNav items={EDITOR_SECTIONS} onPick={goSection} active={pixelStudio ? 'pixel' : tab} />
 
       {/* novice fast path: 1-2-3, dismissible */}
-      {tipsOn && !ribbonHidden && (
+      {tipsOn && !ribbonHidden && !imageSrc && (
         <FastPathRibbon
           onOpen={() => fileRef.current && fileRef.current.click()}
           onExport={() => openModal(setExportOpen)}
@@ -4325,11 +4419,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             e.preventDefault()
             setDragOver(false)
             clearTimeout(dragTimerRef.current)
-            const f = e.dataTransfer.files && e.dataTransfer.files[0]
-            if (f && f.type.startsWith('image/')) {
-              const url = URL.createObjectURL(f)
-              await loadIntoCanvas(url)
-              showToast('Image imported', 'upload')
+            if (e.dataTransfer.files && e.dataTransfer.files.length) {
+              await importFiles(e.dataTransfer.files)
             }
           }}
           className="checkerboard relative flex min-w-0 flex-1 items-center justify-center overflow-hidden"
@@ -4585,7 +4676,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             Compare
           </button>
 
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={onFile} />
         </main>
 
         {/* ------------------------- right panel ------------------ */}
@@ -4733,6 +4824,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           <ToolChip icon="fit" label="Fit" onClick={zoomFit} />
           <div className="mx-1.5 h-5 w-px bg-line" />
           <ToolChip icon="upload" label="Import" onClick={() => fileRef.current && fileRef.current.click()} />
+          <ToolChip icon="image" label="Add Photo" onClick={() => fileRef.current && fileRef.current.click()} />
           <ToolChip icon="brush" label="Pixel Studio" active={pixelStudio} onClick={() => goSection('pixel')} />
           <ToolChip icon="ai" label="AI" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
           <ToolChip icon="layers" label="Layers" active={tab === 'layers'} onClick={() => openTab('layers')} />
@@ -5379,6 +5471,67 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           </div>
         )
       })()}
+
+      {/* templates / sizes — resizes the canvas, layers are kept (NOT collage) */}
+      <Modal open={templatesOpen} onClose={() => setTemplatesOpen(false)} title="Templates & sizes" subtitle="Resizes this canvas — your photos and layers are kept" width="max-w-md">
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+          {EXPORT_PRESETS.slice(0, 18).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => applyTemplateSize(t)}
+              className="flex flex-col gap-0.5 rounded-ink border border-line px-3 py-2.5 text-left transition-colors hover:border-white"
+            >
+              <span className="text-xs font-bold text-fg">{t.name}</span>
+              <span className="text-[0.75rem] tabular-nums text-mute">{t.w}×{t.h}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-[0.8125rem] leading-relaxed text-mute">
+          Need a collage grid instead? That's the Collage section — templates here just set the canvas size.
+        </p>
+      </Modal>
+
+      {/* history — every change is a snapshot; revert to any point */}
+      <Modal open={historyOpen} onClose={() => setHistoryOpen(false)} title="History" subtitle="Every change is saved — jump back to any point" width="max-w-md">
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" icon="undo" disabled={!canUndo} onClick={() => { undo() }}>Undo</Button>
+          <Button variant="secondary" size="sm" icon="redo" disabled={!canRedo} onClick={() => { redo() }}>Redo</Button>
+          <Button variant="primary" size="sm" icon="download" onClick={saveNow} className="ml-auto">Save</Button>
+        </div>
+        <div className="mt-4 space-y-1">
+          {histRef.current.length === 0 && (
+            <p className="rounded-ink border border-dashed border-line px-4 py-6 text-center text-sm text-mute">Open a photo to start its history.</p>
+          )}
+          {histRef.current.map((h, i) => (
+            <div
+              key={i}
+              className={cn(
+                'flex items-center justify-between gap-3 rounded-ink border px-3 py-2',
+                i === histPosRef.current ? 'border-white bg-surface-2' : 'border-line',
+              )}
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-fg">{h.label || 'Edit'}</p>
+                <p className="text-[0.75rem] tabular-nums text-mute">
+                  {h.ts ? new Date(h.ts).toLocaleTimeString() : ''} · step {i + 1}
+                </p>
+              </div>
+              {i === histPosRef.current ? (
+                <span className="label-xxs shrink-0 text-dim">Now</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => revertToSnapIndex(i)}
+                  className="shrink-0 rounded-ink border border-line px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:border-white hover:text-fg"
+                >
+                  Revert
+                </button>
+              )}
+            </div>
+          )).reverse()}
+        </div>
+      </Modal>
 
       {/* AI Create modals — describe / generate / copy / animate */}
       <DescribeModal
