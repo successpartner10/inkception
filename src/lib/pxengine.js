@@ -138,16 +138,53 @@ export function sobel(d, w, h) {
   return out
 }
 
+/** Neon glow outline — edges lit electric blue on black. */
+export function glowingEdges(d, w, h) {
+  const e = sobel(d, w, h)
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < e.length; i += 4) {
+    out[i] = 0; out[i + 1] = 0; out[i + 2] = Math.min(255, e[i] * 1.4); out[i + 3] = 255
+  }
+  return out
+}
+
+/** Classic posterize — snap each channel to `levels` steps. */
+export function posterize(d, w, h, levels = 6) {
+  const n = Math.max(2, levels) - 1
+  const out = new Uint8ClampedArray(d.length)
+  for (let i = 0; i < d.length; i += 4) {
+    out[i] = Math.round((d[i] / 255) * n) * (255 / n)
+    out[i + 1] = Math.round((d[i + 1] / 255) * n) * (255 / n)
+    out[i + 2] = Math.round((d[i + 2] / 255) * n) * (255 / n)
+    out[i + 3] = 255
+  }
+  return out
+}
+
+/** Strong unsharp mask (3×3 kernel, sum 1) — "Sharpen More". */
+export function sharpenMore(d, w, h) {
+  const k = [0, -2, 0, -2, 9, -2, 0, -2, 0] // sums to 1
+  const out = new Uint8ClampedArray(d.length)
+  for (let ch = 0; ch < 3; ch++) {
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        let acc = 0, ki = 0
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            acc += d[((y + dy) * w + (x + dx)) * 4 + ch] * k[ki++]
+          }
+        }
+        out[(y * w + x) * 4 + ch] = acc
+      }
+    }
+  }
+  for (let i = 3; i < d.length; i += 4) out[i] = 255
+  return out
+}
+
 export const EDGE_FILTERS = {
   findEdges: (d, w, h) => sobel(d, w, h),
-  glowingEdges: (d, w, h) => {
-    const e = sobel(d, w, h)
-    const out = new Uint8ClampedArray(d.length)
-    for (let i = 0; i < e.length; i += 4) {
-      out[i] = 0; out[i + 1] = 0; out[i + 2] = Math.min(255, e[i] * 1.4); out[i + 3] = 255
-    }
-    return out
-  },
+  glowingEdges: (d, w, h) => glowingEdges(d, w, h),
   solarize: (d, w, h) => {
     const out = new Uint8ClampedArray(d.length)
     for (let i = 0; i < d.length; i += 4) {

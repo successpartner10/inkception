@@ -1,5 +1,9 @@
 # Inkception — AI Design Studio
 
+**Docs:** [DOCUMENTATION.md](DOCUMENTATION.md) (complete guide) · [CHANGELOG.md](CHANGELOG.md)
+**Live:** https://inkception.pages.dev/ · **GitHub Pages mirror:** https://successpartner10.github.io/inkception/
+
+
 A monochrome, AI-first design studio. Pure black. Pure focus.
 
 Built from the **Inkception** design system (`DESIGN.md`): Zen minimalism, strict
