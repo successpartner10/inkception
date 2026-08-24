@@ -16,11 +16,11 @@ const VARIANTS = {
 }
 
 const SIZES = {
-  sm: 'h-8 px-3 text-[11px] gap-1.5',
-  md: 'h-10 px-4 text-xs gap-2',
-  lg: 'h-12 px-6 text-[13px] gap-2.5',
-  icon: 'h-9 w-9 p-0 justify-center',
-  iconSm: 'h-7 w-7 p-0 justify-center',
+  sm: 'h-9 px-3.5 text-[0.875rem] gap-1.5',
+  md: 'h-11 px-4 text-sm gap-2',
+  lg: 'h-13 px-6 text-base gap-2.5',
+  icon: 'h-10 w-10 p-0 justify-center',
+  iconSm: 'h-8 w-8 p-0 justify-center',
 }
 
 export function Button({
@@ -46,15 +46,15 @@ export function Button({
       )}
       {...rest}
     >
-      {icon && <Icon name={icon} size={size === 'iconSm' ? 13 : 15} />}
+      {icon && <Icon name={icon} size={size === 'iconSm' ? 14 : 17} />}
       {children}
-      {iconRight && <Icon name={iconRight} size={15} />}
+      {iconRight && <Icon name={iconRight} size={17} />}
     </button>
   )
 }
 
 /** Small square icon button used in bars/rows. */
-export function IconBtn({ icon, active, disabled, className, title, onClick, size = 16 }) {
+export function IconBtn({ icon, active, disabled, className, title, onClick, size = 18 }) {
   return (
     <button
       type="button"
@@ -63,7 +63,7 @@ export function IconBtn({ icon, active, disabled, className, title, onClick, siz
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'flex h-9 w-9 shrink-0 items-center justify-center rounded-ink transition-colors disabled:pointer-events-none disabled:opacity-35',
+        'flex h-10 w-10 shrink-0 items-center justify-center rounded-ink transition-colors disabled:pointer-events-none disabled:opacity-35',
         active ? 'bg-white text-black' : 'text-dim hover:bg-white/5 hover:text-fg',
         className,
       )}
@@ -79,7 +79,7 @@ export function Chip({ children, active, className }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-[3px] text-[9px] font-semibold uppercase tracking-[0.14em] text-dim',
+        'inline-flex items-center gap-1 rounded-ink bg-surface-2 px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.12em] text-dim',
         active && 'bg-white text-black',
         className,
       )}
@@ -106,12 +106,12 @@ export function Segmented({ items, value, onChange, className, iconOnly = false,
               title={it.label}
               aria-label={it.label}
               className={cn(
-                'flex min-w-0 flex-col items-center gap-1 rounded-ink px-1 py-1.5 transition-colors',
+                'flex min-w-0 flex-col items-center gap-1.5 rounded-ink px-1.5 py-2 transition-colors',
                 isActive ? 'bg-white text-black' : 'text-mute hover:bg-white/5 hover:text-dim',
               )}
             >
-              {it.icon && <Icon name={it.icon} size={14} strokeWidth={1.8} />}
-              <span className="w-full truncate text-center text-[8.5px] font-bold uppercase leading-none tracking-[0.05em]">{it.label}</span>
+              {it.icon && <Icon name={it.icon} size={17} strokeWidth={2} />}
+              <span className="w-full truncate text-center text-[0.7rem] font-extrabold uppercase leading-tight tracking-[0.04em]">{it.label}</span>
             </button>
           )
         })}
@@ -130,12 +130,12 @@ export function Segmented({ items, value, onChange, className, iconOnly = false,
             title={iconOnly ? it.label : undefined}
             aria-label={iconOnly ? it.label : undefined}
             className={cn(
-              'relative flex h-12 items-center justify-center transition-colors',
-              iconOnly ? 'w-11 px-0' : 'gap-2 px-4 text-[11px] font-bold uppercase tracking-[0.12em]',
+              'relative flex h-13 items-center justify-center transition-colors',
+              iconOnly ? 'w-12 px-0' : 'gap-2 px-4 text-[0.875rem] font-extrabold uppercase tracking-[0.1em]',
               isActive ? 'text-white' : 'text-mute hover:text-dim',
             )}
           >
-            {it.icon && <Icon name={it.icon} size={14} strokeWidth={1.8} />}
+            {it.icon && <Icon name={it.icon} size={17} strokeWidth={2} />}
             {!iconOnly && it.label}
             {isActive && <span className="absolute inset-x-2 bottom-0 h-[2px] bg-white" />}
           </button>
@@ -169,8 +169,8 @@ export function Modal({ open, onClose, title, subtitle, width = 'max-w-md', chil
       >
         <div className="flex items-center justify-between border-b border-line pl-5 pr-3">
           <div>
-            <h2 className="text-sm font-semibold">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-[10px] text-mute">{subtitle}</p>}
+            <h2 className="text-lg font-bold">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-[0.8125rem] font-medium text-mute">{subtitle}</p>}
           </div>
           <IconBtn icon="close" title="Close" onClick={onClose} />
         </div>
@@ -194,9 +194,9 @@ export function Toast({ toast, onDone }) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-6 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-ink bg-white px-4 py-2.5 text-xs font-semibold text-black ring-1 ring-black/20"
+      className="fixed bottom-6 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-ink bg-white px-4 py-3 text-sm font-bold text-black ring-1 ring-black/20"
     >
-      <Icon name={toast.icon ?? 'check'} size={14} />
+      <Icon name={toast.icon ?? 'check'} size={17} />
       {toast.msg}
     </div>
   )
@@ -347,7 +347,7 @@ export function ActionCard({ icon, title, desc, onClick, busy, progress, disable
         )}
       </span>
       <span className="text-xs font-bold uppercase tracking-[0.1em] text-fg">{title}</span>
-      <span className="text-[11px] leading-relaxed text-mute">{desc}</span>
+      <span className="text-[0.875rem] leading-relaxed text-mute">{desc}</span>
       {tag && (
         <span className="absolute right-3 top-3">
           <Chip active>{tag}</Chip>
@@ -383,7 +383,7 @@ export function LayerRow({ layer, preview, selected, onSelect, onToggleVisibilit
         <div className={cn('truncate text-xs font-semibold', !layer.visible && 'text-mute')}>
           {layer.name}
         </div>
-        <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-mute">
+        <div className="mt-0.5 text-[0.75rem] font-semibold uppercase tracking-[0.14em] text-mute">
           {layer.type}
         </div>
       </div>

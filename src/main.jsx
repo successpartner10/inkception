@@ -1,13 +1,14 @@
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
-import { initTheme } from './lib/theme'
+import { initTheme, applyScale, getScale } from './lib/theme'
 
 // Spec §16 — version tag exposed at runtime for cache-proofing.
 window.__INKCEPTION_VERSION__ = __INKCEPTION_VERSION__
 
-// Apply the saved interface theme before first paint (no flash).
+// Apply the saved interface theme + text size before first paint (no flash).
 initTheme()
+applyScale(getScale())
 
 // PWA — register the service worker for offline + installability.
 // Only on https/localhost (never on file:// — the standalone offline file

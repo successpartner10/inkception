@@ -54,7 +54,7 @@ export function GoalMenu({ onPick, autoOpen = false, compact = false }) {
       >
         <Icon name="sparkle" size={compact ? 14 : 15} className={open ? 'text-white' : ''} />
         {!compact && (
-          <span className="hidden text-[10px] font-bold uppercase tracking-[0.1em] sm:inline">What do you want to do?</span>
+          <span className="hidden text-[0.8125rem] font-bold uppercase tracking-[0.1em] sm:inline">What do you want to do?</span>
         )}
       </button>
 
@@ -62,7 +62,7 @@ export function GoalMenu({ onPick, autoOpen = false, compact = false }) {
         <div className="absolute right-0 top-full z-[80] mt-1.5 w-[min(92vw,340px)] overflow-hidden rounded-ink-lg border border-line bg-surface shadow-2xl">
           <div className="border-b border-line px-3 py-2.5">
             <div className="text-xs font-bold text-fg">Welcome to Inkception</div>
-            <div className="mt-0.5 text-[9px] text-mute">What do you want to do today? Everything is free & runs on this device.</div>
+            <div className="mt-0.5 text-[0.75rem] text-mute">What do you want to do today? Everything is free & runs on this device.</div>
           </div>
 
           <div className="max-h-[62vh] overflow-y-auto p-1.5 scrollbar-thin">
@@ -78,8 +78,8 @@ export function GoalMenu({ onPick, autoOpen = false, compact = false }) {
                       <Icon name={g.icon} size={14} />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] font-bold text-fg">{g.title}</span>
-                      <span className="block truncate text-[9px] text-mute">{g.desc}</span>
+                      <span className="block truncate text-[0.875rem] font-bold text-fg">{g.title}</span>
+                      <span className="block truncate text-[0.75rem] text-mute">{g.desc}</span>
                     </span>
                   </button>
                   <button
@@ -95,8 +95,8 @@ export function GoalMenu({ onPick, autoOpen = false, compact = false }) {
                 {expandedId === g.id && (
                   <ol className="mb-2 space-y-1.5 border-l border-line pl-6 pr-3">
                     {g.steps.map((st, i) => (
-                      <li key={i} className="flex gap-2 text-[10px] leading-relaxed text-dim">
-                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-fg">{i + 1}</span>
+                      <li key={i} className="flex gap-2 text-[0.8125rem] leading-relaxed text-dim">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[0.6875rem] font-bold text-fg">{i + 1}</span>
                         <span>{st}</span>
                       </li>
                     ))}
@@ -106,7 +106,7 @@ export function GoalMenu({ onPick, autoOpen = false, compact = false }) {
             ))}
           </div>
 
-          <div className="border-t border-line bg-surface-2/50 px-3 py-2 text-[9px] text-mute">
+          <div className="border-t border-line bg-surface-2/50 px-3 py-2 text-[0.75rem] text-mute">
             No account · no uploads · nothing leaves your browser
           </div>
         </div>

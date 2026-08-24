@@ -5,7 +5,7 @@
 import { cn } from '../lib/utils'
 
 const SIZES = {
-  sm: 'text-[13px] tracking-[0.12em]',
+  sm: 'text-[1rem] tracking-[0.12em]',
   md: 'text-base tracking-[0.14em]',
   lg: 'text-3xl tracking-[0.18em]',
 }

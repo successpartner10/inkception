@@ -54,3 +54,36 @@ export const THEME_OPTIONS = [
   { id: 'light', label: 'Light', desc: 'Light chrome, black canvas' },
   { id: 'auto', label: 'Auto', desc: 'Follow your device' },
 ]
+
+/* ------------------------------------------------------------------ */
+/* Interface text size — Comfort / Normal / Large (Settings).           */
+/* Every size in the app is rem-based, so one class on <html> scales    */
+/* the whole UI. Persisted locally, no server.                          */
+/* ------------------------------------------------------------------ */
+const SCALE_KEY = 'inkception.scale'
+
+export function getScale() {
+  try {
+    const v = localStorage.getItem(SCALE_KEY)
+    if (v === 'comfort' || v === 'normal' || v === 'large') return v
+  } catch { /* ignore */ }
+  return 'normal'
+}
+
+export function applyScale(s) {
+  const root = document.documentElement
+  root.classList.toggle('ik-scale-comfort', s === 'comfort')
+  root.classList.toggle('ik-scale-large', s === 'large')
+}
+
+export function setScale(s) {
+  try { localStorage.setItem(SCALE_KEY, s) } catch { /* ignore */ }
+  applyScale(s)
+}
+
+/** Labels shown in the Settings UI. */
+export const SCALE_OPTIONS = [
+  { id: 'comfort', label: 'Comfort', desc: 'Compact — more canvas' },
+  { id: 'normal', label: 'Normal', desc: 'Bigger & bolder — default' },
+  { id: 'large', label: 'Large', desc: 'Maximum readability' },
+]

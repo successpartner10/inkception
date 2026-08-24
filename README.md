@@ -24,6 +24,8 @@ monochromatic palette, Raleway wordmark + Plus Jakarta Sans UI, "Round Eight"
 
 ## Highlights
 
+- **v0.18 — Big & obvious:** website-style section menu on top (Edit · Pixel Studio · Fix & AI · Collage · Template · Layers · Export); much bigger, bolder interface text (+ Settings → Interface text size: Comfort/Normal/Large); **Extract Layers** with real AI (person + face detection + OCR — one layer per text block, clean filled background, every layer movable & scalable); **Pixel Studio** — Photoshop-style toolset always visible (brush, erase, blur, AI remove, clone, heal, bucket + size slider); **face frames** — add a face/photo to any banner template as an adjustable frame (auto-centered, drag to show just the eyes, handles to zoom to the full face).
+
 - **Free & private** — no account, no backend, no data leaves the device
 - **358 one-click Actions** + real on-device AI (subject matting, inpainting,
   smart crop) — honest about what needs a paid model

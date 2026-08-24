@@ -10,6 +10,21 @@
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Raleway", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 
+  /* type scale — BIG & BOLD by default (v0.18 legibility pass):
+     every step up from stock Tailwind so labels, buttons and menus read
+     clearly at arm's length. Sizes in rem so the Interface text size
+     setting (Comfort / Normal / Large) scales the entire app. */
+  --text-xs: 0.875rem;   --text-xs--line-height: 1.35rem;
+  --text-sm: 1rem;       --text-sm--line-height: 1.55rem;
+  --text-base: 1.0625rem;--text-base--line-height: 1.65rem;
+  --text-lg: 1.1875rem;  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.375rem;   --text-xl--line-height: 1.95rem;
+  --text-2xl: 1.625rem;  --text-2xl--line-height: 2.15rem;
+  --text-3xl: 2rem;      --text-3xl--line-height: 2.5rem;
+  --text-4xl: 2.5rem;    --text-4xl--line-height: 3rem;
+  --text-5xl: 3.25rem;   --text-5xl--line-height: 3.6rem;
+  --text-6xl: 4rem;      --text-6xl--line-height: 4.35rem;
+
   /* palette */
   --color-ink: #000000;          /* primary canvas — pure black */
   --color-surface: #131313;      /* elevated panels */
@@ -79,10 +94,17 @@
     height: 100%;
   }
 
+  /* Interface text size (Settings → Interface text size). Every size in the
+     app is rem-based, so one root font-size bump scales the whole UI. */
+  html { font-size: 16px; }
+  html.ik-scale-comfort { font-size: 14.5px; }
+  html.ik-scale-large { font-size: 18px; }
+
   body {
     background: var(--color-ink);
     color: var(--color-fg);
     font-family: var(--font-sans);
+    font-weight: 500; /* bolder default — body copy reads clearly on black */
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     overscroll-behavior: none;
@@ -172,21 +194,21 @@
   }
 
   .label-xxs {
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
   .label-xs {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
   .label-sm {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.16em;
+    font-size: 0.875rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
   }
 

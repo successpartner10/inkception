@@ -51,10 +51,10 @@ export function BeforeAfter({ src, filter, pos, onChange, onCommit }) {
         </div>
       </div>
 
-      <span className="pointer-events-none absolute left-3 top-3 rounded-ink bg-black/35 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-white/85">
+      <span className="pointer-events-none absolute left-3 top-3 rounded-ink bg-black/35 px-1.5 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.14em] text-white/85">
         Original
       </span>
-      <span className="pointer-events-none absolute right-3 top-3 rounded-ink bg-black/35 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-white/85">
+      <span className="pointer-events-none absolute right-3 top-3 rounded-ink bg-black/35 px-1.5 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.14em] text-white/85">
         Edited
       </span>
     </div>

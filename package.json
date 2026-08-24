@@ -1,7 +1,7 @@
 {
   "name": "inkception",
   "private": true,
-  "version": "0.17.32",
+  "version": "0.18.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,15 +9,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/face_detection": "^0.4.1646425229",
     "@mediapipe/selfie_segmentation": "^0.1.1675465747",
     "ag-psd": "^31.0.2",
     "fabric": "^6.5.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.11",
     "@vitejs/plugin-react": "^4.5.0",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4.1.11",
     "vite": "^6.3.5"
   }

@@ -38,6 +38,10 @@ import { compositeOnBackground, getSegmenter, makeCutout, segmentImage, subjectB
 import { colorGrade, decompose, denoise, inpaint, retouch, smartCrop } from '../lib/vision'
 import { extractPalette, gifEncode, pdfFromJpeg, psdFromCanvas, zipFiles } from '../lib/encode'
 import * as PX from '../lib/pxengine'
+import { detectFaceBox } from '../lib/face'
+import { detectTextBlocks } from '../lib/textdetect'
+import { SectionNav } from '../components/SectionNav'
+import { getScale, setScale as persistScale, SCALE_OPTIONS } from '../lib/theme'
 import { HOWTOS, matchHowTo, youTubeSearch } from '../lib/howto'
 import { ACTION_CATS, ACTIONS } from '../lib/actions'
 import { bumpUsage, bumpTransition, defaultRecipe, detectChain, loadRecipes, loadStats, mostUsed, predictNext, saveRecipes, saveStats, stepSummary, suggestEmoji, suggestName, uid } from '../lib/recipes'
@@ -137,7 +141,7 @@ function busyNowPhrase(title) {
     Denoise: 'Reducing noise now…',
     'Color Grade': 'Applying color grade now…',
     'Smart Crop': 'Cropping now…',
-    'Decompose to Layers': 'Decomposing to layers now…',
+    'Extract to Layers': 'Extracting text, face, person & background…',
     'Batch AI': 'Processing batch now…',
     'Texture Fill': 'Filling region now…',
     'Collage Studio': 'Building collage now…',
@@ -173,6 +177,54 @@ const LAYER_DEFAULTS = [
   { id: 'vignette', name: 'Vignette', type: 'Effect', visible: true, locked: false },
   { id: 'subject', name: 'Subject', type: 'Photo', visible: true, locked: false },
   { id: 'backdrop', name: 'Backdrop', type: 'Fill', visible: true, locked: false },
+]
+
+/* ---- framed photos (template face frames) ------------------------------ */
+/* A framed photo = image + a FIXED clip window on the canvas. Dragging pans
+   the image inside the frame (show just the eyes), corner handles zoom
+   (full face) — Canva-style. Pure helpers, no React state. */
+
+function framePlaceObj(img, frame, mode = 'cover') {
+  const s = mode === 'cover'
+    ? Math.max(frame.w / img.width, frame.h / img.height)
+    : Math.min(frame.w / img.width, frame.h / img.height)
+  img.set({
+    left: frame.x + (frame.w - img.width * s) / 2,
+    top: frame.y + (frame.h - img.height * s) / 2,
+    scaleX: s,
+    scaleY: s,
+  })
+  img.set('fitMode', mode)
+}
+
+/* scale a framed image by `factor` around the frame centre */
+function frameZoomObj(img, frame, factor) {
+  const minS = Math.max(frame.w / img.width, frame.h / img.height)
+  const s = Math.max(minS, (img.scaleX || minS) * factor)
+  const cx = frame.x + frame.w / 2
+  const cy = frame.y + frame.h / 2
+  const px = (cx - img.left) / (img.scaleX || 1)
+  const py = (cy - img.top) / (img.scaleY || 1)
+  img.set({ scaleX: s, scaleY: s, left: cx - px * s, top: cy - py * s })
+}
+
+/* scale & center so the detected face fills ~62% of the frame height */
+function frameFocusFaceObj(img, frame, box) {
+  const s = Math.max((frame.h * 0.62) / box.h, (frame.w * 0.55) / box.w)
+  img.set({ scaleX: s, scaleY: s })
+  img.set({ left: frame.x + frame.w / 2 - box.cx * s, top: frame.y + frame.h / 2 - box.cy * s })
+  img.set('fitMode', 'cover')
+}
+
+/* website-style section menu — Editor items (Edit always lands on Layers) */
+const EDITOR_SECTIONS = [
+  { id: 'edit', icon: 'image', label: 'Edit', desc: 'Open a photo & edit it — Layers front and center' },
+  { id: 'pixel', icon: 'brush', label: 'Pixel Studio', desc: 'Photoshop-style: brush, erase, blur, clone, heal' },
+  { id: 'fix', icon: 'sparkle', label: 'Fix & AI', desc: 'Enhance, remove BG, extract layers…' },
+  { id: 'collage', icon: 'grid', label: 'Collage', desc: 'Multi-photo grid layouts' },
+  { id: 'template', icon: 'shape', label: 'Template', desc: 'Banners & platform sizes' },
+  { id: 'layers', icon: 'layers', label: 'Layers', desc: 'Every layer visible & toggleable' },
+  { id: 'export', icon: 'export', label: 'Export', desc: 'PNG · JPG · PSD · multi-size zip' },
 ]
 
 export function Editor({ project, onBack, onRename = () => {}, pendingCollage = null, onPendingCollageHandled = () => {}, onThumb = () => {} }) {
@@ -219,6 +271,9 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const [layers, setLayers] = useState(LAYER_DEFAULTS)
   const [selectedLayer, setSelectedLayer] = useState('subject')
   const [selCollageId, setSelCollageId] = useState(null) // selected collage photo for the on-canvas bar
+  const [pixelStudio, setPixelStudio] = useState(false) // Photoshop-style toolset bar
+  const [selFrameId, setSelFrameId] = useState(null) // selected framed photo (face frames)
+  const frameAwait = useRef(false) // next imported image becomes a framed layer
   const collageReplaceRef = useRef(null) // id being replaced
   const collageReplaceInputRef = useRef(null) // hidden file input for replacing a photo
   const [beforeAfter, setBeforeAfter] = useState(false)
@@ -321,6 +376,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const [theme, setThemeState] = useState(getTheme)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const changeTheme = (t) => { persistTheme(t); setThemeState(t) }
+  const [scale, setScaleState] = useState(getScale)
+  const changeScale = (sc) => { persistScale(sc); setScaleState(sc) }
   // privacy: forget learning (recipes + stats) or wipe ALL local data
   const forgetLearning = () => {
     try {
@@ -787,10 +844,28 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       const o = c.getActiveObject()
       const d = o && decompRef.current.find((x) => x.img === o)
       setSelCollageId(d && d.id.startsWith('col-') ? d.id : null)
+      setSelFrameId(d && d.id.startsWith('frame-') ? d.id : null)
     }
     c.on('selection:created', () => { syncTextSelection(); syncCollageSel() })
     c.on('selection:updated', () => { syncTextSelection(); syncCollageSel() })
-    c.on('selection:cleared', () => { setActiveText(false); setSelCollageId(null) })
+    c.on('selection:cleared', () => { setActiveText(false); setSelCollageId(null); setSelFrameId(null) })
+    // framed photos: clamp while dragging/scaling so the frame stays filled
+    const clampFrameObj = (o) => {
+      if (!o || !o.ikFrame) return
+      const f = o.ikFrame
+      const minS = Math.max(f.w / o.width, f.h / o.height)
+      if (o.scaleX < minS - 1e-3 || o.scaleY < minS - 1e-3) o.scale(minS)
+      if (o.fitMode === 'contain') return
+      const wv = o.width * o.scaleX
+      const hv = o.height * o.scaleY
+      o.set({
+        left: Math.min(Math.max(o.left, f.x + f.w - wv), f.x),
+        top: Math.min(Math.max(o.top, f.y + f.h - hv), f.y),
+      })
+    }
+    c.on('object:moving', (e) => clampFrameObj(e.target))
+    c.on('object:scaling', (e) => clampFrameObj(e.target))
+    c.on('object:modified', (e) => { clampFrameObj(e.target); c.requestRenderAll() })
 
     // double-click any text object → edit it in place
     c.on('mouse:dblclick', (o) => {
@@ -1712,46 +1787,51 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     } catch { setBusy(null); showToast('Smart crop failed', 'close') }
   }
 
-  /* #5 — Decompose to layers (panels / text / subject / background) */
+  /* #5 — Extract to Layers: text blocks · face · person · clean background.
+     Every layer lands selectable — move/scale each element like Photoshop. */
   const runDecompose = async () => {
     const src = imageSrcRef.current
     if (!src || busyRef.current) return
-    setBusy(busyJob('Decompose to Layers'))
+    setBusy(busyJob('Extract to Layers'))
     try {
-      setBusy({ kind: 'real', title: 'Decompose to Layers', step: 'Segmenting subject…', progress: 35 })
+      setBusy({ kind: 'real', title: 'Extract to Layers', step: 'Segmenting person…', progress: 18 })
       const seg = await segmentImage(src, { maxSize: 800 })
-      setBusy({ kind: 'real', title: 'Decompose to Layers', step: 'Detecting panels & text…', progress: 65 })
-      const dec = await decompose(src, seg.mask)
-      setBusy({ kind: 'real', title: 'Decompose to Layers', step: 'Building layers…', progress: 90 })
+      setBusy({ kind: 'real', title: 'Extract to Layers', step: 'Detecting face…', progress: 42 })
+      let faceBox = null
+      try { faceBox = await detectFaceBox(src) } catch { /* detector unavailable — skip face layer */ }
+      setBusy({ kind: 'real', title: 'Extract to Layers', step: 'Reading text…', progress: 64 })
+      let textBlocks = null
+      try { textBlocks = await detectTextBlocks(src) } catch { /* offline — heuristic fallback */ }
+      setBusy({ kind: 'real', title: 'Extract to Layers', step: 'Building layers…', progress: 88 })
+      const dec = await decompose(src, { subjectMask: seg.mask, faceBox, textBlocks })
       const c = fabricRef.current
       if (!c) throw new Error('no canvas')
-      // remove previous decomposition images
-      decompRef.current.forEach((d) => c.remove(d.img))
-      decompRef.current = []
+      // remove previous extraction layers (keep collage photos & frames)
+      decompRef.current.forEach((d) => { if (d.id.startsWith('dec-')) c.remove(d.img) })
+      decompRef.current = decompRef.current.filter((d) => !d.id.startsWith('dec-'))
       if (imgObjRef.current) imgObjRef.current.visible = false
-      const scale = Math.min(fit.w / dec.w, fit.h / dec.h)
-      const entries = [
-        ['background', 'Background'], ['panels', 'Panels'], ['text', 'Text'], ['subject', 'Subject'],
-      ]
-      for (const [key, name] of entries) {
-        const im = await FabricImage.fromURL(dec[key])
-        im.set({
-          left: (fit.w - dec.w * scale) / 2,
-          top: (fit.h - dec.h * scale) / 2,
-          scaleX: scale,
-          scaleY: scale,
-          selectable: false,
-          evented: false,
-        })
+      const sc = Math.min(fit.w / dec.w, fit.h / dec.h)
+      const left = (fit.w - dec.w * sc) / 2
+      const top = (fit.h - dec.h * sc) / 2
+      const entries = []
+      if (dec.face) entries.push(['face', 'Face', 'AI Layer', dec.face])
+      entries.push(['person', 'Person', 'AI Layer', dec.person])
+      dec.textBlocks.forEach((tb, i) =>
+        entries.push([`text${i}`, tb.text ? `Text — “${tb.text.slice(0, 22)}”` : `Text ${i + 1}`, 'AI Text', tb.dataUrl]))
+      entries.push(['background', 'Background (clean)', 'AI Layer', dec.background])
+      for (const [key, name, type, url] of entries) {
+        const im = await FabricImage.fromURL(url)
+        im.set({ left, top, scaleX: sc, scaleY: sc, selectable: true, evented: true })
         c.add(im)
-        decompRef.current.push({ id: `dec-${key}`, img: im, name, type: 'AI Layer', dataUrl: dec[key], visible: true })
+        decompRef.current.push({ id: `dec-${key}`, img: im, name, type, dataUrl: url, visible: true })
       }
       c.requestRenderAll()
       setExtraLayers(decompRef.current.map((d) => ({ id: d.id, name: d.name, type: d.type, dataUrl: d.dataUrl, visible: true })))
       setBusy(null)
-      showToast(`Decomposed — ${dec.counts.panels} panels, ${dec.counts.text} text regions`, 'layers')
+      showToast(`Extracted ${entries.length} layers — every one is movable & scalable`, 'layers')
       setTab('layers')
-    } catch { setBusy(null); showToast('Decompose failed', 'close') }
+      setPanelCollapsed(false)
+    } catch { setBusy(null); showToast('Extract Layers failed', 'close') }
   }
 
   /* #19 — Batch AI apply across multiple images */
@@ -2729,6 +2809,33 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     showToast(msgs[shape] || shape, 'info')
   }
 
+  /* website-style sections (top nav): one obvious click per workflow.
+     "Edit" always lands with Layers visible — layers are the workspace. */
+  const goSection = useCallback(
+    (id) => {
+      if (id === 'edit') {
+        setPanelCollapsed(false)
+        if (!imageSrcRef.current && extraLayers.length === 0) {
+          frameAwait.current = false
+          if (fileRef.current) fileRef.current.click()
+        } else setTab('layers')
+        return
+      }
+      if (id === 'layers') { setPanelCollapsed(false); setTab('layers'); return }
+      if (id === 'pixel') {
+        setPixelStudio(true)
+        setTool('brush')
+        setPanelCollapsed(true)
+        showToast('Pixel Studio — brush, erase, blur, clone, heal', 'brush')
+        return
+      }
+      if (id === 'fix') { setPanelCollapsed(false); setTab('ai'); return }
+      if (id === 'collage' || id === 'template') { openModal(setCollageOpen); return }
+      if (id === 'export') { openModal(setExportOpen); return }
+    },
+    [extraLayers.length, openModal, showToast],
+  )
+
   // Run a how-to suggestion: open the right tab + tool.
   const runHowToAction = (action) => {
     const map = {
@@ -2743,6 +2850,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       collage: () => openModal(setCollageOpen),
       vectorize: () => { setTab('ai'); runAi('vectorize') },
       decompose: () => { setTab('ai'); runDecompose() },
+      pixel: () => goSection('pixel'),
+      open: () => { if (fileRef.current) fileRef.current.click() },
       motion: () => openModal(setMotionOpen),
       export: () => openModal(setExportOpen),
       warp: () => openModal(setWarpOpen),
@@ -3625,14 +3734,96 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     setTab(t)
     setPanelCollapsed(false) // always reveal the panel when opening a tab
   }
+  /* add an image as a FRAMED layer (template face frames): drag pans the
+     photo inside the frame, corner handles zoom — plus auto face-focus. */
+  const addPhotoInFrame = useCallback(
+    async (url, { silent = false } = {}) => {
+      const c = fabricRef.current
+      if (!c || !fit.w || !fit.h) return null
+      const img = await FabricImage.fromURL(url)
+      const frame = { x: 0, y: 0, w: fit.w, h: fit.h }
+      img.set({ selectable: true, evented: true })
+      framePlaceObj(img, frame, 'cover')
+      img.set('ikFrame', frame)
+      img.set('clipPath', new Rect({ left: frame.x, top: frame.y, width: frame.w, height: frame.h, absolutePositioned: true }))
+      const id = `frame-${Date.now()}`
+      img.set('ikFrameId', id)
+      c.add(img)
+      decompRef.current.push({ id, img, name: 'Framed Photo', type: 'Frame', dataUrl: url, visible: true })
+      setExtraLayers(decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })))
+      c.setActiveObject(img)
+      c.requestRenderAll()
+      let focused = false
+      try {
+        const box = await detectFaceBox(url)
+        if (box) { frameFocusFaceObj(img, frame, box); focused = true; c.requestRenderAll() }
+      } catch { /* face detector unavailable — user positions manually */ }
+      if (!silent) {
+        showToast(
+          focused ? 'Face centered — drag to fine-tune, corners to zoom' : 'Drag the photo to reposition · corner handles to zoom',
+          'check',
+        )
+      }
+      return id
+    },
+    [fit.w, fit.h, showToast],
+  )
+
   const onFile = async (e) => {
     const f = e.target.files && e.target.files[0]
     if (f) {
       const url = URL.createObjectURL(f)
-      await loadIntoCanvas(url)
-      showToast('Image imported', 'upload')
+      if (frameAwait.current) {
+        frameAwait.current = false
+        try {
+          await addPhotoInFrame(url)
+        } catch {
+          showToast('Could not add that image', 'close')
+        }
+      } else {
+        await loadIntoCanvas(url)
+        showToast('Image imported', 'upload')
+      }
     }
     e.target.value = ''
+  }
+
+  /* frame bar actions (selected framed photo) */
+  const frameAction = (kind) => {
+    const d = decompRef.current.find((x) => x.id === selFrameId)
+    const c = fabricRef.current
+    if (!d || !c || !d.img || !d.img.ikFrame) return
+    const img = d.img
+    const f = img.ikFrame
+    if (kind === 'fit') framePlaceObj(img, f, 'contain')
+    if (kind === 'fill') framePlaceObj(img, f, 'cover')
+    if (kind === 'in') frameZoomObj(img, f, 1.18)
+    if (kind === 'out') frameZoomObj(img, f, 1 / 1.18)
+    if (kind === 'release') {
+      img.set('clipPath', null)
+      img.set('ikFrame', undefined)
+      img.set('ikFrameId', undefined)
+      d.type = 'Photo'
+      d.name = 'Photo'
+      setExtraLayers(decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })))
+      setSelFrameId(null)
+    }
+    c.requestRenderAll()
+  }
+
+  const frameFocusFace = async () => {
+    const d = decompRef.current.find((x) => x.id === selFrameId)
+    const c = fabricRef.current
+    if (!d || !c || !d.img || !d.img.ikFrame) return
+    try {
+      const box = await detectFaceBox(d.dataUrl)
+      if (!box) { showToast('No face found — drag to position manually', 'info'); return }
+      frameFocusFaceObj(d.img, d.img.ikFrame, box)
+      c.requestRenderAll()
+      showToast('Face centered', 'check')
+    } catch {
+      showToast('Face detection unavailable right now', 'close')
+    }
   }
 
   // Paste an image from the clipboard (screenshots, copied files) → canvas.
@@ -3674,6 +3865,9 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     { id: 'tool-marquee', label: 'Rect Marquee', group: 'Selection', icon: 'shape', go: () => startSelectionTool('marquee-rect') },
     { id: 'tool-marquee-e', label: 'Ellipse Marquee', group: 'Selection', icon: 'circle', go: () => startSelectionTool('marquee-ellipse') },
     { id: 'tool-clone', label: 'Clone Stamp', group: 'Retouch', icon: 'copy', go: () => startPaintTool('clone') },
+  { id: 'tool-pixelstudio', label: 'Pixel Studio (Photoshop-style editing)', group: 'Tool', icon: 'brush', go: () => goSection('pixel') },
+  { id: 'tool-framephoto', label: 'Add Photo in Frame (templates & banners)', group: 'Tool', icon: 'fit', go: () => { frameAwait.current = true; if (fileRef.current) fileRef.current.click() } },
+  { id: 'tool-extract', label: 'Extract to Layers (text · face · person · background)', group: 'AI', icon: 'layers', go: () => { setTab('ai'); runDecompose() } },
     { id: 'tool-heal', label: 'Healing Brush', group: 'Retouch', icon: 'brush', go: () => startPaintTool('heal') },
     { id: 'tool-redeye', label: 'Red Eye', group: 'Retouch', icon: 'eye', go: () => startPaintTool('redeye') },
     { id: 'tool-bucket', label: 'Paint Bucket', group: 'Retouch', icon: 'droplet', go: () => startPaintTool('bucket') },
@@ -3914,6 +4108,14 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
           <div className="mx-2 h-5 w-px bg-line" />
           <Button
+            variant={pixelStudio ? 'primary' : 'secondary'}
+            size="sm"
+            icon="brush"
+            onClick={() => goSection('pixel')}
+          >
+            Pixel Studio
+          </Button>
+          <Button
             variant="secondary"
             size="sm"
             icon="folder"
@@ -3925,17 +4127,9 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             Export
           </Button>
           <IconBtn icon="gear" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
-          <div className="mx-2 h-5 w-px bg-line" />
-          <GoalMenu
-            compact
-            onPick={(action) => {
-              if (action === 'open' || action === 'fix' || action === 'restore') fileRef.current && fileRef.current.click()
-              else if (action === 'collage' || action === 'template') openModal(setCollageOpen)
-              else if (action === 'export') openModal(setExportOpen)
-            }}
-          />
         </div>
         <div className="flex items-center gap-0.5 lg:hidden">
+          <IconBtn icon="brush" title="Pixel Studio" active={pixelStudio} onClick={() => goSection('pixel')} />
           <IconBtn icon="undo" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo} />
           <IconBtn icon="redo" title="Redo (⌘⇧Z)" disabled={!canRedo} onClick={redo} />
           <IconBtn icon="trash" title="Delete image" onClick={deleteActive} />
@@ -3944,6 +4138,9 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           <IconBtn icon="gear" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
         </div>
       </header>
+
+      {/* website-style section menu — every workflow one obvious click away */}
+      <SectionNav items={EDITOR_SECTIONS} onPick={goSection} active={pixelStudio ? 'pixel' : tab} />
 
       <div className="relative flex min-h-0 flex-1">
         {/* ------------------------------ canvas area ---------------------------- */}
@@ -3995,14 +4192,24 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                       Blank {naturalRef.current.w || '–'}×{naturalRef.current.h || '–'} canvas
                     </p>
                     <div className="flex flex-wrap items-center justify-center gap-2">
-                      <Button variant="primary" size="sm" icon="upload" onClick={() => fileRef.current && fileRef.current.click()}>
-                        Add Photo
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        icon="upload"
+                        onClick={() => {
+                          frameAwait.current = true
+                          if (fileRef.current) fileRef.current.click()
+                        }}
+                      >
+                        Add Face / Photo
                       </Button>
                       <Button variant="secondary" size="sm" icon="grid" onClick={() => setCollageOpen(true)}>
                         Collage grid…
                       </Button>
                     </div>
-                    <p className="text-[10px] text-mute">Add Photo fills the canvas — you can move/resize it after. Collage builds a multi-photo layout.</p>
+                    <p className="max-w-xs text-center text-[0.8125rem] leading-relaxed text-mute">
+                      Drops in as an adjustable frame — drag to show just the eyes, corner handles to zoom out to the full face. Face is auto-centered when found.
+                    </p>
                   </>
                 ) : (
                   <>
@@ -4018,7 +4225,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                     >
                       Open File
                     </Button>
-                    <p className="text-[10px] text-mute">…or drop an image anywhere on the canvas</p>
+                    <p className="text-[0.8125rem] text-mute">…or drop an image anywhere on the canvas</p>
                   </>
                 )}
               </div>
@@ -4041,7 +4248,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               <div className="ik-sweep-bar" style={{ animationDuration: `${7 / motion.speed}s` }} />
             )}
             {motion.mode !== 'off' && (
-              <span className="pointer-events-none absolute left-3 top-3 z-10 rounded-ink bg-black/35 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-white/85">
+              <span className="pointer-events-none absolute left-3 top-3 z-10 rounded-ink bg-black/35 px-1.5 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.14em] text-white/85">
                 Motion · {motion.mode} (preview)
               </span>
             )}
@@ -4109,7 +4316,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                         className="absolute border border-white"
                         style={{ top: cropSel.y, left: cropSel.x, width: cropSel.w, height: cropSel.h }}
                       />
-                      <span className="absolute rounded-ink bg-black/60 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-white" style={{ top: cropSel.y - 18, left: cropSel.x }}>
+                      <span className="absolute rounded-ink bg-black/60 px-1.5 py-0.5 text-[0.75rem] font-semibold tabular-nums text-white" style={{ top: cropSel.y - 18, left: cropSel.x }}>
                         {Math.round((cropSel.w / displayRect.w) * naturalRef.current.w)}×{Math.round((cropSel.h / displayRect.h) * naturalRef.current.h)}
                       </span>
                     </>
@@ -4155,7 +4362,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                 <button
                   type="button"
                   onClick={skipAi}
-                  className="rounded-ink bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-black transition-colors hover:bg-[#e8e8e8]"
+                  className="rounded-ink bg-white px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black transition-colors hover:bg-[#e8e8e8]"
                 >
                   ✕ Skip — see my image
                 </button>
@@ -4180,7 +4387,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                 type="button"
                 title="Zoom presets"
                 onClick={() => setZoomMenuOpen((v) => !v)}
-                className="w-12 text-center text-[10px] tabular-nums text-dim hover:text-white"
+                className="w-12 text-center text-[0.8125rem] tabular-nums text-dim hover:text-white"
               >
                 {Math.round(zoom * 100)}%
               </button>
@@ -4208,7 +4415,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             type="button"
             onClick={() => setBeforeAfter((v) => !v)}
             className={cn(
-              'absolute bottom-4 right-4 flex h-9 items-center gap-2 rounded-ink border px-3 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+              'absolute bottom-4 right-4 flex h-9 items-center gap-2 rounded-ink border px-3 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors',
               beforeAfter ? 'border-white bg-white text-black' : 'border-line bg-surface text-dim hover:border-white hover:text-white',
             )}
           >
@@ -4251,7 +4458,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                   )}
                 >
                   <Icon name={t.icon} size={14} strokeWidth={1.8} />
-                  <span className="w-full truncate text-center text-[6.5px] font-bold uppercase leading-none tracking-[0.03em]">{t.label}</span>
+                  <span className="w-full truncate text-center text-[0.625rem] font-bold uppercase leading-none tracking-[0.03em]">{t.label}</span>
                 </button>
               ))}
               <div className="my-1 h-px w-6 bg-line" />
@@ -4280,6 +4487,43 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           icon AND name — no mystery icons. Row 1 = draw/move tools · Row 2 =
           edit/utility tools. Compact, always visible, canvas is never covered. */}
       <footer className="flex shrink-0 flex-col items-center gap-1 border-t border-line px-2 py-1.5">
+        {/* Pixel Studio — Photoshop-style toolset, always one click away */}
+        {pixelStudio && (
+          <div className="flex w-full flex-wrap items-center justify-center gap-1 rounded-ink border border-line bg-surface-2 px-2 py-1.5">
+            <span className="label-xs mr-1 shrink-0 text-mute">Pixel Studio</span>
+            <ToolChip icon="brush" label="Brush" active={tool === 'brush'} onClick={() => setTool('brush')} />
+            <ToolChip icon="eraser" label="Erase" active={eraseMode === 'alpha'} onClick={() => startErase('alpha')} />
+            <ToolChip icon="wind" label="Blur" active={eraseMode === 'blur'} onClick={() => startErase('blur')} />
+            <ToolChip icon="close" label="AI Remove" active={eraseMode === 'erase'} onClick={() => startErase('erase')} />
+            <ToolChip icon="copy" label="Clone" active={tool === 'paint-clone'} onClick={() => startPaintTool('clone')} />
+            <ToolChip icon="focus" label="Heal" active={tool === 'paint-heal'} onClick={() => startPaintTool('heal')} />
+            <ToolChip icon="dropper" label="Bucket" active={tool === 'paint-bucket'} onClick={() => startPaintTool('bucket')} />
+            <div className="mx-1 h-5 w-px bg-line" />
+            <label className="flex shrink-0 items-center gap-2">
+              <span className="label-xs text-mute">Size</span>
+              <input
+                type="range"
+                min={2}
+                max={120}
+                value={brushSize}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  setBrushSize(v)
+                  brushSizeRef.current = v
+                }}
+                className="h-1.5 w-28 cursor-pointer accent-white"
+              />
+              <span className="w-8 text-center text-[0.8125rem] tabular-nums text-dim">{brushSize}</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setPixelStudio(false)}
+              className="ml-1 shrink-0 rounded-ink border border-line px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+            >
+              Done
+            </button>
+          </div>
+        )}
         {/* Row 1 — draw + edit tools (consolidated) */}
         <div className="flex flex-wrap items-center justify-center gap-0.5">
           <ToolChip icon="move" label="Select" kbd="V" active={tool === 'select'} onClick={() => setTool('select')} />
@@ -4303,7 +4547,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               type="button"
               title="Zoom presets"
               onClick={() => setZoomMenuOpen((v) => !v)}
-              className="w-12 text-center text-[10px] tabular-nums text-dim hover:text-white"
+              className="w-12 text-center text-[0.8125rem] tabular-nums text-dim hover:text-white"
             >
               {Math.round(zoom * 100)}%
             </button>
@@ -4327,6 +4571,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           <ToolChip icon="fit" label="Fit" onClick={zoomFit} />
           <div className="mx-1.5 h-5 w-px bg-line" />
           <ToolChip icon="upload" label="Import" onClick={() => fileRef.current && fileRef.current.click()} />
+          <ToolChip icon="brush" label="Pixel Studio" active={pixelStudio} onClick={() => goSection('pixel')} />
           <ToolChip icon="ai" label="AI" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
           <ToolChip icon="layers" label="Layers" active={tab === 'layers'} onClick={() => openTab('layers')} />
         </div>
@@ -4337,7 +4582,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               value={textFont}
               onChange={(e) => applyTextFont(e.target.value)}
               title="Font family"
-              className="h-8 shrink-0 rounded-ink border border-line bg-surface px-2 text-[11px] font-semibold text-fg focus:border-white focus:outline-none"
+              className="h-8 shrink-0 rounded-ink border border-line bg-surface px-2 text-[0.875rem] font-semibold text-fg focus:border-white focus:outline-none"
               style={{ fontFamily: fontStack(textFont) }}
             >
               {FONTS.map((f) => (
@@ -4354,7 +4599,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               onChange={(e) => applyTextSize(Number(e.target.value))}
               onBlur={(e) => applyTextSize(Number(e.target.value) || DEFAULT_FONT_SIZE)}
               title="Font size"
-              className="h-8 w-14 shrink-0 rounded-ink border border-line bg-surface px-2 text-center text-[11px] tabular-nums text-fg focus:border-white focus:outline-none"
+              className="h-8 w-14 shrink-0 rounded-ink border border-line bg-surface px-2 text-center text-[0.875rem] tabular-nums text-fg focus:border-white focus:outline-none"
             />
           </div>
         )}
@@ -4385,13 +4630,13 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               className="flex flex-col items-center gap-2 rounded-ink border border-line p-4 transition-colors hover:border-white"
             >
               <span className={cn('h-12 w-full rounded-ink border border-line-2', o.swatch)} />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg">
+              <span className="text-[0.875rem] font-semibold uppercase tracking-[0.08em] text-fg">
                 {o.label}
               </span>
             </button>
           ))}
         </div>
-        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+        <p className="mt-4 text-[0.8125rem] leading-relaxed text-mute">
           Runs on-device via MediaPipe segmentation — the subject keeps its true alpha matte.
         </p>
       </Modal>
@@ -4420,13 +4665,13 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               className="rounded-ink border border-line px-3 py-4 text-center transition-colors hover:border-white"
             >
               <span className="text-xs font-bold text-fg">{r}</span>
-              <span className="mt-1 block text-[9px] text-mute">
+              <span className="mt-1 block text-[0.75rem] text-mute">
                 {r === '1:1' ? 'Square' : r === '4:5' ? 'Portrait' : r === '9:16' ? 'Story' : 'Wide'}
               </span>
             </button>
           ))}
         </div>
-        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+        <p className="mt-4 text-[0.8125rem] leading-relaxed text-mute">
           Uses the segmentation model to find the subject; if none is found it falls back to a
           geometric center crop.
         </p>
@@ -4443,13 +4688,13 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               key={o.c}
               type="button"
               onClick={() => { setCropOpen(false); runDiagonalCrop(o.c, 0.08) }}
-              className="rounded-ink border border-line px-2 py-2 text-center text-[10px] font-bold uppercase tracking-[0.05em] text-dim transition-colors hover:border-white hover:text-white"
+              className="rounded-ink border border-line px-2 py-2 text-center text-[0.8125rem] font-bold uppercase tracking-[0.05em] text-dim transition-colors hover:border-white hover:text-white"
             >
               {o.l}
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[10px] text-mute">
+        <p className="mt-2 text-[0.8125rem] text-mute">
           Cut a corner corner-to-corner (soft band) — try "crop diagonal top right" by voice too.
         </p>
       </Modal>
@@ -4477,7 +4722,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             </button>
           ))}
         </div>
-        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+        <p className="mt-4 text-[0.8125rem] leading-relaxed text-mute">
           Played back with CSS keyframes in the viewport. Exports render the current frame.
         </p>
       </Modal>
@@ -4535,14 +4780,14 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               className="flex flex-col items-center gap-1 rounded-ink border border-line px-3 py-4 transition-colors hover:border-white"
             >
               <span className="text-lg font-bold text-fg">{f}×</span>
-              <span className="text-[9px] text-mute">
+              <span className="text-[0.75rem] text-mute">
                 {naturalRef.current.w ? Math.round(naturalRef.current.w * f) : '–'}×
                 {naturalRef.current.h ? Math.round(naturalRef.current.h * f) : '–'}
               </span>
             </button>
           ))}
         </div>
-        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+        <p className="mt-4 text-[0.8125rem] leading-relaxed text-mute">
           2× for most work · 4× balanced · 8× for large prints (8× can be slow on big originals).
         </p>
       </Modal>
@@ -4573,13 +4818,13 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                       showToast(`Copied ${p.hex}`, 'check')
                     } catch { /* clipboard unavailable */ }
                   }}
-                  className="rounded-ink border border-line px-2 py-1.5 text-center font-mono text-[10px] text-dim transition-colors hover:border-white hover:text-white"
+                  className="rounded-ink border border-line px-2 py-1.5 text-center font-mono text-[0.8125rem] text-dim transition-colors hover:border-white hover:text-white"
                 >
                   {p.hex}
                 </button>
               ))}
             </div>
-            <p className="mt-3 text-[10px] text-mute">Tap a hex to copy. Real color analysis — no preset.</p>
+            <p className="mt-3 text-[0.8125rem] text-mute">Tap a hex to copy. Real color analysis — no preset.</p>
           </>
         )}
       </Modal>
@@ -4597,7 +4842,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             type="button"
             onClick={() => setExportGroup('all')}
             className={cn(
-              'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+              'shrink-0 rounded-ink px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors',
               exportGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
             )}
           >
@@ -4609,7 +4854,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               type="button"
               onClick={() => setExportGroup(g)}
               className={cn(
-                'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                'shrink-0 rounded-ink px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors',
                 exportGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
               )}
             >
@@ -4621,7 +4866,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               type="button"
               onClick={() => setExportGroup('Custom')}
               className={cn(
-                'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                'shrink-0 rounded-ink px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors',
                 exportGroup === 'Custom' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
               )}
             >
@@ -4631,7 +4876,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           <button
             type="button"
             onClick={() => setAddPresetOpen(true)}
-            className="shrink-0 rounded-ink border border-dashed border-line px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-dim transition-colors hover:border-white hover:text-fg"
+            className="shrink-0 rounded-ink border border-dashed border-line px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.12em] text-dim transition-colors hover:border-white hover:text-fg"
           >
             ＋ Add size
           </button>
@@ -4728,7 +4973,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             </span>
             <span className="text-xs font-semibold">Original size</span>
           </span>
-          <span className="text-[10px] text-mute">
+          <span className="text-[0.8125rem] text-mute">
             {naturalRef.current.w || '–'}×{naturalRef.current.h || '–'}
           </span>
         </button>
@@ -4744,7 +4989,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
                   title={fm.hint}
                   onClick={() => setFormat(fm.id)}
                   className={cn(
-                    'rounded-[6px] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors',
+                    'rounded-[6px] px-2.5 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.1em] transition-colors',
                     format === fm.id ? 'bg-white text-black' : 'border border-line text-dim hover:text-white',
                   )}
                 >
@@ -4756,22 +5001,22 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           <span className="label-xs text-mute">{imageLabel}</span>
         </div>
         {(format === 'gif' || format === 'mp4') && (
-          <p className="mt-2 text-[10px] text-mute">
+          <p className="mt-2 text-[0.8125rem] text-mute">
             Animated — uses the Motion effect ({motion.mode === 'off' ? 'slow zoom' : motion.mode}). Enable
             Motion in the AI tab for control.
           </p>
         )}
-        {format === 'svg' && <p className="mt-2 text-[10px] text-mute">Vector export of canvas objects; photos are edge-traced.</p>}
+        {format === 'svg' && <p className="mt-2 text-[0.8125rem] text-mute">Vector export of canvas objects; photos are edge-traced.</p>}
         {format === 'psd' && (
-          <p className="mt-2 text-[10px] text-mute">
+          <p className="mt-2 text-[0.8125rem] text-mute">
             Layered PSD — each canvas object (image, shapes, text, collage photos, AI layers) becomes
             an editable layer with its name, opacity, visibility and blend mode preserved.
           </p>
         )}
-        {format === 'pdf' && <p className="mt-2 text-[10px] text-mute">Single-page PDF at the selected size (JPEG-embedded).</p>}
+        {format === 'pdf' && <p className="mt-2 text-[0.8125rem] text-mute">Single-page PDF at the selected size (JPEG-embedded).</p>}
 
         {isImageExport && (
-          <p className="mt-4 rounded-ink border border-dashed border-line px-3 py-2 text-[10px] leading-relaxed text-mute">
+          <p className="mt-4 rounded-ink border border-dashed border-line px-3 py-2 text-[0.8125rem] leading-relaxed text-mute">
             Check the sizes you need — each downloads as its own file. Tick <b className="text-dim">Bundle as .zip</b> only if you want them combined into one folder.
           </p>
         )}
@@ -4779,7 +5024,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
           <div className="mr-auto flex items-center gap-2">
             {isImageExport && selPresets.length > 1 && (
-              <label className="flex cursor-pointer items-center gap-1.5 rounded-ink border border-line px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white">
+              <label className="flex cursor-pointer items-center gap-1.5 rounded-ink border border-line px-2.5 py-1.5 text-[0.75rem] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white">
                 <input
                   type="checkbox"
                   checked={zipRequested}
@@ -4834,7 +5079,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               <input type="number" min={16} max={8192} value={presetForm.h} onChange={(e) => setPresetForm({ ...presetForm, h: e.target.value })} className="rounded-ink border border-line bg-surface px-2.5 py-1.5 text-xs text-fg focus:border-white focus:outline-none" />
             </label>
           </div>
-          <p className="text-[9px] text-mute">It appears in Export, Templates and global search — usable everywhere a size is picked.</p>
+          <p className="text-[0.75rem] text-mute">It appears in Export, Templates and global search — usable everywhere a size is picked.</p>
           <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
             <Button variant="ghost" onClick={() => setAddPresetOpen(false)}>Cancel</Button>
             <Button variant="primary" icon="plus" onClick={addCustomPreset}>Add Size</Button>
@@ -4871,28 +5116,47 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       {/* hidden file input for replacing a collage photo */}
       <input ref={collageReplaceInputRef} type="file" accept="image/*" className="hidden" onChange={onCollageReplaceFile} />
 
+      {/* on-canvas framed-photo bar — Canva-style frame controls (face frames) */}
+      {selFrameId && (() => {
+        const d = decompRef.current.find((x) => x.id === selFrameId)
+        if (!d || !d.img || !d.img.ikFrame) return null
+        return (
+          <div className="fixed bottom-20 left-1/2 z-[70] flex -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-ink bg-white px-2 py-1.5 shadow-2xl">
+            <span className="px-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-black/60">Frame</span>
+            <span className="h-4 w-px bg-black/10" />
+            <FrameBarBtn onClick={frameFocusFace} label="Face" title="Center on the face" />
+            <FrameBarBtn onClick={() => frameAction('fill')} label="Fill" title="Fill the whole frame" />
+            <FrameBarBtn onClick={() => frameAction('fit')} label="Fit" title="Fit the whole photo" />
+            <FrameBarBtn onClick={() => frameAction('out')} label="−" title="Zoom out — show more" />
+            <FrameBarBtn onClick={() => frameAction('in')} label="＋" title="Zoom in — show less (eyes only)" />
+            <span className="h-4 w-px bg-black/10" />
+            <FrameBarBtn onClick={() => frameAction('release')} label="Release" title="Remove the frame — keep as a normal layer" />
+          </div>
+        )
+      })()}
+
       {/* on-canvas collage photo action bar — click a photo to edit it in place */}
       {selCollageId && (() => {
         const d = decompRef.current.find((x) => x.id === selCollageId)
         if (!d) return null
         return (
           <div className="fixed bottom-20 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-1 rounded-ink bg-white px-2 py-1.5 shadow-2xl">
-            <span className="px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/60">{d.name}</span>
+            <span className="px-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-black/60">{d.name}</span>
             <span className="h-4 w-px bg-black/10" />
-            <button type="button" onClick={() => replaceCollagePhoto(selCollageId)} className="flex items-center gap-1 rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Replace this photo (same grid slot)">
+            <button type="button" onClick={() => replaceCollagePhoto(selCollageId)} className="flex items-center gap-1 rounded-ink px-2 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Replace this photo (same grid slot)">
               <Icon name="refresh" size={11} /> Replace
             </button>
-            <button type="button" onClick={() => fitCollagePhoto(selCollageId, 'cover')} className="rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Fill its slot">
+            <button type="button" onClick={() => fitCollagePhoto(selCollageId, 'cover')} className="rounded-ink px-2 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Fill its slot">
               Fill
             </button>
-            <button type="button" onClick={() => fitCollagePhoto(selCollageId, 'contain')} className="rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Fit inside its slot">
+            <button type="button" onClick={() => fitCollagePhoto(selCollageId, 'contain')} className="rounded-ink px-2 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Fit inside its slot">
               Fit
             </button>
-            <button type="button" onClick={() => rotateCollagePhoto(selCollageId, 15)} className="rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Rotate 15°">
+            <button type="button" onClick={() => rotateCollagePhoto(selCollageId, 15)} className="rounded-ink px-2 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10" title="Rotate 15°">
               ↻
             </button>
             <span className="h-4 w-px bg-black/10" />
-            <button type="button" onClick={() => removeCollagePhoto(selCollageId)} className="flex items-center gap-1 rounded-ink px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-danger transition-colors hover:bg-black/10" title="Remove this photo (grid stays)">
+            <button type="button" onClick={() => removeCollagePhoto(selCollageId)} className="flex items-center gap-1 rounded-ink px-2 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-danger transition-colors hover:bg-black/10" title="Remove this photo (grid stays)">
               <Icon name="trash" size={11} /> Remove
             </button>
           </div>
@@ -4904,6 +5168,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         open={settingsOpen}
         theme={theme}
         onTheme={changeTheme}
+        scale={scale}
+        onScale={changeScale}
         justDoIt={justDoIt}
         setJustDoIt={setJustDoIt}
         onClose={() => setSettingsOpen(false)}
@@ -4916,11 +5182,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         <div className="flex flex-col gap-4">
           <div>
             <Slider label="Edge / hair radius" value={removeBgEdge} min={0} max={6} defaultValue={2} format={(v) => (v === 0 ? 'Off' : `${v}px`)} onChange={setRemoveBgEdge} />
-            <p className="mt-1 text-[9px] text-mute">Higher keeps more hair strands and softens the edge — good for flyaway hair.</p>
+            <p className="mt-1 text-[0.75rem] text-mute">Higher keeps more hair strands and softens the edge — good for flyaway hair.</p>
           </div>
           <div>
             <Slider label="Fringe cleanup" value={Math.round(removeBgDecontam * 100)} min={0} max={100} defaultValue={70} format={(v) => `${v}%`} onChange={(v) => setRemoveBgDecontam(v / 100)} />
-            <p className="mt-1 text-[9px] text-mute">Removes the background-colored halo on the edge (white/colored remnants).</p>
+            <p className="mt-1 text-[0.75rem] text-mute">Removes the background-colored halo on the edge (white/colored remnants).</p>
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
             <Button variant="ghost" onClick={() => setRemoveBgOpen(false)}>Cancel</Button>
@@ -5007,8 +5273,8 @@ function PresetRow({ p, checked, onToggle, query = '', onRemove }) {
         <Icon name={PLATFORM_ICONS[p.platform]} size={13} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11px] font-semibold"><Highlight text={p.name} query={query} /></span>
-        <span className="mt-0.5 block text-[9px] text-mute">
+        <span className="block truncate text-[0.875rem] font-semibold"><Highlight text={p.name} query={query} /></span>
+        <span className="mt-0.5 block text-[0.75rem] text-mute">
           {p.w}×{p.h} · {p.ratio}{p.custom ? ' · custom' : ''}
         </span>
       </span>
@@ -5040,7 +5306,7 @@ function ToolChip({ icon, label, kbd, active, onClick }) {
       title={kbd ? `${label} (${kbd})` : label}
       aria-label={label}
       className={cn(
-        'flex h-8 items-center gap-1.5 rounded-ink px-2 text-[9px] font-bold uppercase tracking-[0.08em] transition-colors',
+        'flex h-8 items-center gap-1.5 rounded-ink px-2 text-[0.75rem] font-bold uppercase tracking-[0.08em] transition-colors',
         active ? 'bg-white text-black' : 'text-dim hover:bg-white/5 hover:text-fg',
       )}
     >
@@ -5049,18 +5315,31 @@ function ToolChip({ icon, label, kbd, active, onClick }) {
     </button>
   )
 }
+function FrameBarBtn({ onClick, label, title }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="rounded-ink px-2 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-black/70 transition-colors hover:bg-black/10"
+    >
+      {label}
+    </button>
+  )
+}
+
 function ZoomMenuRow({ label, kbd, active, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        'flex w-full items-center justify-between px-3 py-1.5 text-left text-[11px] transition-colors',
+        'flex w-full items-center justify-between px-3 py-1.5 text-left text-[0.875rem] transition-colors',
         active ? 'bg-white/10 font-semibold text-fg' : 'text-dim hover:bg-white/5 hover:text-fg',
       )}
     >
       <span>{label}</span>
-      {kbd && <span className="text-[9px] text-mute">{kbd}</span>}
+      {kbd && <span className="text-[0.75rem] text-mute">{kbd}</span>}
     </button>
   )
 }
@@ -5132,16 +5411,16 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
     <div className="p-4">
       {/* Row 1 — Free/All + Auto toggle + Gallery */}
       <div className="mb-2 flex items-center gap-1">
-        <button type="button" onClick={() => setFeat('local')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'local' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
+        <button type="button" onClick={() => setFeat('local')} className={cn('rounded-ink px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'local' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
           Free ({counts.local})
         </button>
-        <button type="button" onClick={() => setFeat('all')} className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
+        <button type="button" onClick={() => setFeat('all')} className={cn('rounded-ink px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', feat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>
           All ({counts.all})
         </button>
         <button
           type="button"
           onClick={() => setHideAuto((v) => !v)}
-          className={cn('flex items-center gap-1 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', !hideAuto ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+          className={cn('flex items-center gap-1 rounded-ink px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', !hideAuto ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
           title="Generated actions reuse the same engines with product-specific names"
         >
           <Icon name="sparkle" size={11} /> Auto ({ACTIONS.filter((a) => a.auto).length})
@@ -5150,7 +5429,7 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
           <button
             type="button"
             onClick={onGallery}
-            className="ml-auto flex items-center gap-1 rounded-ink border border-line px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-fg"
+            className="ml-auto flex items-center gap-1 rounded-ink border border-line px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-fg"
             title="See every effect on YOUR photo, then pick"
           >
             <Icon name="grid" size={11} /> Gallery
@@ -5175,8 +5454,8 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
             className="flex flex-col items-start gap-1 rounded-ink border border-white/25 bg-white/5 px-2 py-1.5 text-left transition-colors hover:border-white"
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-ink bg-white text-black"><Icon name={icon} size={12} /></span>
-            <span className="text-[10px] font-bold leading-tight text-fg">{title}</span>
-            <span className="text-[8px] leading-tight text-mute">{sub}</span>
+            <span className="text-[0.8125rem] font-bold leading-tight text-fg">{title}</span>
+            <span className="text-[0.6875rem] leading-tight text-mute">{sub}</span>
           </button>
         ))}
       </div>
@@ -5188,12 +5467,12 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
             key={t.id}
             type="button"
             onClick={() => { setType(t.id); setShowAll(false) }}
-            className={cn('rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', type === t.id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+            className={cn('rounded-ink px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', type === t.id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
           >
             {t.label}
           </button>
         ))}
-        <span className="ml-auto text-[8px] text-mute">
+        <span className="ml-auto text-[0.6875rem] text-mute">
           {detected && !detected.loading ? (detected.manual ? `${detected.label} (manual)` : `Detected: ${detected.label}`) : ''}
         </span>
       </div>
@@ -5205,7 +5484,7 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
           <Slider label="Effect strength" value={amt} min={0} max={100} defaultValue={60} format={(v) => `${Math.round(v)}%`} onChange={setAmt} />
         </div>
         {!q && (
-          <span className="shrink-0 text-[8px] text-mute">
+          <span className="shrink-0 text-[0.6875rem] text-mute">
             {typeName ? `Showing ${best.length} for ${typeName} · ${rest.length} hidden` : `Showing ${best.length} · ${rest.length} hidden`}
           </span>
         )}
@@ -5218,7 +5497,7 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
       </div>
       {q && (
         <div className="mb-2 flex items-center justify-between rounded-ink border border-line px-2 py-1">
-          <span className="text-[9px] text-mute">
+          <span className="text-[0.75rem] text-mute">
             <b className="text-dim">{searchHits ? searchHits.length : 0}</b> matches for “{q}”
           </span>
           <button type="button" onClick={() => setLocalQ('')} className="label-xs text-dim transition-colors hover:text-white">Clear</button>
@@ -5227,9 +5506,9 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
 
       {/* category chips */}
       <div className="no-scrollbar flex gap-1 overflow-x-auto pb-1">
-        <button type="button" onClick={() => setCat('all')} className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>All</button>
+        <button type="button" onClick={() => setCat('all')} className={cn('shrink-0 rounded-ink px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', cat === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>All</button>
         {ACTION_CATS.map((c) => (
-          <button key={c} type="button" onClick={() => setCat(c)} className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === c ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>{c}</button>
+          <button key={c} type="button" onClick={() => setCat(c)} className={cn('shrink-0 rounded-ink px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', cat === c ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}>{c}</button>
         ))}
       </div>
 
@@ -5259,7 +5538,7 @@ function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt 
             <button
               type="button"
               onClick={() => setShowAll(true)}
-              className="mt-2 w-full rounded-ink border border-dashed border-line px-3 py-2 text-[10px] text-mute transition-colors hover:border-white hover:text-fg"
+              className="mt-2 w-full rounded-ink border border-dashed border-line px-3 py-2 text-[0.8125rem] text-mute transition-colors hover:border-white hover:text-fg"
             >
               Show {rest.length} more actions (may not fit this photo)
             </button>
@@ -5296,9 +5575,9 @@ function ActionTile({ a, onRun, query = '', score }) {
         <span className="flex h-6 w-6 shrink-0 items-center justify-center text-mute">
           <Icon name={a.icon} size={13} />
         </span>
-        <span className="truncate text-[11px] font-semibold text-fg"><Highlight text={a.name} query={query} /></span>
+        <span className="truncate text-[0.875rem] font-semibold text-fg"><Highlight text={a.name} query={query} /></span>
       </span>
-      <span className="line-clamp-2 text-[9px] leading-relaxed text-mute">{a.desc}</span>
+      <span className="line-clamp-2 text-[0.75rem] leading-relaxed text-mute">{a.desc}</span>
       <span className="mt-auto flex items-center justify-between">
         <span className="label-xxs text-mute">{a.cat}</span>
         <span className="flex items-center gap-1">
@@ -5332,7 +5611,7 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
 
   return (
     <div className="p-4">
-      <p className="mb-3 text-[10px] leading-relaxed text-mute">
+      <p className="mb-3 text-[0.8125rem] leading-relaxed text-mute">
         Save the steps you repeat as a named one-click task. Everything is learned on this device — nothing leaves your browser.
       </p>
 
@@ -5341,10 +5620,10 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
         const labels = chain.steps.map((k) => (libByKey[k] ? libByKey[k].label : k)).join(' → ')
         return (
           <div className="mb-3 rounded-ink border border-white/25 bg-surface-2 px-3 py-2">
-            <p className="text-[10px] font-semibold text-fg">
+            <p className="text-[0.8125rem] font-semibold text-fg">
               You've repeated <span className="text-white">{labels}</span> {chain.times}×
             </p>
-            <p className="mt-0.5 text-[9px] text-mute">Save it as a one-click recipe?</p>
+            <p className="mt-0.5 text-[0.75rem] text-mute">Save it as a one-click recipe?</p>
             <div className="mt-1.5 flex items-center gap-1.5">
               <Button variant="primary" size="sm" icon="plus" onClick={() => onImport(chain.steps.map((k) => ({ key: k, label: libByKey[k] ? libByKey[k].label : k })))}>
                 Save as recipe
@@ -5363,7 +5642,7 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
         return (
           <div className="mb-3 flex items-center gap-2 rounded-ink border border-dashed border-line px-2.5 py-1.5">
             <span className="text-mute"><Icon name="sparkle" size={11} /></span>
-            <span className="min-w-0 flex-1 truncate text-[10px] text-dim">
+            <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-dim">
               Usually next: <b className="text-fg">{l ? l.label : pred.key}</b> <span className="text-mute">({pred.count}× after this)</span>
             </span>
             <Button variant="secondary" size="sm" icon="play" onClick={() => onRunStep(pred.key)}>Run</Button>
@@ -5388,8 +5667,8 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
                   className="flex items-center gap-1.5 rounded-ink border border-line bg-surface-2 px-2 py-1.5 transition-colors hover:border-white"
                 >
                   <span className="text-mute"><Icon name={l ? l.icon : 'sparkle'} size={11} /></span>
-                  <span className="text-[10px] font-semibold text-fg">{l ? l.label : k}</span>
-                  <span className="rounded-full bg-white/10 px-1.5 text-[8px] font-bold text-fg">{st.n}</span>
+                  <span className="text-[0.8125rem] font-semibold text-fg">{l ? l.label : k}</span>
+                  <span className="rounded-full bg-white/10 px-1.5 text-[0.6875rem] font-bold text-fg">{st.n}</span>
                 </button>
               )
             })}
@@ -5404,7 +5683,7 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
       </div>
       {recipes.length === 0 ? (
         <div className="mb-3 rounded-ink border border-dashed border-line px-3 py-4 text-center">
-          <p className="text-[10px] text-mute">No recipes yet. Do a few steps, then save them here — or build one now.</p>
+          <p className="text-[0.8125rem] text-mute">No recipes yet. Do a few steps, then save them here — or build one now.</p>
         </div>
       ) : (
         <div className="mb-3 flex flex-col gap-1.5">
@@ -5414,10 +5693,10 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm leading-none">{r.emoji || '⭐'}</span>
-                    <span className="truncate text-[11px] font-bold text-fg">{r.name}</span>
+                    <span className="truncate text-[0.875rem] font-bold text-fg">{r.name}</span>
                     {r.runs > 0 && <span className="label-xxs shrink-0 text-mute">{r.runs}× run</span>}
                   </div>
-                  <p className="mt-1 truncate text-[9px] text-mute">{r.steps.length} step{r.steps.length === 1 ? '' : 's'} · {stepSummary(r.steps)}</p>
+                  <p className="mt-1 truncate text-[0.75rem] text-mute">{r.steps.length} step{r.steps.length === 1 ? '' : 's'} · {stepSummary(r.steps)}</p>
                 </div>
                 <Button variant="primary" size="sm" icon="play" className="shrink-0" onClick={() => onRunRecipe(r)}>Run</Button>
               </div>
@@ -5441,7 +5720,7 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
         </Button>
       </div>
       {recentList.length === 0 ? (
-        <p className="text-[10px] leading-relaxed text-mute">Steps you run will appear here — click one to re-run it, tick a few and save them as a recipe.</p>
+        <p className="text-[0.8125rem] leading-relaxed text-mute">Steps you run will appear here — click one to re-run it, tick a few and save them as a recipe.</p>
       ) : (
         <div className="flex flex-col gap-1">
           {recentList.map((s, i) => {
@@ -5464,7 +5743,7 @@ function RecipesTab({ recipes, library, stats, recent, onRunRecipe, onRunStep, o
                   className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                 >
                   <span className="shrink-0 text-mute"><Icon name={l ? l.icon : 'info'} size={11} /></span>
-                  <span className={cn('truncate text-[10px] font-medium', s.key ? 'text-fg' : 'text-mute line-through')}>{s.label}</span>
+                  <span className={cn('truncate text-[0.8125rem] font-medium', s.key ? 'text-fg' : 'text-mute line-through')}>{s.label}</span>
                   {!s.key && <span className="label-xxs shrink-0 text-mute">needs input</span>}
                 </button>
                 {s.key && <IconBtn icon="play" size={11} title="Re-run this step" onClick={() => onRunStep(s.key)} className="h-6 w-6" />}
@@ -5531,13 +5810,13 @@ function RecipeBuilderModal({ open, draft, library, onClose, onChange, onSave })
         <div>
           <label className="label-xs text-dim">Steps ({steps.length})</label>
           {steps.length === 0 ? (
-            <p className="mt-1 rounded-ink border border-dashed border-line px-3 py-2 text-[10px] text-mute">No steps yet — add some below.</p>
+            <p className="mt-1 rounded-ink border border-dashed border-line px-3 py-2 text-[0.8125rem] text-mute">No steps yet — add some below.</p>
           ) : (
             <div className="mt-1 flex flex-col gap-1">
               {steps.map((s, i) => (
                 <div key={i} className="flex items-center gap-1.5 rounded-ink border border-line bg-surface-2 px-2 py-1.5">
-                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-fg">{i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-fg">{s.label}</span>
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[0.6875rem] font-bold text-fg">{i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate text-[0.875rem] font-medium text-fg">{s.label}</span>
                   <IconBtn icon="chevronUp" size={12} title="Move up" onClick={() => move(i, -1)} className="h-6 w-6" />
                   <IconBtn icon="chevronDown" size={12} title="Move down" onClick={() => move(i, 1)} className="h-6 w-6" />
                   <IconBtn icon="close" size={12} title="Remove step" onClick={() => remove(i)} className="h-6 w-6" />
@@ -5561,7 +5840,7 @@ function RecipeBuilderModal({ open, draft, library, onClose, onChange, onSave })
                 key={g}
                 type="button"
                 onClick={() => setCat(g)}
-                className={cn('shrink-0 rounded-ink px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', cat === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+                className={cn('shrink-0 rounded-ink px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', cat === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
               >
                 {g === 'all' ? 'All' : g}
               </button>
@@ -5577,11 +5856,11 @@ function RecipeBuilderModal({ open, draft, library, onClose, onChange, onSave })
                 className="flex items-center gap-1.5 rounded-ink border border-line px-2 py-1.5 text-left transition-colors hover:border-white"
               >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center text-mute"><Icon name={l.icon} size={11} /></span>
-                <span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-fg">{l.label}</span>
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold text-fg">{l.label}</span>
                 <Icon name="plus" size={10} className="shrink-0 text-mute" />
               </button>
             ))}
-            {visible.length === 0 && <p className="col-span-2 py-2 text-center text-[10px] text-mute">No steps match “{q}”</p>}
+            {visible.length === 0 && <p className="col-span-2 py-2 text-center text-[0.8125rem] text-mute">No steps match “{q}”</p>}
           </div>
         </div>
 
@@ -5602,14 +5881,35 @@ const SHORTCUTS = [
   ['⌘/Ctrl + N', 'New project'], ['V · R · E · L · T · B', 'Select · Rect · Ellipse · Line · Text · Brush'],
   ['Delete / Backspace', 'Delete object'], ['Esc', 'Cancel / deselect'],
 ]
-function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose, onForgetLearning, onClearAll }) {
+function SettingsModal({ open, theme, onTheme, scale, onScale, justDoIt, setJustDoIt, onClose, onForgetLearning, onClearAll }) {
   const [confirmClear, setConfirmClear] = useState(false)
   return (
     <Modal open={open} onClose={onClose} title="Settings" subtitle="All preferences stay on this device — no account, no cloud" width="max-w-md">
       <div className="flex flex-col gap-5">
         <div>
+          <label className="label-xs text-dim">Interface text size</label>
+          <p className="mt-0.5 text-[0.8125rem] text-mute">Scales the entire interface — every label, button and menu.</p>
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            {SCALE_OPTIONS.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => onScale(o.id)}
+                className={cn(
+                  'flex flex-col gap-1 rounded-ink border px-2 py-2 text-left transition-colors',
+                  scale === o.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
+                )}
+              >
+                <span className={cn('text-[0.8125rem] font-bold uppercase tracking-[0.1em]', scale === o.id ? 'text-fg' : 'text-dim')}>{o.label}</span>
+                <span className="text-[0.75rem] leading-relaxed text-mute">{o.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <label className="label-xs text-dim">Interface theme</label>
-          <p className="mt-0.5 text-[10px] text-mute">Dark is the studio default. Light keeps the black canvas with a light workspace.</p>
+          <p className="mt-0.5 text-[0.8125rem] text-mute">Dark is the studio default. Light keeps the black canvas with a light workspace.</p>
           <div className="mt-2 grid grid-cols-3 gap-1.5">
             {THEME_OPTIONS.map((o) => (
               <button
@@ -5621,8 +5921,8 @@ function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose, o
                   theme === o.id ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
                 )}
               >
-                <span className={cn('text-[10px] font-bold uppercase tracking-[0.1em]', theme === o.id ? 'text-fg' : 'text-dim')}>{o.label}</span>
-                <span className="text-[9px] leading-relaxed text-mute">{o.desc}</span>
+                <span className={cn('text-[0.8125rem] font-bold uppercase tracking-[0.1em]', theme === o.id ? 'text-fg' : 'text-dim')}>{o.label}</span>
+                <span className="text-[0.75rem] leading-relaxed text-mute">{o.desc}</span>
               </button>
             ))}
           </div>
@@ -5630,19 +5930,19 @@ function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose, o
 
         <div>
           <label className="label-xs text-dim">AI assistant mode</label>
-          <p className="mt-0.5 text-[10px] text-mute">Guided = propose → confirm → run. ⚡ Just do it = runs immediately (still undoable).</p>
+          <p className="mt-0.5 text-[0.8125rem] text-mute">Guided = propose → confirm → run. ⚡ Just do it = runs immediately (still undoable).</p>
           <div className="mt-2 flex gap-1">
             <button
               type="button"
               onClick={() => setJustDoIt(false)}
-              className={cn('flex-1 rounded-ink px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors', !justDoIt ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
+              className={cn('flex-1 rounded-ink px-3 py-2 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors', !justDoIt ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
             >
               Guided
             </button>
             <button
               type="button"
               onClick={() => setJustDoIt(true)}
-              className={cn('flex-1 rounded-ink px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors', justDoIt ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
+              className={cn('flex-1 rounded-ink px-3 py-2 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors', justDoIt ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
             >
               ⚡ Just do it
             </button>
@@ -5653,7 +5953,7 @@ function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose, o
           <label className="label-xs text-dim">Keyboard shortcuts</label>
           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
             {SHORTCUTS.map(([keys, label]) => (
-              <div key={label} className="flex items-center justify-between gap-2 text-[9.5px]">
+              <div key={label} className="flex items-center justify-between gap-2 text-[0.75rem]">
                 <span className="text-mute">{label}</span>
                 <span className="rounded-ink bg-surface-2 px-1.5 py-0.5 font-mono font-semibold text-fg">{keys}</span>
               </div>
@@ -5662,7 +5962,7 @@ function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose, o
         </div>
 
         <div className="rounded-ink border border-line bg-surface-2/50 px-3 py-2">
-          <p className="text-[9px] leading-relaxed text-mute">
+          <p className="text-[0.75rem] leading-relaxed text-mute">
             Everything else is automatic: autosave (every 15 s), undo history, recipes and usage stats all live in your browser's local storage.
           </p>
         </div>
@@ -5684,7 +5984,7 @@ function SettingsModal({ open, theme, onTheme, justDoIt, setJustDoIt, onClose, o
               </>
             )}
           </div>
-          <p className="mt-1.5 text-[9px] text-mute">Both actions are permanent and only affect this device's browser storage.</p>
+          <p className="mt-1.5 text-[0.75rem] text-mute">Both actions are permanent and only affect this device's browser storage.</p>
         </div>
       </div>
     </Modal>
@@ -5700,7 +6000,7 @@ function EnhanceModal({ open, onClose, amt, setAmt, redux, setRedux, onApply, on
       <div className="flex flex-col gap-4">
         <div>
           <Slider label="Strength" value={amt} min={0} max={100} defaultValue={60} format={(v) => `${Math.round(v)}%`} onChange={setAmt} />
-          <p className="mt-1 text-[9px] text-mute">
+          <p className="mt-1 text-[0.75rem] text-mute">
             {amt < 25 ? 'Very gentle — barely changes anything' : amt < 70 ? 'Balanced (default 60%)' : 'Strong — watch the highlights'}
           </p>
         </div>
@@ -5712,16 +6012,16 @@ function EnhanceModal({ open, onClose, amt, setAmt, redux, setRedux, onApply, on
                 key={k}
                 type="button"
                 onClick={() => setRedux({ ...redux, [k]: !redux[k] })}
-                className={cn('rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', redux[k] ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+                className={cn('rounded-ink px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', redux[k] ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
               >
                 {label}
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-[9px] text-mute">Each chip keeps that part at its original value.</p>
+          <p className="mt-1.5 text-[0.75rem] text-mute">Each chip keeps that part at its original value.</p>
         </div>
         {hasRegion && (
-          <p className="rounded-ink border border-line bg-surface-2/50 px-3 py-2 text-[9px] leading-relaxed text-mute">
+          <p className="rounded-ink border border-line bg-surface-2/50 px-3 py-2 text-[0.75rem] leading-relaxed text-mute">
             A region is selected — you can enhance <b className="text-dim">just that area</b>.
           </p>
         )}
@@ -5849,7 +6149,7 @@ function EffectsGalleryModal({ open, onClose, src, onPick }) {
             type="button"
             onClick={() => setCat(c)}
             className={cn(
-              'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+              'shrink-0 rounded-ink px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
               cat === c ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
             )}
           >
@@ -5860,7 +6160,7 @@ function EffectsGalleryModal({ open, onClose, src, onPick }) {
 
       {building && (
         <div className="mb-2">
-          <div className="mb-1 flex justify-between text-[9px] text-mute">
+          <div className="mb-1 flex justify-between text-[0.75rem] text-mute">
             <span>Rendering {progress.done}/{progress.total} previews — they appear as they're ready</span>
             <span>{Math.round((progress.done / progress.total) * 100)}%</span>
           </div>
@@ -5879,7 +6179,7 @@ function EffectsGalleryModal({ open, onClose, src, onPick }) {
       ) : !building ? (
         <p className="py-6 text-center text-xs text-mute">{ql ? `No effect matches “${q}”` : 'No effects in this category yet'}</p>
       ) : null}
-      <p className="mt-3 text-[9px] leading-relaxed text-mute">
+      <p className="mt-3 text-[0.75rem] leading-relaxed text-mute">
         Move your pointer across a tile to compare before/after. Tap applies it to your full image — Undo (⌘Z) reverts.
       </p>
     </Modal>
@@ -5910,7 +6210,7 @@ function GalleryCard({ t, orig, pos, setPos, onPick }) {
       <span className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1 pt-4">
         <span className="flex min-w-0 items-center gap-1">
           <Icon name={t.icon} size={10} className="shrink-0 text-white/80" />
-          <span className="truncate text-[9px] font-bold text-white">{t.name}</span>
+          <span className="truncate text-[0.75rem] font-bold text-white">{t.name}</span>
         </span>
         <span className="label-xxs shrink-0 text-white/60">{t.cat}</span>
       </span>
@@ -5937,7 +6237,7 @@ function TextTab({
   return (
     <div className="p-4">
       {!activeText && (
-        <p className="mb-4 rounded-ink border border-line bg-surface-2 px-3 py-2.5 text-[11px] leading-relaxed text-dim">
+        <p className="mb-4 rounded-ink border border-line bg-surface-2 px-3 py-2.5 text-[0.875rem] leading-relaxed text-dim">
           Select a text object on the canvas (or use the <b className="text-fg">Text (T)</b> tool) to
           edit character & paragraph settings. Press <b className="text-fg">Enter</b> inside text to
           start a new line — then align lines left / right / center or spread them.
@@ -6057,7 +6357,7 @@ function TextTab({
           </button>
         ))}
       </div>
-      <p className="mt-3 text-[10px] leading-relaxed text-mute">
+      <p className="mt-3 text-[0.8125rem] leading-relaxed text-mute">
         Multi-line: press Enter for a new line. Each line keeps its own width — alignment (left /
         center / right / justify) arranges how they sit relative to the text box, like a pro editor.
       </p>
@@ -6105,7 +6405,7 @@ function AdjustTab({ filters, setLive, commitFilters, runEnhance, resetAll, isDe
         ))}
       </div>
 
-      <p className="mt-6 text-[10px] leading-relaxed text-mute">
+      <p className="mt-6 text-[0.8125rem] leading-relaxed text-mute">
         Double-click any slider to reset it. Undo/redo with ⌘Z / ⌘⇧Z.
       </p>
     </div>
@@ -6160,7 +6460,7 @@ function AITab({
         { icon: 'brush', title: 'Magic Eraser', desc: 'Paint to remove object', onClick: () => onEraser('erase') },
         { icon: 'sparkle', title: 'Generative Fill', desc: 'Paint to re-fill region', onClick: () => onEraser('fill') },
         { icon: 'crop', title: 'Smart Crop', desc: 'Face/subject-aware', onClick: onCrop },
-        { icon: 'layers', title: 'Decompose', desc: 'Panels · text · subject · bg', onClick: onDecompose, busy: busy?.kind === 'real' },
+        { icon: 'layers', title: 'Extract Layers', desc: 'Text · face · person · background → layers', onClick: onDecompose, busy: busy?.kind === 'real' },
         { icon: 'text', title: 'Smart Text Color', desc: 'Auto black/white on selection', onClick: onAutoTextColor },
       ],
     },
@@ -6200,7 +6500,7 @@ function AITab({
             type="button"
             onClick={() => setJustDoIt(false)}
             className={cn(
-              'rounded-ink px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+              'rounded-ink px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
               !justDoIt ? 'bg-white text-black' : 'text-dim hover:text-white',
             )}
             title="Navigate to the menu, highlight, ask to confirm — so you learn where it is"
@@ -6211,7 +6511,7 @@ function AITab({
             type="button"
             onClick={() => setJustDoIt(true)}
             className={cn(
-              'rounded-ink px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+              'rounded-ink px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
               justDoIt ? 'bg-white text-black' : 'text-dim hover:text-white',
             )}
             title="Run commands immediately — faster, no navigation"
@@ -6235,7 +6535,7 @@ function AITab({
           <button
             type="submit"
             disabled={!phrase.trim()}
-            className="shrink-0 rounded-ink bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-black disabled:opacity-40"
+            className="shrink-0 rounded-ink bg-white px-2.5 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black disabled:opacity-40"
           >
             Go
           </button>
@@ -6246,7 +6546,7 @@ function AITab({
               key={s}
               type="button"
               onClick={() => onPromptAction(matchPrompt(s).action, matchPrompt(s).payload)}
-              className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
+              className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
             >
               {s}
             </button>
@@ -6259,7 +6559,7 @@ function AITab({
               <button
                 type="button"
                 onClick={onUndoLast}
-                className="flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
+                className="flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
               >
                 <Icon name="undo" size={11} /> Undo last
               </button>
@@ -6272,18 +6572,18 @@ function AITab({
                   type="button"
                   title={`Revert to before step ${i + 1} (${c.phrase})`}
                   onClick={() => onRevertTo(i)}
-                  className="group flex items-center gap-1 rounded-ink border border-line bg-surface-2 px-1.5 py-1 text-[9px] text-dim transition-colors hover:border-white hover:text-fg"
+                  className="group flex items-center gap-1 rounded-ink border border-line bg-surface-2 px-1.5 py-1 text-[0.75rem] text-dim transition-colors hover:border-white hover:text-fg"
                 >
-                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/10 text-[8px] font-bold text-fg">{i + 1}</span>
+                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/10 text-[0.6875rem] font-bold text-fg">{i + 1}</span>
                   <span className="max-w-[80px] truncate">{c.phrase}</span>
                   <Icon name="undo" size={9} className="opacity-0 transition-opacity group-hover:opacity-100" />
                 </button>
               ))}
-              <span className="text-[8px] text-mute">· tap a step to undo up to there</span>
+              <span className="text-[0.6875rem] text-mute">· tap a step to undo up to there</span>
             </div>
           </>
         )}
-        <p className="mt-2 text-[9px] leading-relaxed text-mute">
+        <p className="mt-2 text-[0.75rem] leading-relaxed text-mute">
           Tip: chain steps with commas — "auto enhance, now crop to square, then black & white".
           "Undo last command" reverts just the last step.
         </p>
@@ -6294,8 +6594,8 @@ function AITab({
           <div className="label-xs text-dim">How to — {howtoResult.q}</div>
           <ol className="mt-2 space-y-1.5">
             {howtoResult.steps.map((st, i) => (
-              <li key={i} className="flex gap-2 text-[11px] leading-relaxed text-fg">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-fg">{i + 1}</span>
+              <li key={i} className="flex gap-2 text-[0.875rem] leading-relaxed text-fg">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[0.75rem] font-bold text-fg">{i + 1}</span>
                 <span>{st}</span>
               </li>
             ))}
@@ -6304,7 +6604,7 @@ function AITab({
             <button
               type="button"
               onClick={() => { onRunHowTo(howtoResult.action); setHowtoResult(null) }}
-              className="rounded-ink bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-black"
+              className="rounded-ink bg-white px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black"
             >
               Open {howtoResult.tool}
             </button>
@@ -6312,11 +6612,11 @@ function AITab({
               href={youTubeSearch(howtoResult.yt)}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 rounded-ink border border-line px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-white"
+              className="flex items-center gap-1.5 rounded-ink border border-line px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-white"
             >
               <Icon name="play" size={12} /> Watch on YouTube
             </a>
-            <button type="button" onClick={() => setHowtoResult(null)} className="ml-auto text-[9px] uppercase tracking-[0.1em] text-mute hover:text-white">
+            <button type="button" onClick={() => setHowtoResult(null)} className="ml-auto text-[0.75rem] uppercase tracking-[0.1em] text-mute hover:text-white">
               Dismiss
             </button>
           </div>
@@ -6324,7 +6624,7 @@ function AITab({
       )}
 
 
-      <p className="mt-4 text-[10px] leading-relaxed text-mute">
+      <p className="mt-4 text-[0.8125rem] leading-relaxed text-mute">
         All processing runs on-device and reads the actual image content. No fake AI: deterministic
         tools are labeled as such. Export matrix untouched.
       </p>
@@ -6340,8 +6640,8 @@ function AITab({
             <Icon name="sparkle" size={14} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-fg">{suggestion.title}</span>
-            <span className="mt-0.5 block text-[10px] text-mute">{suggestion.desc}</span>
+            <span className="block text-[0.875rem] font-bold uppercase tracking-[0.08em] text-fg">{suggestion.title}</span>
+            <span className="mt-0.5 block text-[0.8125rem] text-mute">{suggestion.desc}</span>
           </span>
           <Icon name="chevronRight" size={14} className="shrink-0 text-mute" />
         </button>
@@ -6376,8 +6676,8 @@ function AITab({
                     <Icon name={it.icon} size={15} />
                   )}
                 </span>
-                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg"><Highlight text={it.title} query={search} /></span>
-                <span className="text-[9.5px] leading-relaxed text-mute"><Highlight text={it.desc} query={search} /></span>
+                <span className="text-[0.875rem] font-bold uppercase tracking-[0.08em] text-fg"><Highlight text={it.title} query={search} /></span>
+                <span className="text-[0.75rem] leading-relaxed text-mute"><Highlight text={it.desc} query={search} /></span>
                 {it.tag && (
                   <span className="absolute right-2 top-2">
                     <Chip active>{it.tag}</Chip>
@@ -6460,7 +6760,7 @@ function LayersTab({
                   selected={false}
                   onSelect={() => {}}
                   onToggleVisibility={() => onToggleVisibility(l.id)}
-                  onToggleLock={() => showToast('AI layers are read-only', 'lock')}
+                  onToggleLock={() => showToast('AI layers are movable — click one on the canvas to drag & scale it', 'lock')}
                   onDelete={() => onDeleteLayer(l.id)}
                 />
                 {l.type === 'Collage' && onFitPhoto && (
@@ -6469,7 +6769,7 @@ function LayersTab({
                     <button
                       type="button"
                       onClick={() => onFitPhoto(l.id, 'contain')}
-                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                       title="Shrink photo to fit its slot"
                     >
                       Fit
@@ -6477,7 +6777,7 @@ function LayersTab({
                     <button
                       type="button"
                       onClick={() => onFitPhoto(l.id, 'cover')}
-                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                       title="Expand photo to fill its slot"
                     >
                       Fill
@@ -6487,7 +6787,7 @@ function LayersTab({
                         <button
                           type="button"
                           onClick={() => onRotatePhoto(l.id, -15)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                           title="Rotate left 15°"
                         >
                           ↺
@@ -6495,7 +6795,7 @@ function LayersTab({
                         <button
                           type="button"
                           onClick={() => onRotatePhoto(l.id, 15)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                           title="Rotate right 15°"
                         >
                           ↻
@@ -6507,7 +6807,7 @@ function LayersTab({
                         <button
                           type="button"
                           onClick={() => onShiftSlot(l.id, -1)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                           title="Swap with previous slot"
                         >
                           ←
@@ -6515,7 +6815,7 @@ function LayersTab({
                         <button
                           type="button"
                           onClick={() => onShiftSlot(l.id, 1)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                           title="Swap with next slot"
                         >
                           →
@@ -6524,7 +6824,7 @@ function LayersTab({
                           <button
                             type="button"
                             onClick={() => onReplacePhoto(l.id)}
-                            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+                            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
                             title="Replace this photo (same grid slot)"
                           >
                             Replace
@@ -6534,7 +6834,7 @@ function LayersTab({
                           <button
                             type="button"
                             onClick={() => onRemovePhoto(l.id)}
-                            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-danger transition-colors hover:text-fg"
+                            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-danger transition-colors hover:text-fg"
                             title="Remove this photo (grid stays)"
                           >
                             Remove
@@ -6542,7 +6842,7 @@ function LayersTab({
                         )}
                       </>
                     )}
-                    <span className="ml-1 text-[9px] text-mute">fit · fill · rotate · swap</span>
+                    <span className="ml-1 text-[0.75rem] text-mute">fit · fill · rotate · swap</span>
                   </div>
                 )}
               </div>
@@ -6584,7 +6884,7 @@ function LayersTab({
         </div>
       )}
 
-      <p className="mt-4 px-1 text-[10px] leading-relaxed text-mute">
+      <p className="mt-4 px-1 text-[0.8125rem] leading-relaxed text-mute">
         Segmented layers are produced by the AI suite — run Remove Background, then toggle the
         Backdrop layer off. Draw with the toolbar tools: Rectangle R, Ellipse E, Line L, Text T,
         Brush B. Delete removes a selected shape.
@@ -6603,7 +6903,7 @@ function RetouchModal({ open, onClose, onApply }) {
       <Slider label="Smooth Skin" value={smooth} min={0} max={100} defaultValue={40} onChange={setSmooth} format={(v) => `${v}`} />
       <Slider label="Blemish Reduction" value={blemish} min={0} max={100} defaultValue={30} onChange={setBlemish} format={(v) => `${v}`} />
       <Slider label="Brighten" value={brighten} min={0} max={100} defaultValue={0} onChange={setBrighten} format={(v) => `${v}`} />
-      <p className="mt-3 text-[10px] leading-relaxed text-mute">
+      <p className="mt-3 text-[0.8125rem] leading-relaxed text-mute">
         Detects skin-tone regions from pixel color and applies smoothing only there — genuine
         content-aware retouch, on-device.
       </p>
@@ -6623,7 +6923,7 @@ function DenoiseBody({ onApply }) {
   return (
     <div>
       <Slider label="Strength" value={strength} min={0} max={100} defaultValue={50} onChange={setStrength} format={(v) => `${v}`} />
-      <p className="mt-3 text-[10px] leading-relaxed text-mute">
+      <p className="mt-3 text-[0.8125rem] leading-relaxed text-mute">
         Measures the image's actual noise level first, then smooths only the noisy areas — edges
         are preserved.
       </p>
@@ -6704,7 +7004,7 @@ function BatchBody({ onRun, result, onClear }) {
         <button
           type="button"
           onClick={() => { setFiles([]); onClear() }}
-          className="rounded-ink border border-line px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-mute hover:text-white"
+          className="rounded-ink border border-line px-3 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-mute hover:text-white"
         >
           Clear
         </button>
@@ -6713,7 +7013,7 @@ function BatchBody({ onRun, result, onClear }) {
       {files.length > 0 && (
         <div className="mt-2 max-h-28 overflow-y-auto scrollbar-thin">
           {[...files].map((f, i) => (
-            <div key={i} className="flex items-center gap-2 py-0.5 text-[11px] text-dim">
+            <div key={i} className="flex items-center gap-2 py-0.5 text-[0.875rem] text-dim">
               <Icon name="image" size={12} /> <span className="truncate">{f.name}</span>
             </div>
           ))}
@@ -6726,7 +7026,7 @@ function BatchBody({ onRun, result, onClear }) {
             type="button"
             onClick={() => setOp(o.id)}
             className={cn(
-              'rounded-ink px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors',
+              'rounded-ink px-2.5 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] transition-colors',
               op === o.id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
             )}
           >
@@ -6748,7 +7048,7 @@ function BatchBody({ onRun, result, onClear }) {
                 key={r.name}
                 type="button"
                 onClick={() => downloadDataUrl(r.dataUrl, `${r.name}.png`)}
-                className="flex w-full items-center gap-2 rounded-ink bg-surface-2 px-2.5 py-1.5 text-left text-[11px] text-dim transition-colors hover:text-fg"
+                className="flex w-full items-center gap-2 rounded-ink bg-surface-2 px-2.5 py-1.5 text-left text-[0.875rem] text-dim transition-colors hover:text-fg"
               >
                 <Icon name="download" size={12} />
                 <span className="truncate">{r.name}.png</span>
@@ -6793,7 +7093,7 @@ function LayoutPreview({ layoutId, active, photos = [], need = 0, circlePos = 'b
         )
       })}
       {need > 0 && (
-        <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/70 px-1.5 py-0.5 text-[8px] font-bold text-white">
+        <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/70 px-1.5 py-0.5 text-[0.6875rem] font-bold text-white">
           needs {need} more
         </span>
       )}
@@ -6876,7 +7176,7 @@ function CurvesModalBody({ src, onApply }) {
       </div>
       <div className="mt-2 flex items-center justify-between">
         <button type="button" onClick={() => setPts([{ x: 0, y: 1 }, { x: 1, y: 0 }])} className="label-xs text-mute hover:text-white">Reset</button>
-        <span className="text-[9px] text-mute">Click to add points · drag existing to move</span>
+        <span className="text-[0.75rem] text-mute">Click to add points · drag existing to move</span>
       </div>
       <div className="mt-4 flex justify-end">
         <Button variant="primary" icon="check" onClick={apply} disabled={busyNow || !src}>
@@ -6952,7 +7252,7 @@ function HowToBody({ onRun }) {
           placeholder='Ask — "how do I blur the background?"'
           className="min-w-0 flex-1 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
         />
-        <button type="submit" disabled={!q.trim()} className="shrink-0 rounded-ink bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-black disabled:opacity-40">
+        <button type="submit" disabled={!q.trim()} className="shrink-0 rounded-ink bg-white px-2.5 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black disabled:opacity-40">
           Ask
         </button>
       </form>
@@ -6962,7 +7262,7 @@ function HowToBody({ onRun }) {
             key={sg}
             type="button"
             onClick={() => { setQ(sg); const m = matchHowTo(sg); setResult(m); setAsked(true) }}
-            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
+            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
           >
             {sg}
           </button>
@@ -6976,7 +7276,7 @@ function HowToBody({ onRun }) {
             href={youTubeSearch(q)}
             target="_blank"
             rel="noreferrer"
-            className="mt-2 inline-block text-[11px] font-semibold text-white underline underline-offset-2"
+            className="mt-2 inline-block text-[0.875rem] font-semibold text-white underline underline-offset-2"
           >
             Search YouTube for “{q}”
           </a>
@@ -6988,8 +7288,8 @@ function HowToBody({ onRun }) {
           <div className="label-xs text-dim">How to — {result.q}</div>
           <ol className="mt-2 space-y-1.5">
             {result.steps.map((st, i) => (
-              <li key={i} className="flex gap-2 text-[11px] leading-relaxed text-fg">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-fg">{i + 1}</span>
+              <li key={i} className="flex gap-2 text-[0.875rem] leading-relaxed text-fg">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[0.75rem] font-bold text-fg">{i + 1}</span>
                 <span>{st}</span>
               </li>
             ))}
@@ -6998,7 +7298,7 @@ function HowToBody({ onRun }) {
             <button
               type="button"
               onClick={() => onRun(result.action)}
-              className="rounded-ink bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-black"
+              className="rounded-ink bg-white px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black"
             >
               Open {result.tool}
             </button>
@@ -7006,7 +7306,7 @@ function HowToBody({ onRun }) {
               href={youTubeSearch(result.yt)}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 rounded-ink border border-line px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-white"
+              className="flex items-center gap-1.5 rounded-ink border border-line px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-white"
             >
               <Icon name="play" size={12} /> Watch on YouTube
             </a>
@@ -7047,9 +7347,9 @@ function WarpModalBody({ src, onApply }) {
       />
       <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-ink border border-line px-3 py-2">
         <input type="checkbox" checked={shine} onChange={(e) => setShine(e.target.checked)} className="h-3.5 w-3.5 accent-white" />
-        <span className="text-[10px] text-dim">Add cylinder highlight (makes it look printed)</span>
+        <span className="text-[0.8125rem] text-dim">Add cylinder highlight (makes it look printed)</span>
       </label>
-      <p className="mt-3 text-[10px] leading-relaxed text-mute">
+      <p className="mt-3 text-[0.8125rem] leading-relaxed text-mute">
         Bends the image around a cylinder — great for wrapping a logo or label onto a tin can,
         bottle or mug so it looks realistic.
       </p>
@@ -7241,8 +7541,8 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
             placement === 'current' ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
           )}
         >
-          <span className="block text-[11px] font-bold text-fg">Current Canvas</span>
-          <span className="mt-0.5 block text-[9px] text-mute">Adds to what's already open</span>
+          <span className="block text-[0.875rem] font-bold text-fg">Current Canvas</span>
+          <span className="mt-0.5 block text-[0.75rem] text-mute">Adds to what's already open</span>
         </button>
         <button
           type="button"
@@ -7252,8 +7552,8 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
             placement === 'new' ? 'border-white bg-surface-2' : 'border-line hover:border-line-2',
           )}
         >
-          <span className="block text-[11px] font-bold text-fg">New Image</span>
-          <span className="mt-0.5 block text-[9px] text-mute">Fresh document for the collage</span>
+          <span className="block text-[0.875rem] font-bold text-fg">New Image</span>
+          <span className="mt-0.5 block text-[0.75rem] text-mute">Fresh document for the collage</span>
         </button>
       </div>
 
@@ -7264,7 +7564,7 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
               type="button"
               onClick={() => setCollageGroup('all')}
               className={cn(
-                'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+                'shrink-0 rounded-ink px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
                 collageGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
               )}
             >
@@ -7276,7 +7576,7 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
                 type="button"
                 onClick={() => setCollageGroup(g)}
                 className={cn(
-                  'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+                  'shrink-0 rounded-ink px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
                   collageGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
                 )}
               >
@@ -7297,8 +7597,8 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
               >
                 <Icon name={PLATFORM_ICONS[p.platform]} size={11} className="shrink-0 text-mute" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[9.5px] font-semibold text-fg">{p.name}</span>
-                  <span className="block text-[8px] text-mute">
+                  <span className="block truncate text-[0.75rem] font-semibold text-fg">{p.name}</span>
+                  <span className="block text-[0.6875rem] text-mute">
                     {p.w}×{p.h} · {p.ratio}
                   </span>
                 </span>
@@ -7317,7 +7617,7 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
             onChange={(e) => setAppend(e.target.checked)}
             className="h-3.5 w-3.5 accent-white"
           />
-          <span className="text-[10px] text-dim">Add to existing collage (keep current layers)</span>
+          <span className="text-[0.8125rem] text-dim">Add to existing collage (keep current layers)</span>
         </label>
       )}
 
@@ -7366,13 +7666,13 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
               <LayoutPreview layoutId={l.id} active={layout === l.id && ok} photos={photos} need={need} circlePos={circlePos} />
               <span
                 className={cn(
-                  'mt-1 block truncate text-center text-[9px] font-bold uppercase tracking-[0.04em]',
+                  'mt-1 block truncate text-center text-[0.75rem] font-bold uppercase tracking-[0.04em]',
                   layout === l.id ? 'text-white' : 'text-dim',
                 )}
               >
                 <Highlight text={l.name} query={search} />
               </span>
-              <span className={cn('mt-0.5 block text-center text-[8px]', need > 0 ? 'text-danger' : 'text-mute')}>
+              <span className={cn('mt-0.5 block text-center text-[0.6875rem]', need > 0 ? 'text-danger' : 'text-mute')}>
                 {need > 0 ? `${need} more photo${need === 1 ? '' : 's'}` : `${l.min}–${l.max} photos`}
               </span>
             </button>
@@ -7387,8 +7687,8 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
         >
           <div className="relative flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 rounded-[4px] bg-white/10 text-dim group-hover:text-white">
             <Icon name="plus" size={18} />
-            <span className="text-[9px] font-bold uppercase tracking-[0.05em]">Custom</span>
-            <span className="text-[7px] text-mute">draw your own</span>
+            <span className="text-[0.75rem] font-bold uppercase tracking-[0.05em]">Custom</span>
+            <span className="text-[0.6875rem] text-mute">draw your own</span>
           </div>
         </button>
       </div>
@@ -7440,19 +7740,19 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
             {customSlots.map((s, i) => (
               <span key={i} className="absolute rounded-[2px] border-2 border-white/90 bg-white/20" style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, width: `${s.w * 100}%`, height: `${s.h * 100}%` }} />
             ))}
-            {customSlots.length === 0 && <span className="absolute inset-0 flex items-center justify-center text-[10px] text-mute">Drag to draw photo slots · use a reference image to copy its layout</span>}
+            {customSlots.length === 0 && <span className="absolute inset-0 flex items-center justify-center text-[0.8125rem] text-mute">Drag to draw photo slots · use a reference image to copy its layout</span>}
           </div>
           {customSlots.length > 0 && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1">
               <span className="label-xxs text-mute">{customSlots.length} slot{customSlots.length === 1 ? '' : 's'}</span>
               {customSlots.map((s, i) => (
-                <button key={i} type="button" onClick={() => setCustomSlots(customSlots.filter((_, ix) => ix !== i))} className="flex items-center gap-1 rounded-ink bg-white/10 px-1.5 py-0.5 text-[9px] text-dim hover:bg-white/20 hover:text-white">
+                <button key={i} type="button" onClick={() => setCustomSlots(customSlots.filter((_, ix) => ix !== i))} className="flex items-center gap-1 rounded-ink bg-white/10 px-1.5 py-0.5 text-[0.75rem] text-dim hover:bg-white/20 hover:text-white">
                   {i + 1} <Icon name="close" size={9} />
                 </button>
               ))}
             </div>
           )}
-          <p className="mt-1.5 text-[8px] text-mute">
+          <p className="mt-1.5 text-[0.6875rem] text-mute">
             {autoDetected
               ? <>Auto-detected from the reference — drag to add more boxes, tap a chip to remove.</>
               : <>Tip: upload a collage you like as the reference — the layout is auto-detected, then you can trace/adjust.</>}
@@ -7463,7 +7763,7 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
       {q && COLLAGE_LAYOUTS.filter((l) => l.name.toLowerCase().includes(q)).length === 0 && (
         <p className="py-3 text-center text-xs text-mute">No collage template matches “{search}”</p>
       )}
-      <p className="mt-2 text-[10px] text-mute">
+      <p className="mt-2 text-[0.8125rem] text-mute">
         {photos.length} photo{photos.length === 1 ? '' : 's'} selected ·{' '}
         {photos.length === 1
           ? 'one photo fills the canvas — add more for a grid'
@@ -7485,18 +7785,18 @@ function CollageBody({ onBuild, showToast, search = '', presets, initial = null 
                 key={id}
                 type="button"
                 onClick={() => setCirclePos(id)}
-                className={cn('rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors', circlePos === id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
+                className={cn('rounded-ink px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors', circlePos === id ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg')}
               >
                 {label}
               </button>
             ))}
           </div>
-          <p className="mt-1 text-[9px] text-mute">After building, drag the photo (or circle) anywhere on the canvas — the ring follows. Photos auto-fit to their slot; grab a corner to resize.</p>
+          <p className="mt-1 text-[0.75rem] text-mute">After building, drag the photo (or circle) anywhere on the canvas — the ring follows. Photos auto-fit to their slot; grab a corner to resize.</p>
         </div>
       )}
 
       <div className="mt-5 flex items-center justify-between gap-3">
-        <span className="text-[10px] text-mute">
+        <span className="text-[0.8125rem] text-mute">
           {photos.length === 1 ? '1 photo → fills the canvas' : current ? `${current.min}–${current.max} photos required` : 'Pick a layout'}
         </span>
         <Button

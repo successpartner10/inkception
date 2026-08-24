@@ -345,79 +345,265 @@ function connectedMasks(mask, w, h, minArea) {
   return comps
 }
 
-export async function decompose(src, subjectMask) {
-  const L = await loadData(src, 800)
-  const d = L.data.data
-  const w = L.w, h = L.h, n = w * h
-
-  // subject mask (from segmentation, resized)
-  const sub = new Uint8Array(n)
-  if (subjectMask) {
-    const sw = subjectMask.w, sh = subjectMask.h
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const sy = Math.min(sh - 1, Math.round((y / h) * sh))
-        const sx = Math.min(sw - 1, Math.round((x / w) * sw))
-        sub[y * w + x] = subjectMask.data[sy * sw + sx] ? 1 : 0
+/* ---- multi-scale diffusion fill (push-pull inpaint) ------------------ */
+/* Fills "hole" pixels (unknown) from surrounding known pixels, coarse to
+   fine. Not generative — an honest content-aware patch that looks right on
+   flat/gradient backgrounds (which is what "remove the text, keep the
+   backdrop" needs 90% of the time). */
+function fillHoles(d, known, w, h) {
+  const n = w * h
+  // build pyramid
+  const levels = [{ w, h, d, kn: known }]
+  let W = w, H = h, D = d, KN = known
+  while (W > 4 && H > 4) {
+    const w2 = Math.max(2, W >> 1), h2 = Math.max(2, H >> 1)
+    const d2 = new Float32Array(w2 * h2 * 4)
+    const kn2 = new Uint8Array(w2 * h2)
+    const acc = new Float32Array(w2 * h2 * 4)
+    const cnt = new Uint16Array(w2 * h2)
+    for (let y = 0; y < H; y++) {
+      const y2 = Math.min(h2 - 1, y >> 1)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x
+        if (!KN[i]) continue
+        const j = y2 * w2 + Math.min(w2 - 1, x >> 1)
+        acc[j * 4] += D[i * 4]; acc[j * 4 + 1] += D[i * 4 + 1]
+        acc[j * 4 + 2] += D[i * 4 + 2]; acc[j * 4 + 3] += D[i * 4 + 3]
+        cnt[j]++
       }
     }
+    for (let j = 0; j < w2 * h2; j++) {
+      if (cnt[j]) {
+        d2[j * 4] = acc[j * 4] / cnt[j]; d2[j * 4 + 1] = acc[j * 4 + 1] / cnt[j]
+        d2[j * 4 + 2] = acc[j * 4 + 2] / cnt[j]; d2[j * 4 + 3] = acc[j * 4 + 3] / cnt[j]
+        kn2[j] = 1
+      }
+    }
+    levels.push({ w: w2, h: h2, d: d2, kn: kn2 })
+    W = w2; H = h2; D = d2; KN = kn2
   }
+  // fill coarse → fine
+  for (let li = levels.length - 1; li >= 0; li--) {
+    const lv = levels[li]
+    const lw = lv.w, lh = lv.h, ln = lw * lh
+    const ld = lv.d, lk = lv.kn
+    // seed from the coarser level (nearest upsample) into unknown pixels
+    if (li < levels.length - 1) {
+      const up = levels[li + 1]
+      for (let y = 0; y < lh; y++) {
+        const uy = Math.min(up.h - 1, y >> 1)
+        for (let x = 0; x < lw; x++) {
+          const i = y * lw + x
+          if (lk[i]) continue
+          const u = uy * up.w + Math.min(up.w - 1, x >> 1)
+          if (up.kn[u]) {
+            ld[i * 4] = up.d[u * 4]; ld[i * 4 + 1] = up.d[u * 4 + 1]
+            ld[i * 4 + 2] = up.d[u * 4 + 2]; ld[i * 4 + 3] = 255
+            lk[i] = 1
+          }
+        }
+      }
+    }
+    // a few relaxation passes — average known 4-neighbours into unknowns
+    for (let pass = 0; pass < 5; pass++) {
+      let pending = 0
+      const filled = []
+      for (let y = 0; y < lh; y++) {
+        for (let x = 0; x < lw; x++) {
+          const i = y * lw + x
+          if (lk[i]) continue
+          let r = 0, g = 0, b = 0, c = 0
+          const nb = [i - 1, i + 1, i - lw, i + lw]
+          for (const j of nb) {
+            if (j < 0 || j >= ln) continue
+            const jx = j % lw
+            if (Math.abs(jx - x) > 1) continue
+            if (lk[j]) { r += ld[j * 4]; g += ld[j * 4 + 1]; b += ld[j * 4 + 2]; c++ }
+          }
+          if (c) filled.push([i, r / c, g / c, b / c])
+          else pending++
+        }
+      }
+      for (const [i, r, g, b] of filled) {
+        ld[i * 4] = r; ld[i * 4 + 1] = g; ld[i * 4 + 2] = b; ld[i * 4 + 3] = 255
+        lk[i] = 1
+      }
+      if (!pending && !filled.length) break
+    }
+  }
+  // write the finest level back into the source array (Uint8Clamped)
+  const fine = levels[0]
+  for (let i = 0; i < n; i++) {
+    if (!known[i]) {
+      d[i * 4] = fine.d[i * 4]; d[i * 4 + 1] = fine.d[i * 4 + 1]
+      d[i * 4 + 2] = fine.d[i * 4 + 2]; d[i * 4 + 3] = 255
+    }
+  }
+  return d
+}
 
-  // flat-color panel mask: low local variance + quantized color
-  const flat = new Uint8Array(n)
+/* local luma contrast inside a 3×3 window (text strokes light up) */
+function contrastMask(d, w, h, thresh) {
+  const m = new Uint8Array(w * h)
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
       const i = y * w + x
       let minV = 255, maxV = 0
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
           const j = ((y + dy) * w + (x + dx)) * 4
           const v = (d[j] + d[j + 1] + d[j + 2]) / 3
           if (v < minV) minV = v
           if (v > maxV) maxV = v
         }
       }
-      if (maxV - minV < 26) flat[i] = 1
+      if (maxV - minV > thresh) m[i] = 1
     }
   }
-  const panelComps = connectedMasks(flat, w, h, Math.round(n * 0.004))
-  const panel = new Uint8Array(n)
-  for (const c of panelComps) for (let i = 0; i < n; i++) if (c[i]) panel[i] = 1
+  return m
+}
 
-  // text mask: high local contrast + low color saturation (stroke-like)
-  const text = new Uint8Array(n)
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x
-      let minV = 255, maxV = 0
-      let sMin = 256
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const j = ((y + dy) * w + (x + dx)) * 4
-          const r = d[j], g = d[j + 1], b = d[j + 2]
-          const mx = Math.max(r, g, b), mn = Math.min(r, g, b)
-          const v = (r + g + b) / 3
-          if (v < minV) minV = v
-          if (v > maxV) maxV = v
-          const sat = mx - mn
-          if (sat < sMin) sMin = sat
+function dilate(m, w, h, r) {
+  const out = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!m[y * w + x]) continue
+      for (let dy = -r; dy <= r; dy++) {
+        const ny = y + dy
+        if (ny < 0 || ny >= h) continue
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = x + dx
+          if (nx < 0 || nx >= w) continue
+          out[ny * w + nx] = 1
         }
       }
-      if (maxV - minV > 80 && sMin < 70) text[i] = 1
     }
   }
-  const textComps = connectedMasks(text, w, h, Math.round(n * 0.0005))
-  const textMask = new Uint8Array(n)
-  for (const c of textComps) for (let i = 0; i < n; i++) if (c[i]) textMask[i] = 1
+  return out
+}
 
-  // build the four layer canvases
+/**
+ * Layer extraction v2 — REAL separation into:
+ *   face · person (body) · text blocks (one layer per text element) ·
+ *   clean background (holes diffusion-filled).
+ *
+ * opts:
+ *   subjectMask — {data,w,h} from MediaPipe selfie segmentation
+ *   faceBox     — {x,y,w,h} natural px from MediaPipe face detection
+ *   textBlocks  — [{x,y,w,h,text}] natural px from OCR (tesseract)
+ */
+export async function decompose(src, { subjectMask = null, faceBox = null, textBlocks = null } = {}) {
+  const L = await loadData(src, 900)
+  const d = L.data.data
+  const w = L.w, h = L.h, n = w * h
+  const natW = L.img.naturalWidth || L.img.width
+  const natH = L.img.naturalHeight || L.img.height
+  const scaleX = w / natW, scaleY = h / natH
+
+  // subject mask resized to processing size
+  const sub = new Uint8Array(n)
+  let subjectCoverage = 0
+  if (subjectMask) {
+    const sw = subjectMask.w, sh = subjectMask.h
+    for (let y = 0; y < h; y++) {
+      const sy = Math.min(sh - 1, Math.round((y / h) * sh))
+      for (let x = 0; x < w; x++) {
+        const sx = Math.min(sw - 1, Math.round((x / w) * sw))
+        const v = subjectMask.data[sy * sw + sx] ? 1 : 0
+        sub[y * w + x] = v
+        subjectCoverage += v
+      }
+    }
+    subjectCoverage /= n
+  }
+  const hasSubject = subjectCoverage > 0.001
+
+  // ---- face region: face box expanded for hair/forehead, clipped to subject
+  const face = new Uint8Array(n)
+  let faceFound = false
+  if (faceBox) {
+    const fx = faceBox.x * scaleX, fy = faceBox.y * scaleY
+    const fw = faceBox.w * scaleX, fh = faceBox.h * scaleY
+    const x0 = Math.max(0, Math.floor(fx - fw * 0.38))
+    const y0 = Math.max(0, Math.floor(fy - fh * 0.62)) // hair + forehead
+    const x1 = Math.min(w - 1, Math.ceil(fx + fw * 1.38))
+    const y1 = Math.min(h - 1, Math.ceil(fy + fh * 1.42)) // chin + a little neck
+    let cnt = 0
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i = y * w + x
+        if (!hasSubject || sub[i]) { face[i] = 1; cnt++ }
+      }
+    }
+    faceFound = cnt > n * 0.002
+    if (!faceFound) face.fill(0)
+  }
+
+  // ---- person = subject minus face (so Face + Person stack back exactly)
+  const person = new Uint8Array(n)
+  for (let i = 0; i < n; i++) person[i] = sub[i] && !face[i] ? 1 : 0
+
+  // ---- text layers: one per OCR block (glyph-precise), heuristic fallback
+  const stroke = contrastMask(d, w, h, 50)
+  const textLayers = [] // { mask, text }
+  const totalText = new Uint8Array(n)
+  const addTextMask = (mask, text) => {
+    let c = 0
+    for (let i = 0; i < n; i++) if (mask[i]) { totalText[i] = 1; c++ }
+    if (c > n * 0.00008) textLayers.push({ mask, text: text || '' })
+  }
+
+  if (Array.isArray(textBlocks) && textBlocks.length) {
+    for (const tb of textBlocks.slice(0, 8)) {
+      const px = 0.09 // pad around the OCR box to catch ascenders/edges
+      const x0 = Math.max(0, Math.floor((tb.x - tb.w * px) * scaleX))
+      const y0 = Math.max(0, Math.floor((tb.y - tb.h * px) * scaleY))
+      const x1 = Math.min(w - 1, Math.ceil((tb.x + tb.w * (1 + px)) * scaleX))
+      const y1 = Math.min(h - 1, Math.ceil((tb.y + tb.h * (1 + px)) * scaleY))
+      const boxMask = new Uint8Array(n)
+      let boxArea = 0
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) { boxMask[y * w + x] = 1; boxArea++ }
+      }
+      // glyph pixels = high local contrast inside the box, minus subject/face
+      const glyph = new Uint8Array(n)
+      let gc = 0
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const i = y * w + x
+          if ((stroke[i] || dilate(stroke, w, h, 0)[i]) && !sub[i] && !face[i]) { glyph[i] = 1; gc++ }
+        }
+      }
+      if (gc > boxArea * 0.015) addTextMask(dilate(glyph, w, h, 1), tb.text)
+      else addTextMask(boxMask, tb.text) // stylized/flat text — keep the whole box
+    }
+  } else {
+    // fallback: heuristic stroke blocks (no OCR available — offline etc.)
+    const km = new Uint8Array(n)
+    for (let i = 0; i < n; i++) km[i] = stroke[i] && !sub[i] ? 1 : 0
+    const comps = connectedMasks(dilate(km, w, h, 1), w, h, Math.round(n * 0.0006))
+    for (const cm of comps.slice(0, 8)) {
+      let minX = w, minY = h, maxX = 0, maxY = 0
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (!cm[y * w + x]) continue
+          if (x < minX) minX = x; if (x > maxX) maxX = x
+          if (y < minY) minY = y; if (y > maxY) maxY = y
+        }
+      }
+      addTextMask(cm, '')
+    }
+  }
+
+  // ---- build layer canvases
   const makeLayer = (keep) => {
     const cv = makeCanvas(w, h)
     const ctx = cv.getContext('2d')
     const id = ctx.createImageData(w, h)
     for (let i = 0; i < n; i++) {
       if (keep[i]) {
-        id.data[i * 4] = d[i * 4]; id.data[i * 4 + 1] = d[i * 4 + 1]; id.data[i * 4 + 2] = d[i * 4 + 2]; id.data[i * 4 + 3] = 255
+        id.data[i * 4] = d[i * 4]; id.data[i * 4 + 1] = d[i * 4 + 1]
+        id.data[i * 4 + 2] = d[i * 4 + 2]; id.data[i * 4 + 3] = 255
       } else {
         id.data[i * 4 + 3] = 0
       }
@@ -425,19 +611,33 @@ export async function decompose(src, subjectMask) {
     ctx.putImageData(id, 0, 0)
     return cv.toDataURL('image/png')
   }
-  const bg = new Uint8Array(n)
-  for (let i = 0; i < n; i++) bg[i] = sub[i] ? 0 : 1
+
+  // ---- clean background: everything else, holes diffusion-filled
+  const holes = new Uint8Array(n)
+  for (let i = 0; i < n; i++) holes[i] = sub[i] || totalText[i] ? 1 : 0
+  const bgKeep = new Uint8Array(n)
+  for (let i = 0; i < n; i++) bgKeep[i] = holes[i] ? 0 : 1
+  let background
+  {
+    const bgData = new Uint8ClampedArray(d)
+    const known = Uint8Array.from(bgKeep)
+    fillHoles(bgData, known, w, h)
+    const cv = makeCanvas(w, h)
+    cv.getContext('2d').putImageData(new ImageData(bgData, w, h), 0, 0)
+    background = cv.toDataURL('image/png')
+  }
 
   return {
-    subject: makeLayer(sub),
-    panels: makeLayer(panel),
-    text: makeLayer(textMask),
-    background: makeLayer(bg),
+    face: faceFound ? makeLayer(face) : null,
+    person: makeLayer(person),
+    textBlocks: textLayers.map((t) => ({ dataUrl: makeLayer(t.mask), text: t.text })),
+    background,
     w, h,
     counts: {
-      panels: panelComps.length,
-      text: textComps.length,
-      subjectCoverage: Math.round((sub.reduce((a, b) => a + b, 0) / n) * 100),
+      face: faceFound ? 1 : 0,
+      text: textLayers.length,
+      subjectCoverage: Math.round(subjectCoverage * 100),
+      layers: 2 + textLayers.length + (faceFound ? 1 : 0),
     },
   }
 }

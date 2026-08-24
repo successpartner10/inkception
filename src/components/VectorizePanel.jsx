@@ -40,7 +40,7 @@ export function VectorizePanel({ src, fileName = 'inkception-vector', onBack }) 
         <Button variant="ghost" size="icon" icon="chevronLeft" onClick={onBack} />
         <div>
           <div className="label-sm text-fg">Vectorize</div>
-          <div className="mt-0.5 text-[10px] text-mute">Raster → SVG trace</div>
+          <div className="mt-0.5 text-[0.8125rem] text-mute">Raster → SVG trace</div>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           <Chip>{result ? `${result.stats.lines} paths` : '—'}</Chip>
@@ -94,7 +94,7 @@ export function VectorizePanel({ src, fileName = 'inkception-vector', onBack }) 
           <Chip>SVG · monochrome</Chip>
         </div>
 
-        <p className="mt-4 text-[10px] leading-relaxed text-mute">
+        <p className="mt-4 text-[0.8125rem] leading-relaxed text-mute">
           Pipeline: Canny-style edge detection → Moore contour tracing → run-length simplification.
           The exported file is a standalone SVG.
         </p>

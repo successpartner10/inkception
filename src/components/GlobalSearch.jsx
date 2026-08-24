@@ -153,7 +153,7 @@ export function GlobalSearch({ items = [], includeActions = true, placeholder = 
               <Icon name="chevronLeft" size={13} />
             </button>
           ) : (
-            <span className="hidden shrink-0 rounded-ink border border-line px-1.5 py-0.5 text-[9px] font-bold text-mute sm:inline">/</span>
+            <span className="hidden shrink-0 rounded-ink border border-line px-1.5 py-0.5 text-[0.75rem] font-bold text-mute sm:inline">/</span>
           )}
         </div>
       )}
@@ -181,8 +181,8 @@ export function GlobalSearch({ items = [], includeActions = true, placeholder = 
                       <Icon name={it.icon || 'sparkle'} size={13} />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] font-semibold text-fg">{it.label}</span>
-                      {it.sub && <span className="block truncate text-[9px] text-mute">{it.sub}</span>}
+                      <span className="block truncate text-[0.875rem] font-semibold text-fg">{it.label}</span>
+                      {it.sub && <span className="block truncate text-[0.75rem] text-mute">{it.sub}</span>}
                     </span>
                     {it.score ? <span className="label-xxs shrink-0 text-mute">{it.score}</span> : null}
                   </button>

@@ -12,6 +12,7 @@ import { Logo } from '../components/Logo'
 import { COLLAGE_LAYOUTS, computeSlots, detectCollageBoxes } from '../lib/collage'
 import { GlobalSearch } from '../components/GlobalSearch'
 import { GoalMenu } from '../components/GoalMenu'
+import { SectionNav } from '../components/SectionNav'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -20,6 +21,17 @@ const FILTERS = [
 ]
 
 // Sample photos — literal asset paths so the offline build can embed them.
+/* top nav sections (website-style) — same goals as before, now always
+   visible instead of hidden in a dropdown */
+const GALLERY_SECTIONS = [
+  { id: 'open', icon: 'image', label: 'Edit', desc: 'Open a photo & edit it' },
+  { id: 'fix', icon: 'sparkle', label: 'Fix & AI', desc: 'Enhance, clean, remove BG' },
+  { id: 'collage', icon: 'grid', label: 'Collage', desc: 'Multi-photo grid layouts' },
+  { id: 'template', icon: 'shape', label: 'Templates', desc: 'Banners & platform sizes' },
+  { id: 'export', icon: 'export', label: 'Export', desc: 'Every platform size' },
+  { id: 'restore', icon: 'clock', label: 'Restore', desc: 'Old & damaged photos' },
+]
+
 const SAMPLE_PHOTOS = [
   { name: 'Portrait', src: `${import.meta.env.BASE_URL}samples/portrait.jpg` },
   { name: 'City Dusk', src: `${import.meta.env.BASE_URL}samples/city.jpg` },
@@ -206,9 +218,12 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
           placeholder="Search projects, templates, samples…"
           onQueryChange={setGallerySearch}
         />
-        <GoalMenu onPick={pickGoal} autoOpen={showOnboard} />
-        <IconBtn icon="user" title="Profile" size={17} />
+        <IconBtn icon="user" title="Profile" size={18} />
       </header>
+
+      {/* website-style section menu — the "What do you want to do today?"
+          dropdown, broken out as visible top-level sections */}
+      <SectionNav items={GALLERY_SECTIONS} onPick={pickGoal} />
 
       <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
@@ -257,7 +272,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                     className="group overflow-hidden rounded-ink border border-line transition-colors hover:border-white"
                   >
                     <img src={s.src} alt={s.name} loading="lazy" className="aspect-square w-full object-cover" />
-                    <span className="block truncate bg-surface px-1 py-1 text-center text-[8px] font-semibold text-dim group-hover:text-white">{s.name}</span>
+                    <span className="block truncate bg-surface px-1 py-1 text-center text-[0.6875rem] font-semibold text-dim group-hover:text-white">{s.name}</span>
                   </button>
                 ))}
               </div>
@@ -289,8 +304,8 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                         </div>
                       )}
                     </div>
-                    <div className="mt-1.5 truncate text-[11px] font-semibold text-fg"><Highlight text={p.name} query={gallerySearch} /></div>
-                    <div className="mt-0.5 text-[9px] text-mute">
+                    <div className="mt-1.5 truncate text-[0.875rem] font-semibold text-fg"><Highlight text={p.name} query={gallerySearch} /></div>
+                    <div className="mt-0.5 text-[0.75rem] text-mute">
                       {p.template ? `${p.template.w}×${p.template.h}` : `${p.layers} Layers`} ·{' '}
                       {formatDate(p.opened || p.date)}
                     </div>
@@ -316,7 +331,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                         type="button"
                         onClick={() => setFilter(f.id)}
                         className={cn(
-                          'h-7 rounded-ink px-2.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                          'h-7 rounded-ink px-2.5 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors',
                           filter === f.id ? 'bg-white text-black' : 'text-mute hover:bg-surface-2 hover:text-dim',
                         )}
                       >
@@ -422,10 +437,10 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
             </div>
             <div className="mt-3 min-h-[64px]">
               <div className="truncate text-xs font-bold text-fg">{stageView.title}</div>
-              <div className="mt-0.5 text-[10px] text-mute">{stageView.sub}</div>
-              <div className="mt-1.5 text-[9px] leading-relaxed text-dim">{stageView.desc}</div>
+              <div className="mt-0.5 text-[0.8125rem] text-mute">{stageView.sub}</div>
+              <div className="mt-1.5 text-[0.75rem] leading-relaxed text-dim">{stageView.desc}</div>
             </div>
-            <p className="mt-3 border-t border-line pt-2 text-[8.5px] leading-relaxed text-mute">
+            <p className="mt-3 border-t border-line pt-2 text-[0.7rem] leading-relaxed text-mute">
               Tap any size to open a blank canvas at exactly that size. Hover the cards to preview.
             </p>
           </div>
@@ -438,7 +453,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                 type="button"
                 onClick={() => setTemplateGroup('all')}
                 className={cn(
-                  'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                  'shrink-0 rounded-ink px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors',
                   templateGroup === 'all' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
                 )}
               >
@@ -453,7 +468,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                     type="button"
                     onClick={() => setTemplateGroup(g)}
                     className={cn(
-                      'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                      'shrink-0 rounded-ink px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors',
                       templateGroup === g ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
                     )}
                   >
@@ -466,7 +481,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                   type="button"
                   onClick={() => setTemplateGroup('Custom')}
                   className={cn(
-                    'shrink-0 rounded-ink px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors',
+                    'shrink-0 rounded-ink px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors',
                     templateGroup === 'Custom' ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white',
                   )}
                 >
@@ -490,7 +505,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                   type="button"
                   onClick={() => setTemplateRatio(rid)}
                   className={cn(
-                    'shrink-0 rounded-ink px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] transition-colors',
+                    'shrink-0 rounded-ink px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
                     templateRatio === rid ? 'bg-white text-black' : 'border border-line text-dim hover:text-white',
                   )}
                 >
@@ -556,8 +571,8 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                       <div className="h-16 w-full overflow-hidden rounded-[4px]">
                         <CollageMini lid={q.lid} />
                       </div>
-                      <span className="mt-1 block truncate text-[9px] font-bold uppercase tracking-[0.05em] text-fg">{q.name}</span>
-                      <span className="block text-[8px] text-mute">
+                      <span className="mt-1 block truncate text-[0.75rem] font-bold uppercase tracking-[0.05em] text-fg">{q.name}</span>
+                      <span className="block text-[0.6875rem] text-mute">
                         {q.sz.w}×{q.sz.h}{meta ? ` · ${meta.min}–${meta.max} photos` : ''}
                       </span>
                     </button>
@@ -570,8 +585,8 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
             <div className="rounded-ink border border-line bg-surface-2/60 p-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <div className="text-[11px] font-bold text-fg">Collage / Custom layout</div>
-                  <div className="mt-0.5 text-[9px] text-mute">Upload a reference collage — the layout is detected, then you add photos in the editor</div>
+                  <div className="text-[0.875rem] font-bold text-fg">Collage / Custom layout</div>
+                  <div className="mt-0.5 text-[0.75rem] text-mute">Upload a reference collage — the layout is detected, then you add photos in the editor</div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Button variant="secondary" size="sm" icon="upload" onClick={() => refInputRef.current && refInputRef.current.click()} disabled={refBusy}>
@@ -611,7 +626,7 @@ export function Gallery({ projects, onOpen, onNew, onDelete, onImportMedia, onTe
                   </div>
                   <div className="flex flex-col justify-center gap-1">
                     <span className="label-xs text-dim">{refSlots.length >= 2 ? `${refSlots.length} slots detected` : refBusy ? 'Detecting layout…' : 'No clear layout found'}</span>
-                    <span className="text-[9px] leading-relaxed text-mute">{refSlots.length >= 2 ? 'Start opens the editor with this layout — your photos fill the boxes.' : 'Try a reference with clear gaps/gutters between photos.'}</span>
+                    <span className="text-[0.75rem] leading-relaxed text-mute">{refSlots.length >= 2 ? 'Start opens the editor with this layout — your photos fill the boxes.' : 'Try a reference with clear gaps/gutters between photos.'}</span>
                   </div>
                 </div>
               )}
@@ -664,7 +679,7 @@ function ProjectCard({ project, onOpen, confirmDelete, onAskDelete, onCancelDele
       <div className="mt-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold"><Highlight text={project.name} query={query} /></div>
-          <div className="mt-0.5 text-[11px] text-mute">
+          <div className="mt-0.5 text-[0.875rem] text-mute">
             {project.layers} Layers · {formatDate(project.date)}
           </div>
         </div>
@@ -693,10 +708,10 @@ function TemplateTile({ t, query = '', onHover, onStart }) {
           <Icon name={PLATFORM_ICONS[t.platform] || 'grid'} size={12} />
         </span>
       </span>
-      <span className="w-full truncate text-center text-[9px] font-bold uppercase tracking-[0.05em] text-fg">
+      <span className="w-full truncate text-center text-[0.75rem] font-bold uppercase tracking-[0.05em] text-fg">
         <Highlight text={t.name} query={query} />
       </span>
-      <span className="text-[8px] text-mute">{t.w}×{t.h}</span>
+      <span className="text-[0.6875rem] text-mute">{t.w}×{t.h}</span>
     </button>
   )
 }
