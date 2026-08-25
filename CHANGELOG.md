@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.19.4 - Pro-lane model fix
+
+- Describe (image-to-prompt, your-key fallback) now uses gemini-3.5-flash-lite first - Google retired gemini-2.0-flash-lite (the API now returns 'no longer available'). Fallback chain: 3.5-flash-lite, flash-lite-latest, 2.5-flash-lite.
+
 ## 0.19.2 — Workflow fixes (user feedback round)
 
 - **Template section no longer opens Collage** — it has its own "Templates & sizes" modal that resizes the current canvas (photos & layers are kept). Collage is its own section.

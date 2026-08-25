@@ -104,7 +104,7 @@ async function gemCall(model, method, body, key) {
   return res.json()
 }
 
-const TEXT_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash-lite']
+const TEXT_MODELS = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'] // 3.5 first — Google retired 2.0-flash-lite (Aug 2026)
 const IMAGE_MODELS = ['gemini-3.1-flash-image-preview', 'gemini-2.5-flash-image']
 const VIDEO_MODELS = ['veo-3.1-fast-generate-001', 'veo-3.1-generate-001', 'veo-3.0-generate-001']
 
