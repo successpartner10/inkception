@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.1 — Desktop anatomy: tool rail + options bar + status strip
+
+- **Left tool rail** (desktop): 15 Photoshop-style icon tools with hover labels + shortcuts — Select/shapes/Text/Brush/Dropper/Crop | Erase/Blur/AI Remove/Clone/Heal/Bucket | Compare. Hidden on mobile (classic dock stays).
+- **Contextual options bar** (under the tabs): shows ONLY the active tool's options — pixel tools + size slider while painting; Frame controls (Face/Fill/Fit/−/＋/Release) when a framed photo is selected; font family + size for text. The floating bars are gone.
+- **Status strip** (desktop bottom): zoom −/%/+/Fit, canvas dimensions, "Auto-saved ✓", Add Photo — no tools. The 18-chip dock is retired on desktop.
+
 ## 0.20.0 — Consolidation: 4 workspace tabs + Effects gallery
 
 **One command spine (desktop)**

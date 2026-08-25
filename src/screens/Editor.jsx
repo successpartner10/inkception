@@ -4387,9 +4387,117 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       </header>
 
       {/* website-style section menu — every workflow one obvious click away */}
-      <SectionNav items={EDITOR_SECTIONS} onPick={goSection} active={pixelStudio ? 'pixel' : tab} />
+      <SectionNav items={EDITOR_SECTIONS} onPick={goSection} active={tab} />
+
+      {/* Photoshop-style options bar — only the CURRENT tool's options */}
+      {(pixelStudio || selFrameId || tool === 'text' || activeText) && (
+        <div className="flex min-h-0 flex-wrap items-center justify-center gap-1.5 border-b border-line bg-surface-2/60 px-3 py-1.5">
+          {pixelStudio && (
+            <>
+              <span className="label-xs mr-1 shrink-0 text-mute">Pixel tools</span>
+              <ToolChip icon="brush" label="Brush" active={tool === 'brush'} onClick={() => setTool('brush')} />
+              <ToolChip icon="eraser" label="Erase" active={eraseMode === 'alpha'} onClick={() => startErase('alpha')} />
+              <ToolChip icon="wind" label="Blur" active={eraseMode === 'blur'} onClick={() => startErase('blur')} />
+              <ToolChip icon="close" label="AI Remove" active={eraseMode === 'erase'} onClick={() => startErase('erase')} />
+              <ToolChip icon="copy" label="Clone" active={tool === 'paint-clone'} onClick={() => startPaintTool('clone')} />
+              <ToolChip icon="focus" label="Heal" active={tool === 'paint-heal'} onClick={() => startPaintTool('heal')} />
+              <ToolChip icon="dropper" label="Bucket" active={tool === 'paint-bucket'} onClick={() => startPaintTool('bucket')} />
+              <span className="mx-1 h-5 w-px bg-line" />
+              <label className="flex shrink-0 items-center gap-2">
+                <span className="label-xs text-mute">Size</span>
+                <input
+                  type="range"
+                  min={2}
+                  max={120}
+                  value={brushSize}
+                  onChange={(e) => {
+                    const v = Number(e.target.value)
+                    setBrushSize(v)
+                    brushSizeRef.current = v
+                  }}
+                  className="h-1.5 w-28 cursor-pointer accent-white"
+                />
+                <span className="w-8 text-center text-[0.8125rem] tabular-nums text-dim">{brushSize}</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => { setPixelStudio(false); setTool('select') }}
+                className="ml-1 shrink-0 rounded-ink border border-line px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
+              >
+                Done
+              </button>
+            </>
+          )}
+          {!pixelStudio && selFrameId && (() => {
+            const d = decompRef.current.find((x) => x.id === selFrameId)
+            if (!d || !d.img || !d.img.ikFrame) return null
+            return (
+              <>
+                <span className="label-xs mr-1 shrink-0 text-mute">Frame</span>
+                <FrameBarBtn onClick={frameFocusFace} label="Face" title="Center on the face" />
+                <FrameBarBtn onClick={() => frameAction('fill')} label="Fill" title="Fill the whole frame" />
+                <FrameBarBtn onClick={() => frameAction('fit')} label="Fit" title="Fit the whole photo" />
+                <FrameBarBtn onClick={() => frameAction('out')} label="−" title="Zoom out — show more" />
+                <FrameBarBtn onClick={() => frameAction('in')} label="＋" title="Zoom in — show less (eyes only)" />
+                <span className="mx-1 h-5 w-px bg-line" />
+                <FrameBarBtn onClick={() => frameAction('release')} label="Release" title="Remove the frame — keep as a normal layer" />
+                <span className="hidden text-[0.75rem] text-mute sm:inline">drag the photo to reposition</span>
+              </>
+            )
+          })()}
+          {!pixelStudio && !selFrameId && (tool === 'text' || activeText) && (
+            <>
+              <span className="label-xs mr-1 shrink-0 text-mute">Text</span>
+              <select
+                value={textFont}
+                onChange={(e) => applyTextFont(e.target.value)}
+                title="Font family"
+                className="h-8 shrink-0 rounded-ink border border-line bg-surface px-2 text-[0.875rem] font-semibold text-fg focus:border-white focus:outline-none"
+                style={{ fontFamily: fontStack(textFont) }}
+              >
+                {FONTS.map((f) => (
+                  <option key={f.id} value={f.family} style={{ fontFamily: f.stack }} className="bg-surface text-fg">
+                    {f.family} — {f.kind}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                value={textSize}
+                min={6}
+                max={300}
+                onChange={(e) => applyTextSize(Number(e.target.value))}
+                onBlur={(e) => applyTextSize(Number(e.target.value) || DEFAULT_FONT_SIZE)}
+                title="Font size"
+                className="h-8 w-14 shrink-0 rounded-ink border border-line bg-surface px-2 text-center text-[0.875rem] tabular-nums text-fg focus:border-white focus:outline-none"
+              />
+            </>
+          )}
+        </div>
+      )}
 
       <div className="relative flex min-h-0 flex-1">
+        {/* Photoshop-style tool rail (desktop only) */}
+        <div className="hidden w-14 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-2 lg:flex">
+          <ToolRailBtn icon="move" label="Select" kbd="V" active={tool === 'select'} onClick={() => setTool('select')} />
+          <ToolRailBtn icon="shape" label="Rect" kbd="R" active={tool === 'rect'} onClick={() => setTool('rect')} />
+          <ToolRailBtn icon="circle" label="Ellipse" kbd="E" active={tool === 'ellipse'} onClick={() => setTool('ellipse')} />
+          <ToolRailBtn icon="minus" label="Line" kbd="L" active={tool === 'line'} onClick={() => setTool('line')} />
+          <ToolRailBtn icon="text" label="Text" kbd="T" active={tool === 'text'} onClick={() => setTool('text')} />
+          <ToolRailBtn icon="brush" label="Brush" kbd="B" active={tool === 'brush'} onClick={() => { setTool('brush'); setPixelStudio(true) }} />
+          <ToolRailBtn icon="dropper" label="Dropper" active={tool === 'dropper'} onClick={() => setTool('dropper')} />
+          <ToolRailBtn icon="crop" label="Crop" active={tool === 'crop'} onClick={startCrop} />
+          <span className="my-1 h-px w-6 bg-line" />
+          <ToolRailBtn icon="eraser" label="Erase" active={eraseMode === 'alpha'} onClick={() => { startErase('alpha'); setPixelStudio(true) }} />
+          <ToolRailBtn icon="wind" label="Blur" active={eraseMode === 'blur'} onClick={() => { startErase('blur'); setPixelStudio(true) }} />
+          <ToolRailBtn icon="close" label="AI Remove" active={eraseMode === 'erase'} onClick={() => { startErase('erase'); setPixelStudio(true) }} />
+          <ToolRailBtn icon="copy" label="Clone Stamp" active={tool === 'paint-clone'} onClick={() => { startPaintTool('clone'); setPixelStudio(true) }} />
+          <ToolRailBtn icon="focus" label="Heal" active={tool === 'paint-heal'} onClick={() => { startPaintTool('heal'); setPixelStudio(true) }} />
+          <ToolRailBtn icon="dropper" label="Bucket fill" active={tool === 'paint-bucket'} onClick={() => { startPaintTool('bucket'); setPixelStudio(true) }} />
+          <span className="my-1 h-px w-6 bg-line" />
+          <ToolRailBtn icon="compare" label="Compare" kbd="⌘B" active={beforeAfter} onClick={() => setBeforeAfter((v) => !v)} />
+        </div>
+
         {/* ------------------------------ canvas area ---------------------------- */}
         <main
           ref={stageWrapRef}
@@ -4732,7 +4840,47 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       {/* tool dock: two centered rows below the canvas. Every tool shows its
           icon AND name — no mystery icons. Row 1 = draw/move tools · Row 2 =
           edit/utility tools. Compact, always visible, canvas is never covered. */}
-      <footer className="flex shrink-0 flex-col items-center gap-1 border-t border-line px-2 py-1.5">
+      <footer className="relative flex shrink-0 flex-col items-center gap-1 border-t border-line px-2 py-1.5">
+        {/* desktop status strip — zoom, canvas size, save state (no tools here) */}
+        <div className="hidden w-full items-center justify-center gap-2 lg:flex">
+          <IconBtn icon="zoomOut" title="Zoom out" onClick={() => zoomBy(1 / 1.25)} />
+          <button
+            type="button"
+            title="Zoom presets"
+            onClick={() => setZoomMenuOpen((v) => !v)}
+            className="relative w-14 text-center text-[0.875rem] tabular-nums text-dim hover:text-white"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <IconBtn icon="zoomIn" title="Zoom in" onClick={() => zoomBy(1.25)} />
+          <ToolChip icon="fit" label="Fit" onClick={zoomFit} />
+          <span className="mx-1.5 h-5 w-px bg-line" />
+          <span className="text-[0.75rem] tabular-nums text-mute">
+            {naturalRef.current ? naturalRef.current.w : '–'}×{naturalRef.current ? naturalRef.current.h : '–'} px
+          </span>
+          <span className="mx-1.5 h-5 w-px bg-line" />
+          <span className="label-xxs text-mute">Auto-saved ✓</span>
+          <span className="mx-1.5 h-5 w-px bg-line" />
+          <ToolChip icon="image" label="Add Photo" onClick={() => fileRef.current && fileRef.current.click()} />
+          {zoomMenuOpen && (
+            <div className="absolute bottom-full left-1/2 z-50 mb-1.5 w-36 -translate-x-1/2 overflow-hidden rounded-ink border border-line bg-surface shadow-xl">
+              <ZoomMenuRow label="Fit Screen" kbd="⌘0" onClick={() => { zoomFit(); setZoomMenuOpen(false) }} />
+              <ZoomMenuRow label="Fill Screen" onClick={() => { zoomFill(); setZoomMenuOpen(false) }} />
+              <div className="mx-2 h-px bg-line" />
+              {[25, 50, 100, 200, 400, 800].map((pct) => (
+                <ZoomMenuRow
+                  key={pct}
+                  label={`${pct}%`}
+                  active={Math.round(zoom * 100) === pct}
+                  onClick={() => { zoomTo(pct / 100); setZoomMenuOpen(false) }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* mobile: the classic tool dock stays (thumbs) */}
+        <div className="flex w-full flex-col items-center gap-1 lg:hidden">
         {/* Pixel Studio — Photoshop-style toolset, always one click away */}
         {pixelStudio && (
           <div className="flex w-full flex-wrap items-center justify-center gap-1 rounded-ink border border-line bg-surface-2 px-2 py-1.5">
@@ -4846,6 +4994,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
             />
           </div>
         )}
+        </div>
       </footer>
 
       {/* --------------------------- replace background modal ---------------------- */}
@@ -5699,6 +5848,27 @@ function PresetRow({ p, checked, onToggle, query = '', onRemove }) {
 // Spec §7 — 20 one-click effects in 4 groups.
 /* --------------------------- zoom preset row (menu) ------------------------- */
 /* dock tool chip — icon + readable name, so no button is a mystery icon */
+/* Photoshop-style left tool rail (desktop) — icon column with tooltips. */
+function ToolRailBtn({ icon, label, kbd, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={kbd ? `${label} (${kbd})` : label}
+      aria-label={label}
+      className={cn(
+        'group relative flex h-10 w-10 items-center justify-center rounded-ink transition-colors',
+        active ? 'bg-white text-black' : 'text-dim hover:bg-white/5 hover:text-fg',
+      )}
+    >
+      <Icon name={icon} size={18} strokeWidth={1.9} />
+      <span className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-ink border border-line bg-surface px-2 py-1 text-[0.75rem] font-bold uppercase tracking-[0.06em] text-dim shadow-xl group-hover:block">
+        {label}{kbd ? <span className="ml-1 text-mute">{kbd}</span> : null}
+      </span>
+    </button>
+  )
+}
+
 function ToolChip({ icon, label, kbd, active, onClick }) {
   return (
     <button
