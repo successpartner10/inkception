@@ -20,7 +20,7 @@ import {
   Toast,
 } from '../components/ui'
 import { LayerRow } from '../components/ui'
-import { BeforeAfter } from '../components/BeforeAfter'
+import { CompareOverlay } from '../components/CompareOverlay'
 import { VectorizePanel } from '../components/VectorizePanel'
 import {
   AUTO_ENHANCE_FILTERS,
@@ -285,6 +285,9 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const [geminiKey, setGeminiKeyState] = useState(getGeminiKey)
   const [freeLane, setFreeLane] = useState(null) // 'free' | null once pinged
   const [selFrameId, setSelFrameId] = useState(null) // selected framed photo (face frames)
+  const visualHistRef = useRef([]) // flattened-canvas captures for Compare v2
+  const [visualHist, setVisualHist] = useState([])
+  const lastLabelRef = useRef('Open image')
   const frameAwait = useRef(false) // next imported image becomes a framed layer
   const collageReplaceRef = useRef(null) // id being replaced
   const collageReplaceInputRef = useRef(null) // hidden file input for replacing a photo
@@ -945,6 +948,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       setBlendMode('normal')
       setIsTemplate(false)
       pushHistory(label)
+      lastLabelRef.current = label
       setImageSrc(src)
       imageSrcRef.current = src
       try {
@@ -1007,6 +1011,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         c.add(img)
         c.requestRenderAll()
         imgObjRef.current = img
+        // Compare v2: remember how the canvas looked after this change
+        setTimeout(() => captureVisual(lastLabelRef.current), 450)
       } catch {
         /* ignore load errors */
       }
@@ -1101,6 +1107,32 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     },
     [restoreSnap, showToast],
   )
+
+  /* capture a flattened JPEG of the whole canvas (Compare v2 versions) */
+  const captureVisual = useCallback(
+    (label = 'Edit') => {
+      const c = fabricRef.current
+      if (!c || !fit.w) return
+      try {
+        const mult = Math.min(1.8, 1600 / Math.max(1, c.getWidth()))
+        const url = c.toDataURL({ format: 'jpeg', quality: 0.85, multiplier: mult })
+        const arr = visualHistRef.current
+        arr.push({ label, ts: Date.now(), url })
+        if (arr.length > 15) arr.shift()
+        visualHistRef.current = arr
+        setVisualHist([...arr])
+      } catch { /* canvas busy */ }
+    },
+    [fit.w],
+  )
+
+  const revertToOriginal = () => {
+    if (histRef.current.length) {
+      revertToSnapIndex(0)
+      showToast('Back to the original photo — layers you added stay on the canvas', 'undo')
+    }
+  }
+
 
   const undo = useCallback(() => {
     if (histPosRef.current <= 0) return
@@ -1853,6 +1885,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       c.requestRenderAll()
       setExtraLayers(decompRef.current.map((d) => ({ id: d.id, name: d.name, type: d.type, dataUrl: d.dataUrl, visible: true })))
       setBusy(null)
+      setTimeout(() => captureVisual('Extract Layers'), 350)
       showToast(`Extracted ${entries.length} layers — every one is movable & scalable`, 'layers')
       setTab('layers')
       setPanelCollapsed(false)
@@ -3867,6 +3900,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       setExtraLayers(decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })))
       c.setActiveObject(img)
       c.requestRenderAll()
+      setTimeout(() => captureVisual('Framed photo'), 400)
       let focused = false
       try {
         const box = await detectFaceBox(url)
@@ -3880,7 +3914,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       }
       return id
     },
-    [fit.w, fit.h, showToast],
+    [fit.w, fit.h, showToast, captureVisual],
   )
 
   /* open one image as a movable photo LAYER (multi-image documents) */
@@ -3905,9 +3939,10 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       setExtraLayers(decompRef.current.map((x) => ({ id: x.id, name: x.name, type: x.type, dataUrl: x.dataUrl, visible: x.visible })))
       c.setActiveObject(img)
       c.requestRenderAll()
+      setTimeout(() => captureVisual(`Photo — ${clean}`), 300)
       return id
     },
-    [fit.w, fit.h],
+    [fit.w, fit.h, captureVisual],
   )
 
   /* multi-image open: no photo yet → the first file becomes the base image,
@@ -4627,14 +4662,20 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
               </div>
             )}
 
-            {beforeAfter && imageSrc && (
-              <BeforeAfter
-                src={imageSrc}
-                filter={cssFilterString(filters)}
-                pos={comparePos}
-                onChange={setComparePos}
-              />
-            )}
+            {beforeAfter && imageSrc && (() => {
+              const origUrl = (histRef.current[0] && histRef.current[0].imageSrc) || imageSrc
+              const versions = [
+                { label: 'Original', ts: 0, url: origUrl },
+                ...visualHistRef.current.filter((v) => v.url && v.url !== origUrl),
+              ]
+              return (
+                <CompareOverlay
+                  versions={versions}
+                  onClose={() => setBeforeAfter(false)}
+                  onRevertOriginal={revertToOriginal}
+                />
+              )
+            })()}
 
             {tool === 'region' && displayRect && (
               <div

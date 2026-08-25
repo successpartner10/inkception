@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.21.0 — Compare v2 (the honest before/after)
+
+The old Compare showed "current image minus filters" as the "original" — after any real edit both sides looked the same, so it seemed broken. Replaced:
+
+- **A-side = the TRUE original file** (from history baseline), B-side = the live canvas — including layers, text and FX (flattened visual captures, up to 15 versions)
+- **◀ ▶ steppers + dropdowns on both sides** — compare any two versions (v1 vs v3, etc.)
+- **Side-by-side mode** alongside the drag slider
+- **One-click "Revert to original"** (layers you added stay; still undoable via History)
+- Visual versions are captured automatically: photo opens, edits, photo layers, Extract Layers, framed photos
+
 ## 0.20.2 — Effects tile readability
 
 - Effect tile labels: solid dark-grey strip (rgb(32,32,32) @ 95%) + white extrabold text + brighter category tag — readable over any photo, replacing the soft gradient that washed out on bright images.
