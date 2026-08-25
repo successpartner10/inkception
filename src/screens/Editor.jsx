@@ -7066,12 +7066,12 @@ function GalleryCard({ t, orig, pos, setPos, onPick }) {
           <div className="absolute inset-y-0 border-l border-white/80" style={{ left: `${p}%` }} />
         </div>
       )}
-      <span className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1 pt-4">
+      <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-[#161616]/95 px-1.5 py-1">
         <span className="flex min-w-0 items-center gap-1">
-          <Icon name={t.icon} size={10} className="shrink-0 text-white/80" />
-          <span className="truncate text-[0.75rem] font-bold text-white">{t.name}</span>
+          <Icon name={t.icon} size={11} className="shrink-0 text-white/85" />
+          <span className="truncate text-[0.75rem] font-extrabold text-white">{t.name}</span>
         </span>
-        <span className="label-xxs shrink-0 text-white/60">{t.cat}</span>
+        <span className="label-xxs shrink-0 text-white/70">{t.cat}</span>
       </span>
     </button>
   )

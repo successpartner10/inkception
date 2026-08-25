@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.2 — Effects tile readability
+
+- Effect tile labels: solid dark-grey strip (rgb(32,32,32) @ 95%) + white extrabold text + brighter category tag — readable over any photo, replacing the soft gradient that washed out on bright images.
+
 ## 0.20.1 — Desktop anatomy: tool rail + options bar + status strip
 
 - **Left tool rail** (desktop): 15 Photoshop-style icon tools with hover labels + shortcuts — Select/shapes/Text/Brush/Dropper/Crop | Erase/Blur/AI Remove/Clone/Heal/Bucket | Compare. Hidden on mobile (classic dock stays).
