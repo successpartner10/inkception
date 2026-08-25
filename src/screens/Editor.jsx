@@ -42,7 +42,6 @@ import { detectFaceBox } from '../lib/face'
 import { detectTextBlocks } from '../lib/textdetect'
 import { SectionNav } from '../components/SectionNav'
 import { DescribeModal, GenerateModal, CopyModal, AnimateModal } from '../components/AIModals'
-import { FastPathRibbon } from '../components/Onboarding'
 import { fxState, fxStep, fxDraw, FX_KINDS } from '../lib/livex'
 import { hasGeminiKey, getGeminiKey, setGeminiKey, resetAiConsent, workerPing } from '../lib/ailane'
 import { getScale, setScale as persistScale, SCALE_OPTIONS } from '../lib/theme'
@@ -62,12 +61,11 @@ import { DEFAULT_FONT, DEFAULT_FONT_SIZE, FONTS } from '../lib/fonts'
 import { clamp, cn, downloadBlob, downloadDataUrl, loadImageElement, slug, useMediaQuery } from '../lib/utils'
 
 const TAB_ITEMS = [
+  { id: 'actions', label: 'Effects', icon: 'sparkle' },
   { id: 'adjust', label: 'Adjust', icon: 'sliders' },
-  { id: 'actions', label: 'Actions', icon: 'sparkle' },
-  { id: 'recipes', label: 'Recipes', icon: 'bookmark' },
-  { id: 'ai', label: 'AI', icon: 'ai' },
   { id: 'layers', label: 'Layers', icon: 'layers' },
   { id: 'text', label: 'Text', icon: 'text' },
+  { id: 'recipes', label: 'Recipes', icon: 'bookmark' },
 ]
 
 // One-click building blocks for recipes (all free/local, need no input).
@@ -222,13 +220,11 @@ function frameFocusFaceObj(img, frame, box) {
 
 /* website-style section menu — Editor items (Edit always lands on Layers) */
 const EDITOR_SECTIONS = [
-  { id: 'edit', icon: 'image', label: 'Edit', desc: 'Open a photo & edit it — Layers front and center' },
-  { id: 'pixel', icon: 'brush', label: 'Pixel Studio', desc: 'Photoshop-style: brush, erase, blur, clone, heal' },
-  { id: 'fix', icon: 'sparkle', label: 'Fix & AI', desc: 'Enhance, remove BG, extract layers…' },
-  { id: 'collage', icon: 'grid', label: 'Collage', desc: 'Multi-photo grid layouts' },
-  { id: 'template', icon: 'shape', label: 'Template', desc: 'Banners & platform sizes' },
-  { id: 'layers', icon: 'layers', label: 'Layers', desc: 'Every layer visible & toggleable' },
-  { id: 'export', icon: 'export', label: 'Export', desc: 'PNG · JPG · PSD · multi-size zip' },
+  { id: 'photo', icon: 'image', label: 'Photo', desc: 'Open a photo & adjust it' },
+  { id: 'compose', icon: 'layers', label: 'Compose', desc: 'Layers · text · shapes · collage · templates' },
+  { id: 'effects', icon: 'sparkle', label: 'Effects', desc: 'All 358 actions + AI, as a searchable gallery' },
+  { id: 'export', icon: 'export', label: 'Export', desc: 'PNG · JPG · PSD · GIF · multi-size zip' },
+  { id: 'help', icon: 'info', label: 'Help', desc: 'Searchable how-to guides' },
 ]
 
 export function Editor({ project, onBack, onRename = () => {}, pendingCollage = null, onPendingCollageHandled = () => {}, onThumb = () => {} }) {
@@ -278,6 +274,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const [pixelStudio, setPixelStudio] = useState(false) // Photoshop-style toolset bar
   const [describeOpen, setDescribeOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [genPrompt, setGenPrompt] = useState('')
@@ -2906,34 +2903,37 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
      "Edit" always lands with Layers visible — layers are the workspace. */
   const goSection = useCallback(
     (id) => {
-      if (id === 'edit') {
+      if (id === 'photo') {
         setPanelCollapsed(false)
         if (!imageSrcRef.current && extraLayers.length === 0) {
           frameAwait.current = false
           if (fileRef.current) fileRef.current.click()
-        } else setTab('layers')
+        } else setTab('adjust')
         return
       }
-      if (id === 'layers') { setPanelCollapsed(false); setTab('layers'); return }
-      if (id === 'pixel') {
+      if (id === 'compose') { setPanelCollapsed(false); setTab('layers'); return }
+      if (id === 'effects') { setPanelCollapsed(false); setTab('actions'); return }
+      if (id === 'pixel') { // legacy id (search/howto) → pixel tools
         setPixelStudio(true)
         setTool('brush')
         setPanelCollapsed(true)
-        showToast('Pixel Studio — brush, erase, blur, clone, heal', 'brush')
+        showToast('Pixel tools — brush, erase, blur, clone, heal', 'brush')
         return
       }
-      if (id === 'fix') { setPanelCollapsed(false); setTab('ai'); return }
+      if (id === 'edit' || id === 'fix' || id === 'layers') { goSection('photo'); return }
       if (id === 'collage') { openModal(setCollageOpen); return }
       if (id === 'template') { openModal(setTemplatesOpen); return }
       if (id === 'export') { openModal(setExportOpen); return }
+      if (id === 'help') { openModal(setHelpOpen); return }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [extraLayers.length, openModal, showToast],
   )
 
   // Run a how-to suggestion: open the right tab + tool.
   const runHowToAction = (action) => {
     const map = {
-      removebg: () => { setTab('ai'); runRemoveBg() },
+      removebg: () => { setTab('actions'); runRemoveBg() },
       replacebg: () => openModal(setReplaceOpen),
       eraser: () => startErase('erase'),
       retouch: () => openModal(setRetouchOpen),
@@ -2942,8 +2942,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       textcolor: () => runAutoTextColor(),
       lut: () => openModal(setLutOpen),
       collage: () => openModal(setCollageOpen),
-      vectorize: () => { setTab('ai'); runAi('vectorize') },
-      decompose: () => { setTab('ai'); runDecompose() },
+      vectorize: () => { setTab('actions'); runAi('vectorize') },
+      decompose: () => { setTab('actions'); runDecompose() },
       pixel: () => goSection('pixel'),
       open: () => { if (fileRef.current) fileRef.current.click() },
       motion: () => openModal(setMotionOpen),
@@ -3035,8 +3035,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         warp: () => openModal(setWarpOpen),
         collage: () => openModal(setCollageOpen),
         textcolor: () => runAutoTextColor(),
-        vectorize: () => { setTab('ai'); runAi('vectorize') },
-        decompose: () => { setTab('ai'); runDecompose() },
+        vectorize: () => { setTab('actions'); runAi('vectorize') },
+        decompose: () => { setTab('actions'); runDecompose() },
       }
       return map[fnKey]
     },
@@ -4091,7 +4091,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     { id: 'tool-clone', label: 'Clone Stamp', group: 'Retouch', icon: 'copy', go: () => startPaintTool('clone') },
   { id: 'tool-pixelstudio', label: 'Pixel Studio (Photoshop-style editing)', group: 'Tool', icon: 'brush', go: () => goSection('pixel') },
   { id: 'tool-framephoto', label: 'Add Photo in Frame (templates & banners)', group: 'Tool', icon: 'fit', go: () => { frameAwait.current = true; if (fileRef.current) fileRef.current.click() } },
-  { id: 'tool-extract', label: 'Extract to Layers (text · face · person · background)', group: 'AI', icon: 'layers', go: () => { setTab('ai'); runDecompose() } },
+  { id: 'tool-extract', label: 'Extract to Layers (text · face · person · background)', group: 'AI', icon: 'layers', go: () => { setTab('actions'); runDecompose() } },
   { id: 'tool-describe', label: 'Describe Image (AI writes the prompt)', group: 'AI', icon: 'text', go: () => openModal(setDescribeOpen) },
   { id: 'tool-generate', label: 'Generate Image (text → image → layer)', group: 'AI', icon: 'sparkle', go: () => openModal(setGenerateOpen) },
   { id: 'tool-copy', label: 'AI Headlines & CTA (editable text suggestions)', group: 'AI', icon: 'penTool', go: () => openModal(setCopyOpen) },
@@ -4155,7 +4155,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   /* ------------------------------ panel renderer ----------------------------- */
   const renderPanel = () => {
     if (tab === 'adjust') return <AdjustTab {...{ filters, setLive, commitFilters, runEnhance: () => openModal(setEnhanceOpen), resetAll, isDefault: isDefaultFilters(filters), busy, highlightTarget }} />
-    if (tab === 'actions') {
+    if (tab === 'actions-legacy-unused') {
       return (
         <ActionsTab
           search={globalSearch}
@@ -4189,10 +4189,13 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         />
       )
     }
-    if (tab === 'ai') {
-      return aiView === 'vectorize' ? (
+    if (tab === 'ai' || tab === 'actions') {
+      // Effects panel = AI on top (prompt bar + AI Create) + the action gallery below
+      if (aiView === 'vectorize') return (
         <VectorizePanel src={imageSrc} fileName={slug(project.name)} onBack={() => setAiView('grid')} />
-      ) : (
+      )
+      return (
+        <div className="flex flex-col">
         <AITab
           busy={busy}
           onRemoveBg={() => { setRemoveBgOpen(true) }}
@@ -4233,6 +4236,8 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           justDoIt={justDoIt}
           setJustDoIt={setJustDoIt}
         />
+        <EffectsGridPanel src={imageSrc} onRun={(id) => runAction(id)} amt={effectAmt} setAmt={setEffectAmt} showToast={showToast} />
+        </div>
       )
     }
     if (tab === 'text') {
@@ -4383,18 +4388,6 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
 
       {/* website-style section menu — every workflow one obvious click away */}
       <SectionNav items={EDITOR_SECTIONS} onPick={goSection} active={pixelStudio ? 'pixel' : tab} />
-
-      {/* novice fast path: 1-2-3, dismissible */}
-      {tipsOn && !ribbonHidden && !imageSrc && (
-        <FastPathRibbon
-          onOpen={() => fileRef.current && fileRef.current.click()}
-          onExport={() => openModal(setExportOpen)}
-          onDismiss={() => {
-            setRibbonHidden(true)
-            try { localStorage.setItem('inkception.ribbon', '1') } catch { /* ignore */ }
-          }}
-        />
-      )}
 
       <div className="relative flex min-h-0 flex-1">
         {/* ------------------------------ canvas area ---------------------------- */}
@@ -4823,11 +4816,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           <IconBtn icon="zoomIn" title="Zoom in" onClick={() => zoomBy(1.25)} />
           <ToolChip icon="fit" label="Fit" onClick={zoomFit} />
           <div className="mx-1.5 h-5 w-px bg-line" />
-          <ToolChip icon="upload" label="Import" onClick={() => fileRef.current && fileRef.current.click()} />
-          <ToolChip icon="image" label="Add Photo" onClick={() => fileRef.current && fileRef.current.click()} />
-          <ToolChip icon="brush" label="Pixel Studio" active={pixelStudio} onClick={() => goSection('pixel')} />
-          <ToolChip icon="ai" label="AI" active={tab === 'ai' || aiView === 'vectorize'} onClick={() => openTab('ai')} />
-          <ToolChip icon="layers" label="Layers" active={tab === 'layers'} onClick={() => openTab('layers')} />
+          <ToolChip icon="image" label="Add Photo" title="Adds photos as separate movable layers" onClick={() => fileRef.current && fileRef.current.click()} />
         </div>
         {/* font controls appear between rows when the text tool is active */}
         {(tool === 'text' || activeText) && (
@@ -5472,6 +5461,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         )
       })()}
 
+      {/* help — searchable guides, its own obvious home (no longer in search) */}
+      <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="Help — how do I…?" subtitle="Searchable plain-English guides for everything in the app" width="max-w-lg">
+        <HelpPanel onRun={(action) => { setHelpOpen(false); runHowToAction(action) }} />
+      </Modal>
+
       {/* templates / sizes — resizes the canvas, layers are kept (NOT collage) */}
       <Modal open={templatesOpen} onClose={() => setTemplatesOpen(false)} title="Templates & sizes" subtitle="Resizes this canvas — your photos and layers are kept" width="max-w-md">
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -5755,6 +5749,242 @@ function ZoomMenuRow({ label, kbd, active, onClick }) {
 // Everything advanced lives here so the main one-click tabs stay clean.
 // The global search also finds these.
 /* ------------------------------ tab: Actions (gallery) -------------------- */
+/* --------------------- Effects gallery panel (in-panel) ------------------- */
+/* The merged Actions home: search + category chips + LIVE thumbnails of YOUR
+   photo + numbered pagination (12 per page — no endless scrolling). Streams
+   in like the old modal, cached per image. */
+
+function Pager({ page, pages, onPage }) {
+  if (pages <= 1) return null
+  let nums = []
+  if (pages <= 9) nums = Array.from({ length: pages }, (_, i) => i + 1)
+  else {
+    const mid = [page - 1, page, page + 1].filter((n) => n >= 2 && n <= pages - 1)
+    nums = [1, ...(mid[0] > 2 ? ['…'] : []), ...mid, ...(mid[mid.length - 1] < pages - 1 ? ['…'] : []), pages]
+  }
+  const btn = 'flex h-8 min-w-8 items-center justify-center rounded-ink px-2 text-[0.8125rem] font-bold'
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-center gap-1">
+      <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)} className={cn(btn, 'border border-line text-dim disabled:opacity-30 hover:border-white')}>&lsaquo;</button>
+      {nums.map((n, i) =>
+        n === '…' ? (
+          <span key={'e' + i} className="px-1 text-mute">…</span>
+        ) : (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onPage(n)}
+            className={cn(btn, n === page ? 'bg-white text-black' : 'border border-line text-dim hover:border-white')}
+          >
+            {n}
+          </button>
+        ),
+      )}
+      <button type="button" aria-label="Next page" disabled={page >= pages} onClick={() => onPage(page + 1)} className={cn(btn, 'border border-line text-dim disabled:opacity-30 hover:border-white')}>&rsaquo;</button>
+    </div>
+  )
+}
+
+function EffectsGridPanel({ src, onRun, amt = 60, setAmt = () => {}, showToast = () => {} }) {
+  const PER_PAGE = 12
+  const [thumbs, setThumbs] = useState([])
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [cat, setCat] = useState('all')
+  const [q, setQ] = useState('')
+  const [page, setPage] = useState(1)
+  const [pos, setPos] = useState(null)
+  const stopRef = useRef({ stopped: false })
+  const accRef = useRef([])
+  const flushRef = useRef(false)
+
+  const catCounts = useMemo(() => {
+    const m = {}
+    for (const a of ACTIONS) if (a.fe === 'local') m[a.cat || 'Other'] = (m[a.cat || 'Other'] || 0) + 1
+    return m
+  }, [])
+  const catNames = ['all', ...Object.keys(catCounts).sort()]
+
+  useEffect(() => {
+    stopRef.current = { stopped: false }
+    accRef.current = []
+    setThumbs([])
+    setProgress({ done: 0, total: 0 })
+    setPage(1)
+    if (!src) return undefined
+    const list = ACTIONS.filter((a) => a.fe === 'local')
+    buildGalleryThumbs(list, src, 128, {
+      onThumb: (t) => {
+        accRef.current.push(t)
+        if (!flushRef.current) {
+          flushRef.current = true
+          requestAnimationFrame(() => {
+            flushRef.current = false
+            // capture the batch BEFORE scheduling — the updater runs later,
+            // so it must not read the (already-cleared) ref
+            const batch = accRef.current
+            accRef.current = []
+            setThumbs((ts) => {
+              const seen = new Set(ts.map((x) => x.id))
+              return [...ts, ...batch.filter((x) => !seen.has(x.id))]
+            })
+          })
+        }
+      },
+      onProgress: (done, total) => setProgress({ done, total }),
+      stop: stopRef.current,
+    })
+    return () => { stopRef.current.stopped = true }
+  }, [src])
+
+  const ql = q.trim().toLowerCase()
+  const visible = thumbs.filter((t) => (cat === 'all' || t.cat === cat) && (!ql || t.name.toLowerCase().includes(ql)))
+  const pages = Math.max(1, Math.ceil(visible.length / PER_PAGE))
+  const pageSafe = Math.min(page, pages)
+  const slice = visible.slice((pageSafe - 1) * PER_PAGE, pageSafe * PER_PAGE)
+
+  return (
+    <div className="border-t border-line p-4">
+      <div className="flex items-center gap-2 rounded-ink border border-line bg-surface-2 px-2.5 py-2 focus-within:border-white">
+        <Icon name="search" size={14} className="shrink-0 text-mute" />
+        <input
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setPage(1) }}
+          placeholder={src ? 'Search 358 effects — "gold", "clean", "luxury", "thinner"…' : 'Open a photo to see live previews'}
+          disabled={!src}
+          className="min-w-0 flex-1 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+        />
+        {(q || progress.done > 0) && (
+          <span className="label-xxs shrink-0 text-mute">
+            {q ? `${visible.length} found` : progress.done < progress.total ? `${progress.done}/${progress.total}` : `${visible.length} effects`}
+          </span>
+        )}
+      </div>
+
+      <div className="no-scrollbar -mt-1 mb-2 flex gap-1 overflow-x-auto pb-1 pt-2">
+        {catNames.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => { setCat(c); setPage(1) }}
+            className={cn(
+              'shrink-0 rounded-ink px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
+              cat === c ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-fg',
+            )}
+          >
+            {c === 'all' ? 'All' : c} · {c === 'all' ? ACTIONS.filter((a) => a.fe === 'local').length : catCounts[c] || 0}
+          </button>
+        ))}
+      </div>
+
+      {src && progress.done > 0 && progress.done < progress.total && (
+        <div className="mb-2">
+          <div className="mb-1 flex justify-between text-[0.75rem] text-mute">
+            <span>Rendering previews — tiles appear as they finish</span>
+            <span>{Math.round((progress.done / progress.total) * 100)}%</span>
+          </div>
+          <div className="h-1 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full bg-white transition-all" style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} />
+          </div>
+        </div>
+      )}
+
+      {!src ? (
+        <p className="rounded-ink border border-dashed border-line px-4 py-10 text-center text-sm text-mute">
+          Open a photo — every effect will show as a live preview of <i>your</i> image.
+        </p>
+      ) : slice.length > 0 ? (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {slice.map((t) => (
+              <GalleryCard key={t.id} t={t} pos={pos} setPos={setPos} onPick={(id) => onRun(id)} />
+            ))}
+          </div>
+          <Pager page={pageSafe} pages={pages} onPage={setPage} />
+          <p className="mt-1 text-center text-[0.75rem] text-mute">
+            Page {pageSafe} of {pages} · {visible.length} effects
+          </p>
+          <div className="mt-2 border-t border-line pt-2">
+            <Slider label="Effect strength" value={amt} min={0} max={100} defaultValue={60} format={(v) => `${Math.round(v)}%`} onChange={setAmt} />
+          </div>
+        </>
+      ) : (
+        <p className="py-6 text-center text-xs text-mute">{progress.done === 0 ? 'Loading previews…' : ql ? `No effect matches "${q}"` : 'No effects in this category'}</p>
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------ Help panel -------------------------------- */
+function HelpPanel({ onRun }) {
+  const [q, setQ] = useState('')
+  const [sel, setSel] = useState(null)
+  const ql = q.trim().toLowerCase()
+  const list = HOWTOS.filter((h) => !ql || h.q.toLowerCase().includes(ql) || (h.keys || []).some((k) => k.includes(ql)))
+  const suggestions = ['Remove the background', 'Put text on a photo', 'Split into layers', 'Animate', 'Export for Instagram']
+  return (
+    <div>
+      <div className="flex items-center gap-2 rounded-ink border border-line bg-surface-2 px-2.5 py-2 focus-within:border-white">
+        <Icon name="search" size={14} className="shrink-0 text-mute" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder='Search guides — "background", "layers", "banner"…'
+          className="min-w-0 flex-1 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {suggestions.map((sg) => (
+          <button key={sg} type="button" onClick={() => setQ(sg)} className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg">
+            {sg}
+          </button>
+        ))}
+      </div>
+
+      {sel && (
+        <div className="mt-3 rounded-ink border border-line bg-surface-2 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="label-xs text-dim">How to — {sel.q}</div>
+            <button type="button" onClick={() => setSel(null)} className="text-[0.75rem] uppercase tracking-[0.1em] text-mute hover:text-fg">Close</button>
+          </div>
+          <ol className="mt-2 space-y-1.5">
+            {sel.steps.map((st, i) => (
+              <li key={i} className="flex gap-2 text-[0.875rem] leading-relaxed text-fg">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[0.75rem] font-bold text-fg">{i + 1}</span>
+                <span>{st}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => onRun(sel.action)} className="rounded-ink bg-white px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black">
+              Open {sel.tool}
+            </button>
+            <a href={youTubeSearch(sel.yt)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 rounded-ink border border-line px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-dim hover:border-white hover:text-white">
+              <Icon name="play" size={12} /> YouTube
+            </a>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 space-y-1">
+        {list.map((h) => (
+          <button
+            key={h.id}
+            type="button"
+            onClick={() => setSel(h)}
+            className="flex w-full items-center gap-2 rounded-ink border border-line px-3 py-2 text-left transition-colors hover:border-white"
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-dashed border-line-2 text-[0.6875rem] font-extrabold text-mute">?</span>
+            <span className="min-w-0 flex-1 truncate text-[0.875rem] italic text-dim">{h.q}</span>
+            <span className="label-xxs shrink-0 text-mute">Guide</span>
+          </button>
+        ))}
+        {list.length === 0 && <p className="py-6 text-center text-xs text-mute">No guide matches — try "background" or "export".</p>}
+      </div>
+      <p className="mt-3 text-[0.75rem] text-mute">{list.length} plain-English guides — they grow with every feature.</p>
+    </div>
+  )
+}
+
 function ActionsTab({ search = '', imageSrc, onRun, onGallery, amt = 60, setAmt = () => {}, onQuickEnhance, onQuickRemoveBg, onQuickUpscale, onQuickDenoise, onQuickRetouch, onQuickSharpen }) {
   const [cat, setCat] = useState('all')
   const [feat, setFeat] = useState('local') // local | all — hide ai/composite by default

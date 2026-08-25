@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.20.0 — Consolidation: 4 workspace tabs + Effects gallery
+
+**One command spine (desktop)**
+- Top sections are now 4 beginner-word workspaces: **Photo · Compose · Effects · Export** (+ Help). "Fix & AI"/"Edit"/"Layers" duplicates removed.
+- Right panel: 5 tabs with **Effects first** — the AI panel MERGED into it (AI Create row on top, gallery below).
+- Bottom dock deduplicated: AI / Layers / Pixel Studio / Import chips removed (they were 2nd/3rd doors to the same places). Tools + zoom + Add Photo remain.
+- Fast-path 1-2-3 ribbon deleted (superseded by the clear tabs).
+
+**Effects gallery (in-panel)**
+- Search INSIDE the panel ("gold", "clean", "luxury"...) + category chips
+- LIVE thumbnails of YOUR photo streaming in (cached per image)
+- **Numbered pagination: 12 per page with ‹ 1 2 3 … › nav** — no endless scrolling
+- Effect strength slider under the grid
+
+**Help**
+- New Help tab: searchable guide center (29 plain-English guides); guides REMOVED from the search dropdown (tools only there)
+
+**Fixes**
+- Effects panel thumbnails: state updates were being discarded (ref cleared before React ran the updater) — batch is now captured before scheduling
+
 ## 0.19.4 - Pro-lane model fix
 
 - Describe (image-to-prompt, your-key fallback) now uses gemini-3.5-flash-lite first - Google retired gemini-2.0-flash-lite (the API now returns 'no longer available'). Fallback chain: 3.5-flash-lite, flash-lite-latest, 2.5-flash-lite.

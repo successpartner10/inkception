@@ -240,7 +240,7 @@ export const HOWTOS = [
     keys: ['separate layers', 'split image', 'decompose', 'extract text', 'extract subject', 'remove text from image', 'face layer', 'person layer', 'clean background', 'photoshop layers'],
     q: 'How do I split my image into separate layers (text, face, person, background)?',
     steps: [
-      'AI tab → Extract Layers (or the top menu → Fix & AI).',
+      'Effects panel → Extract Layers.',
       'It reads the image with real AI: person + face detection + OCR text — and creates a Face layer, Person layer, one layer per text block, and a clean background with the holes filled.',
       'Every layer is movable & scalable — and exports as PSD layers too.',
     ],
