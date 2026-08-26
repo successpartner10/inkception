@@ -1127,10 +1127,26 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   )
 
   const revertToOriginal = () => {
-    if (histRef.current.length) {
-      revertToSnapIndex(0)
-      showToast('Back to the original photo — layers you added stay on the canvas', 'undo')
+    if (!histRef.current.length) return
+    const c = fabricRef.current
+    if (c) {
+      // remove every layer object added since the original (photos, AI layers,
+      // frames, collage) and bring the base photo back
+      decompRef.current.forEach((d) => { try { c.remove(d.img) } catch { /* already gone */ } })
+      decompRef.current = []
+      setExtraLayers([])
+      setSelFrameId(null)
+      setSelCollageId(null)
+      if (imgObjRef.current) imgObjRef.current.visible = true
+      try { c.discardActiveObject() } catch { /* noop */ }
+      c.requestRenderAll()
     }
+    visualHistRef.current = []
+    setVisualHist([])
+    // restore the base-image state but KEEP undo (new entry instead of truncating)
+    restoreSnap(histRef.current[0])
+    pushHistory('Revert to original')
+    showToast('Back to the original — edits and added layers removed (Undo still works)', 'undo')
   }
 
 
@@ -1342,6 +1358,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
 
   /* --------------------------------- layers -------------------------------- */
   const toggleLayer = (id) => {
+    if (id === 'subject' && imgObjRef.current) {
+      // the main photo row — toggle the real base image
+      imgObjRef.current.visible = !imgObjRef.current.visible
+      if (fabricRef.current) fabricRef.current.requestRenderAll()
+    }
     const ex = decompRef.current.find((d) => d.id === id)
     if (ex) {
       ex.img.visible = !ex.img.visible
@@ -4156,7 +4177,6 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     { id: 'tool-glass', label: 'Glass', group: 'Filter', icon: 'wind', go: () => runFilter('glass') },
     { id: 'tool-spherical', label: 'Spherical', group: 'Filter', icon: 'focus', go: () => runFilter('spherical') },
     { id: 'tool-sharpenedges', label: 'Sharpen Edges', group: 'Filter', icon: 'focus', go: () => runFilter('sharpenEdges') },
-    ...HOWTOS.map((h) => ({ id: 'how-' + h.id, label: h.q, group: 'How do I…?', icon: 'sparkle', go: () => { setHowtoOpen(true) } })),
     ...mergedPresets.map((p) => ({ id: 'preset-' + p.id, label: `${p.platform} — ${p.name}`, group: 'Export sizes', sub: `${p.w}×${p.h} · ${p.ratio}`, icon: PLATFORM_ICONS[p.platform] || 'grid', go: () => { openModal(setExportOpen); setPreset(p.id) } })),
     ...recipes.map((r) => ({ id: 'recipe-' + r.id, label: 'Run recipe: ' + r.name, group: 'Recipes', icon: 'bookmark', go: () => runRecipe(r) })),
   ]

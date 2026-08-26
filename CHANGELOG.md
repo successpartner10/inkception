@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.1 — Bugfix round (user reports)
+
+- **Layer eye now works on the main photo** — the "Subject" row toggled state but never touched the canvas; it now hides/shows the real base image
+- **Revert to original is now a TRUE full revert** — removes every layer added since the original (photo layers, AI layers, frames), restores the base photo, clears the visual version list — and Undo still works
+- **Guides removed from search results entirely** — no more "How do I…?" zone creating a gap between tools; guides live only in the Help tab
+
 ## 0.21.0 — Compare v2 (the honest before/after)
 
 The old Compare showed "current image minus filters" as the "original" — after any real edit both sides looked the same, so it seemed broken. Replaced:
