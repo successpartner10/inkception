@@ -5781,8 +5781,6 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         geminiKey={geminiKey}
         onGeminiKey={(k) => { setGeminiKey(k); setGeminiKeyState(k); }}
         onResetConsent={() => { resetAiConsent(); showToast('Cloud-AI consent reset — you’ll be asked again', 'check') }}
-        justDoIt={justDoIt}
-        setJustDoIt={setJustDoIt}
         onClose={() => setSettingsOpen(false)}
         onForgetLearning={forgetLearning}
         onClearAll={clearAllLocalData}
@@ -6749,7 +6747,7 @@ const SHORTCUTS = [
   ['⌘/Ctrl + N', 'New project'], ['V · R · E · L · T · B', 'Select · Rect · Ellipse · Line · Text · Brush'],
   ['Delete / Backspace', 'Delete object'], ['Esc', 'Cancel / deselect'],
 ]
-function SettingsModal({ open, theme, onTheme, scale, onScale, justDoIt, setJustDoIt, onClose, onForgetLearning, onClearAll, tips, onTips, geminiKey, onGeminiKey, onResetConsent }) {
+function SettingsModal({ open, theme, onTheme, scale, onScale, onClose, onForgetLearning, onClearAll, tips, onTips, geminiKey, onGeminiKey, onResetConsent }) {
   const [confirmClear, setConfirmClear] = useState(false)
   const [keyDraft, setKeyDraft] = useState(geminiKey)
   const [lane, setLane] = useState('…')
@@ -6845,27 +6843,6 @@ function SettingsModal({ open, theme, onTheme, scale, onScale, justDoIt, setJust
                 <span className="text-[0.75rem] leading-relaxed text-mute">{o.desc}</span>
               </button>
             ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="label-xs text-dim">AI assistant mode</label>
-          <p className="mt-0.5 text-[0.8125rem] text-mute">Guided = propose → confirm → run. ⚡ Just do it = runs immediately (still undoable).</p>
-          <div className="mt-2 flex gap-1">
-            <button
-              type="button"
-              onClick={() => setJustDoIt(false)}
-              className={cn('flex-1 rounded-ink px-3 py-2 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors', !justDoIt ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
-            >
-              Guided
-            </button>
-            <button
-              type="button"
-              onClick={() => setJustDoIt(true)}
-              className={cn('flex-1 rounded-ink px-3 py-2 text-[0.8125rem] font-bold uppercase tracking-[0.12em] transition-colors', justDoIt ? 'bg-white text-black' : 'bg-surface-2 text-dim hover:text-white')}
-            >
-              ⚡ Just do it
-            </button>
           </div>
         </div>
 
@@ -7422,161 +7399,6 @@ function AITab({
 
   return (
     <div className="p-4">
-      {/* Command bar — "design with words" (audit #2) */}
-      <div className="mb-2 flex items-center justify-between rounded-ink border border-line bg-surface-2 px-2.5 py-1.5">
-        <span className="label-xs text-dim">AI Assistant mode</span>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setJustDoIt(false)}
-            className={cn(
-              'rounded-ink px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
-              !justDoIt ? 'bg-white text-black' : 'text-dim hover:text-white',
-            )}
-            title="Navigate to the menu, highlight, ask to confirm — so you learn where it is"
-          >
-            Guided
-          </button>
-          <button
-            type="button"
-            onClick={() => setJustDoIt(true)}
-            className={cn(
-              'rounded-ink px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.1em] transition-colors',
-              justDoIt ? 'bg-white text-black' : 'text-dim hover:text-white',
-            )}
-            title="Run commands immediately — faster, no navigation"
-          >
-            ⚡ Just do it
-          </button>
-        </div>
-      </div>
-      <form
-        onSubmit={submit}
-        className="rounded-ink border border-line p-3 transition-colors focus-within:border-white"
-      >
-        <div className="flex items-center gap-2">
-          <Icon name="sparkle" size={14} className="shrink-0 text-dim" />
-          <input
-            value={phrase}
-            onChange={(e) => setPhrase(e.target.value)}
-            placeholder='Describe the edit or ask how — "remove background", "how do I blur the background"…'
-            className="min-w-0 flex-1 bg-transparent text-xs text-fg placeholder:text-mute focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={!phrase.trim()}
-            className="shrink-0 rounded-ink bg-white px-2.5 py-1 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black disabled:opacity-40"
-          >
-            Go
-          </button>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1">
-          {PROMPT_SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onPromptAction(matchPrompt(s).action, matchPrompt(s).payload)}
-              className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-semibold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-        {commandCount > 0 && (
-          <>
-            <div className="mt-2 flex items-center justify-between rounded-ink border border-line px-2 py-1.5">
-              <span className="label-xs text-mute">History · {commandCount}</span>
-              <button
-                type="button"
-                onClick={onUndoLast}
-                className="flex items-center gap-1 rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:text-fg"
-              >
-                <Icon name="undo" size={11} /> Undo last
-              </button>
-            </div>
-            {/* history mini-map: tap a step to revert to before it */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-1">
-              {commandStack.map((c, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  title={`Revert to before step ${i + 1} (${c.phrase})`}
-                  onClick={() => onRevertTo(i)}
-                  className="group flex items-center gap-1 rounded-ink border border-line bg-surface-2 px-1.5 py-1 text-[0.75rem] text-dim transition-colors hover:border-white hover:text-fg"
-                >
-                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/10 text-[0.6875rem] font-bold text-fg">{i + 1}</span>
-                  <span className="max-w-[80px] truncate">{c.phrase}</span>
-                  <Icon name="undo" size={9} className="opacity-0 transition-opacity group-hover:opacity-100" />
-                </button>
-              ))}
-              <span className="text-[0.6875rem] text-mute">· tap a step to undo up to there</span>
-            </div>
-          </>
-        )}
-        <p className="mt-2 text-[0.75rem] leading-relaxed text-mute">
-          Tip: chain steps with commas — "auto enhance, now crop to square, then black & white".
-          "Undo last command" reverts just the last step.
-        </p>
-      </form>
-
-      {howtoResult && (
-        <div className="mt-3 rounded-ink border border-line bg-surface-2 p-3">
-          <div className="label-xs text-dim">How to — {howtoResult.q}</div>
-          <ol className="mt-2 space-y-1.5">
-            {howtoResult.steps.map((st, i) => (
-              <li key={i} className="flex gap-2 text-[0.875rem] leading-relaxed text-fg">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[0.75rem] font-bold text-fg">{i + 1}</span>
-                <span>{st}</span>
-              </li>
-            ))}
-          </ol>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => { onRunHowTo(howtoResult.action); setHowtoResult(null) }}
-              className="rounded-ink bg-white px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-black"
-            >
-              Open {howtoResult.tool}
-            </button>
-            <a
-              href={youTubeSearch(howtoResult.yt)}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1.5 rounded-ink border border-line px-3 py-1.5 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-dim transition-colors hover:border-white hover:text-white"
-            >
-              <Icon name="play" size={12} /> Watch on YouTube
-            </a>
-            <button type="button" onClick={() => setHowtoResult(null)} className="ml-auto text-[0.75rem] uppercase tracking-[0.1em] text-mute hover:text-white">
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-
-
-      <p className="mt-4 text-[0.8125rem] leading-relaxed text-mute">
-        All processing runs on-device and reads the actual image content. No fake AI: deterministic
-        tools are labeled as such. Export matrix untouched.
-      </p>
-
-      {/* Smart suggestion banner */}
-      {!q && suggestion && (
-        <button
-          type="button"
-          onClick={() => onSuggestion(suggestion.action)}
-          className="mt-4 flex w-full items-center gap-3 rounded-ink border border-white/60 bg-surface-2 p-3 text-left transition-colors hover:border-white"
-        >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-ink bg-white text-black">
-            <Icon name="sparkle" size={14} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[0.875rem] font-bold uppercase tracking-[0.08em] text-fg">{suggestion.title}</span>
-            <span className="mt-0.5 block text-[0.8125rem] text-mute">{suggestion.desc}</span>
-          </span>
-          <Icon name="chevronRight" size={14} className="shrink-0 text-mute" />
-        </button>
-      )}
-
       {q && visibleSections.length === 0 && (
         <p className="py-6 text-center text-xs text-mute">No AI tools match “{search}”</p>
       )}

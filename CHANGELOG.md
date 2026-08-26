@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.21.2 — AI assistant mode removed
+
+- Removed the AI Assistant strip from the Effects panel (Guided/Just-do-it toggle, "describe the edit" command bar, suggestion chips, smart-suggestion banner, inline how-to results) — the panel now leads directly with AI Create cards + the effects gallery
+- Removed the "AI assistant mode" block from Settings (AI keys, theme, text size and tips remain)
+
 ## 0.21.1 — Bugfix round (user reports)
 
 - **Layer eye now works on the main photo** — the "Subject" row toggled state but never touched the canvas; it now hides/shows the real base image
