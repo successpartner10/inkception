@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.22.0 — Layers v2 (Photoshop-style)
+
+- **Reorder**: drag rows to reorder (real z-order on canvas) or use ▲▼ per row
+- **Eye / hide** works on every layer incl. the main photo
+- **Lock**: real locking — locked layers can't be moved, scaled or selected until unlocked
+- **Opacity**: select a row → per-layer opacity slider (live)
+- **Groups/folders**: + Group (named), assign layers by drag-onto-folder or a per-row dropdown, collapse/expand, hide-all with one click, delete group (layers stay)
+- Collage slot ops (Fit/Fill/rotate/swap/replace) now live inside the selected collage row
+
 ## 0.21.2 — AI assistant mode removed
 
 - Removed the AI Assistant strip from the Effects panel (Guided/Just-do-it toggle, "describe the edit" command bar, suggestion chips, smart-suggestion banner, inline how-to results) — the panel now leads directly with AI Create cards + the effects gallery

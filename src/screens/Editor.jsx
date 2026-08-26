@@ -1374,6 +1374,113 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const toggleLock = (id) =>
     setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, locked: !l.locked } : l)))
 
+  /* ---- Layers v2: reorder, lock, opacity, groups ----------------------- */
+  const [layerGroups, setLayerGroups] = useState([])
+
+  const refreshExtra = () => setExtraLayers(decompRef.current.map((x) => ({ ...x })))
+
+  const moveLayerById = (id, dir) => {
+    const c = fabricRef.current
+    const list = decompRef.current
+    const i = list.findIndex((x) => x.id === id)
+    if (i < 0) return
+    const j = i + dir
+    if (j < 0 || j >= list.length) return
+    const [e] = list.splice(i, 1)
+    list.splice(j, 0, e)
+    if (c && e.img) {
+      if (dir > 0) c.bringObjectForward(e.img)
+      else c.sendObjectBackwards(e.img)
+      c.requestRenderAll()
+    }
+    refreshExtra()
+  }
+
+  const reorderLayer = (fromId, toId) => {
+    if (fromId === toId) return
+    const c = fabricRef.current
+    const list = decompRef.current
+    const from = list.findIndex((x) => x.id === fromId)
+    const to = list.findIndex((x) => x.id === toId)
+    if (from < 0 || to < 0) return
+    const dir = to > from ? 1 : -1
+    const steps = Math.abs(to - from)
+    const e = list[from]
+    const [removed] = list.splice(from, 1)
+    list.splice(to, 0, removed)
+    if (c && e.img) {
+      for (let k = 0; k < steps; k++) {
+        if (dir > 0) c.bringObjectForward(e.img)
+        else c.sendObjectBackwards(e.img)
+      }
+      c.requestRenderAll()
+    }
+    refreshExtra()
+  }
+
+  const toggleLayerLock = (id) => {
+    const ex = decompRef.current.find((d) => d.id === id)
+    const c = fabricRef.current
+    if (!ex || !ex.img || !c) return
+    const locked = !ex.locked
+    ex.locked = locked
+    ex.img.set({
+      lockMovementX: locked, lockMovementY: locked,
+      lockScalingX: locked, lockScalingY: locked, lockRotation: locked,
+      selectable: !locked, evented: !locked,
+    })
+    if (locked) { try { c.discardActiveObject() } catch { /* noop */ } }
+    c.requestRenderAll()
+    refreshExtra()
+  }
+
+  const setLayerOpacityById = (id, pct) => {
+    const ex = decompRef.current.find((d) => d.id === id)
+    if (!ex || !ex.img) return
+    ex.img.set('opacity', pct / 100)
+    if (fabricRef.current) fabricRef.current.requestRenderAll()
+    setExtraLayers((xs) => xs.map((x) => (x.id === id ? { ...x, opacity: pct } : x)))
+  }
+
+  const selectLayerById = (id) => {
+    const ex = decompRef.current.find((d) => d.id === id)
+    const c = fabricRef.current
+    if (ex && ex.img && c && !ex.locked) {
+      c.setActiveObject(ex.img)
+      c.requestRenderAll()
+    }
+  }
+
+  const createLayerGroup = (name) => {
+    setLayerGroups((gs) => [...gs, {
+      id: `grp-${Date.now()}`,
+      name: (name || `Group ${gs.length + 1}`).slice(0, 24),
+      collapsed: false, hidden: false, memberIds: [],
+    }])
+  }
+  const assignLayerToGroup = (groupId, layerId) => {
+    setLayerGroups((gs) => gs.map((g) => {
+      const memberIds = g.memberIds.filter((m) => m !== layerId)
+      if (g.id === groupId && groupId) memberIds.push(layerId)
+      return { ...g, memberIds }
+    }))
+  }
+  const toggleGroupHidden = (groupId) => {
+    const g = layerGroups.find((x) => x.id === groupId)
+    if (!g) return
+    const hidden = !g.hidden
+    g.memberIds.forEach((mid) => {
+      const ex = decompRef.current.find((d) => d.id === mid)
+      if (ex && ex.img) ex.img.visible = !hidden
+    })
+    if (fabricRef.current) fabricRef.current.requestRenderAll()
+    setLayerGroups((gs) => gs.map((x) => (x.id === groupId ? { ...x, hidden } : x)))
+    setExtraLayers((xs) => xs.map((x) => (g.memberIds.includes(x.id) ? { ...x, visible: !hidden } : x)))
+  }
+  const deleteLayerGroup = (groupId) => setLayerGroups((gs) => gs.filter((g) => g.id !== groupId))
+  const toggleGroupCollapse = (groupId) =>
+    setLayerGroups((gs) => gs.map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g)))
+
   const duplicateLayer = () => {
     const img = imgObjRef.current
     const c = fabricRef.current
@@ -4340,6 +4447,17 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         setBlendMode={setBlendMode}
         onDuplicateLayer={() => duplicateLayer()}
         search={globalSearch}
+        layerGroups={layerGroups}
+        onMoveLayer={moveLayerById}
+        onReorderLayer={reorderLayer}
+        onToggleLockLayer={toggleLayerLock}
+        onSetLayerOpacity={setLayerOpacityById}
+        onSelectLayer={selectLayerById}
+        onCreateGroup={createLayerGroup}
+        onAssignToGroup={assignLayerToGroup}
+        onToggleGroupHidden={toggleGroupHidden}
+        onDeleteGroup={deleteLayerGroup}
+        onToggleGroupCollapse={toggleGroupCollapse}
       />
     )
   }
@@ -7445,10 +7563,184 @@ function AITab({
 }
 
 /* ------------------------------- tab: Layers ------------------------------ */
+
+/* ------------------- Layers v2: photos, AI layers, groups ------------------ */
+/* Photoshop-style rows: drag to reorder (or ▲▼), eye, lock, opacity, group
+   folders (create / assign / collapse / hide-all), delete + collage slot ops. */
+
+function LayersExtraList({
+  extraLayers = [], groups = [],
+  onMoveLayer, onReorderLayer, onToggleVisibility, onToggleLockLayer, onSetLayerOpacity,
+  onSelectLayer, onDeleteLayer, onCreateGroup, onAssignToGroup, onToggleGroupHidden,
+  onDeleteGroup, onToggleGroupCollapse, onFitPhoto, onRotatePhoto, onShiftSlot,
+  onReplacePhoto, onRemovePhoto, showToast,
+}) {
+  const [selId, setSelId] = useState(null)
+  const [dragId, setDragId] = useState(null)
+  const [dropId, setDropId] = useState(null)
+  const grouped = new Set(groups.flatMap((g) => g.memberIds))
+  const ungrouped = extraLayers.filter((l) => !grouped.has(l.id))
+
+  const mini = 'rounded-ink bg-surface-2 px-1.5 py-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.06em] text-dim transition-colors hover:text-fg'
+
+  const row = (l) => (
+    <div
+      key={l.id}
+      draggable
+      onDragStart={(e) => { setDragId(l.id); e.dataTransfer.effectAllowed = 'move' }}
+      onDragOver={(e) => { e.preventDefault(); setDropId(l.id) }}
+      onDragLeave={() => setDropId(null)}
+      onDrop={(e) => {
+        e.preventDefault()
+        if (dragId && onReorderLayer) onReorderLayer(dragId, l.id)
+        setDragId(null); setDropId(null)
+      }}
+      onDragEnd={() => { setDragId(null); setDropId(null) }}
+      className={cn(
+        'flex cursor-pointer flex-wrap items-center gap-2 rounded-ink border px-2 py-1.5 transition-colors',
+        selId === l.id ? 'border-white bg-surface-2' : dropId === l.id ? 'border-white/60 border-dashed' : 'border-transparent hover:border-line hover:bg-surface-2',
+        !l.visible && 'opacity-50',
+      )}
+      onClick={() => { setSelId(l.id); onSelectLayer && onSelectLayer(l.id) }}
+      title="Drag to reorder · click to select on canvas"
+    >
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-ink border border-line bg-ink">
+        {l.dataUrl ? <img src={l.dataUrl} alt="" className="h-full w-full object-contain" /> : <Icon name="layers" size={13} className="text-mute" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xs font-bold text-fg">{l.name}</div>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-mute">{l.type}</span>
+          {groups.filter((g) => g.memberIds.includes(l.id)).map((g) => (
+            <span key={g.id} className="rounded-ink bg-surface-3 px-1 text-[0.625rem] font-bold uppercase text-mute">📁 {g.name}</span>
+          ))}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        <button type="button" title="Move up (forward)" className={mini} onClick={() => onMoveLayer && onMoveLayer(l.id, -1)}>▲</button>
+        <button type="button" title="Move down (backward)" className={mini} onClick={() => onMoveLayer && onMoveLayer(l.id, 1)}>▼</button>
+        <IconBtn
+          icon={l.visible ? 'eye' : 'eyeOff'}
+          size={13}
+          title={l.visible ? 'Hide layer' : 'Show layer'}
+          onClick={() => onToggleVisibility(l.id)}
+        />
+        <IconBtn
+          icon={l.locked ? 'lock' : 'lockOpen'}
+          size={13}
+          title={l.locked ? 'Unlock layer' : 'Lock layer'}
+          onClick={() => onToggleLockLayer && onToggleLockLayer(l.id)}
+        />
+        <IconBtn icon="trash" size={13} title="Delete layer" onClick={() => onDeleteLayer(l.id)} />
+      </div>
+
+      {selId === l.id && (
+        <div className="flex basis-full flex-wrap items-center gap-2 border-t border-line pt-2">
+          <label className="flex min-w-40 flex-1 items-center gap-2">
+            <span className="label-xxs text-mute">Opacity</span>
+            <input
+              type="range" min={0} max={100}
+              value={typeof l.opacity === 'number' ? l.opacity : 100}
+              onChange={(e) => onSetLayerOpacity && onSetLayerOpacity(l.id, Number(e.target.value))}
+              className="h-1.5 flex-1 accent-white"
+            />
+            <span className="w-9 text-center text-[0.6875rem] tabular-nums text-dim">{typeof l.opacity === 'number' ? l.opacity : 100}%</span>
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="label-xxs text-mute">Group</span>
+            <select
+              value={(groups.find((g) => g.memberIds.includes(l.id)) || {}).id || ''}
+              onChange={(e) => onAssignToGroup && onAssignToGroup(e.target.value || null, l.id)}
+              className="rounded-ink border border-line bg-surface-2 px-1.5 py-1 text-[0.6875rem] font-bold text-fg focus:border-white focus:outline-none"
+            >
+              <option value="">— none —</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </label>
+          {l.type === 'Collage' && onFitPhoto && (
+            <span className="flex items-center gap-1">
+              <button type="button" className={mini} onClick={() => onFitPhoto(l.id, 'contain')}>Fit</button>
+              <button type="button" className={mini} onClick={() => onFitPhoto(l.id, 'cover')}>Fill</button>
+              {onRotatePhoto && <button type="button" className={mini} onClick={() => onRotatePhoto(l.id, 15)}>↻</button>}
+              {onShiftSlot && <button type="button" className={mini} onClick={() => onShiftSlot(l.id, 1)}>→</button>}
+              {onReplacePhoto && <button type="button" className={mini} onClick={() => onReplacePhoto(l.id)}>Replace</button>}
+              {onRemovePhoto && <button type="button" className={cn(mini, 'text-danger')} onClick={() => onRemovePhoto(l.id)}>Remove</button>}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="pt-2">
+      <div className="flex items-center gap-2 px-1 pb-1.5">
+        <span className="label-xs text-dim">Layers ({extraLayers.length})</span>
+        <span className="h-px flex-1 bg-line" />
+        <button
+          type="button"
+          onClick={() => {
+            const name = window.prompt && window.prompt('Group name', `Group ${groups.length + 1}`)
+            if (name !== null) onCreateGroup && onCreateGroup(name)
+          }}
+          className="rounded-ink border border-line px-2 py-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.08em] text-dim hover:border-white hover:text-fg"
+          title="Create a folder group"
+        >
+          + Group
+        </button>
+      </div>
+
+      {groups.length > 0 && (
+        <div className="space-y-1 pb-1">
+          {groups.map((g) => {
+            const members = extraLayers.filter((l) => g.memberIds.includes(l.id))
+            return (
+              <div
+                key={g.id}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  if (dragId) { onAssignToGroup && onAssignToGroup(g.id, dragId); setDragId(null) }
+                }}
+                className="rounded-ink border border-line-2 bg-surface-2/50"
+              >
+                <div className="flex items-center gap-1.5 px-2 py-1.5">
+                  <button type="button" onClick={() => onToggleGroupCollapse && onToggleGroupCollapse(g.id)} className="text-dim hover:text-fg" title={g.collapsed ? 'Expand' : 'Collapse'}>
+                    <Icon name={g.collapsed ? 'chevronRight' : 'chevronDown'} size={13} />
+                  </button>
+                  <span className="text-xs font-extrabold uppercase tracking-[0.06em] text-fg">📁 {g.name}</span>
+                  <span className="label-xxs text-mute">{members.length}</span>
+                  <span className="flex-1" />
+                  <button type="button" className={mini} title={g.hidden ? 'Show all in group' : 'Hide all in group'} onClick={() => onToggleGroupHidden && onToggleGroupHidden(g.id)}>
+                    <Icon name={g.hidden ? 'eyeOff' : 'eye'} size={11} />
+                  </button>
+                  <button type="button" className={cn(mini, 'text-danger')} title="Delete group (layers stay)" onClick={() => onDeleteGroup && onDeleteGroup(g.id)}>✕</button>
+                </div>
+                {!g.collapsed && <div className="space-y-1 px-1 pb-1">{members.map(row)}</div>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {ungrouped.map(row)}
+        {extraLayers.length === 0 && (
+          <p className="rounded-ink border border-dashed border-line px-3 py-4 text-center text-[0.75rem] text-mute">
+            Added photos, AI layers and frames appear here — drag to reorder.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function LayersTab({
   layers, extraLayers = [], selected, onSelect, onToggleVisibility, onToggleLock, onDeleteLayer,
   onFitPhoto, onRotatePhoto, onShiftSlot, onReplacePhoto, onRemovePhoto, imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
   search = '',
+  layerGroups = [], onMoveLayer, onReorderLayer, onToggleLockLayer, onSetLayerOpacity, onSelectLayer,
+  onCreateGroup, onAssignToGroup, onToggleGroupHidden, onDeleteGroup, onToggleGroupCollapse,
 }) {
   const previews = {
     vignette: (
@@ -7498,109 +7790,29 @@ function LayersTab({
             onToggleLock={() => onToggleLock(l.id)}
           />
         ))}
-        {extraLayers.length > 0 && (
-          <>
-            <div className="flex items-center gap-2 px-1 pt-2">
-              <span className="label-xs text-dim">Decomposed (AI)</span>
-              <span className="h-px flex-1 bg-line" />
-            </div>
-            {visibleExtra.map((l) => (
-              <div key={l.id} className="space-y-1">
-                <LayerRow
-                  layer={{ name: l.name, type: l.type, visible: l.visible, locked: false }}
-                  preview={<img src={l.dataUrl} alt="" className="h-full w-full object-contain" />}
-                  selected={false}
-                  onSelect={() => {}}
-                  onToggleVisibility={() => onToggleVisibility(l.id)}
-                  onToggleLock={() => showToast('AI layers are movable — click one on the canvas to drag & scale it', 'lock')}
-                  onDelete={() => onDeleteLayer(l.id)}
-                />
-                {l.type === 'Collage' && onFitPhoto && (
-                  <div className="flex flex-wrap items-center gap-1 pl-12">
-                    <span className="label-xs text-mute">Grid:</span>
-                    <button
-                      type="button"
-                      onClick={() => onFitPhoto(l.id, 'contain')}
-                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
-                      title="Shrink photo to fit its slot"
-                    >
-                      Fit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onFitPhoto(l.id, 'cover')}
-                      className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
-                      title="Expand photo to fill its slot"
-                    >
-                      Fill
-                    </button>
-                    {onRotatePhoto && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => onRotatePhoto(l.id, -15)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
-                          title="Rotate left 15°"
-                        >
-                          ↺
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onRotatePhoto(l.id, 15)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
-                          title="Rotate right 15°"
-                        >
-                          ↻
-                        </button>
-                      </>
-                    )}
-                    {onShiftSlot && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => onShiftSlot(l.id, -1)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
-                          title="Swap with previous slot"
-                        >
-                          ←
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onShiftSlot(l.id, 1)}
-                          className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
-                          title="Swap with next slot"
-                        >
-                          →
-                        </button>
-                        {onReplacePhoto && (
-                          <button
-                            type="button"
-                            onClick={() => onReplacePhoto(l.id)}
-                            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-dim transition-colors hover:text-fg"
-                            title="Replace this photo (same grid slot)"
-                          >
-                            Replace
-                          </button>
-                        )}
-                        {onRemovePhoto && (
-                          <button
-                            type="button"
-                            onClick={() => onRemovePhoto(l.id)}
-                            className="rounded-ink bg-surface-2 px-2 py-0.5 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-danger transition-colors hover:text-fg"
-                            title="Remove this photo (grid stays)"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </>
-                    )}
-                    <span className="ml-1 text-[0.75rem] text-mute">fit · fill · rotate · swap</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </>
-        )}
+        <LayersExtraList
+          extraLayers={visibleExtra}
+          allLayers={extraLayers}
+          groups={layerGroups}
+          onMoveLayer={onMoveLayer}
+          onReorderLayer={onReorderLayer}
+          onToggleVisibility={onToggleVisibility}
+          onToggleLockLayer={onToggleLockLayer}
+          onSetLayerOpacity={onSetLayerOpacity}
+          onSelectLayer={onSelectLayer}
+          onDeleteLayer={onDeleteLayer}
+          onCreateGroup={onCreateGroup}
+          onAssignToGroup={onAssignToGroup}
+          onToggleGroupHidden={onToggleGroupHidden}
+          onDeleteGroup={onDeleteGroup}
+          onToggleGroupCollapse={onToggleGroupCollapse}
+          onFitPhoto={onFitPhoto}
+          onRotatePhoto={onRotatePhoto}
+          onShiftSlot={onShiftSlot}
+          onReplacePhoto={onReplacePhoto}
+          onRemovePhoto={onRemovePhoto}
+          showToast={showToast}
+        />
       </div>
 
       {/* selected-layer properties (spec §5) */}

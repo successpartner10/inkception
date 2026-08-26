@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 // Cache-proof version tag (spec §16): unique per build, injected into HTML
 // meta + available as a compile-time constant. Guarantees no stale HTML.
-const APP_VERSION = `v0.21.2-${Date.now().toString(36)}`
+const APP_VERSION = `v0.22.0-${Date.now().toString(36)}`
 
 const versionPlugin = {
   name: 'inkception-version',
