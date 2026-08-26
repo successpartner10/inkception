@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.23.0 — Document tabs (multi-image, Photoshop-style)
+
+- **Open several images at once** as tabs under the header — "+" opens file(s) as new documents; ✕ closes a tab (not the last one)
+- **Copy/paste layers between documents**: select a layer → Copy (row button or ⌘C) → switch tab → "Paste layer" (tab bar or ⌘V)
+- Each document keeps its own photo, filters, layers, history and compare versions; the base photo is rebuilt and sent behind its layers on every switch
+- Layers are saved as plain data (src + geometry + frame/slot info) and restored deterministically — no dependency on fabric's JSON quirks
+- v1 scope note: text/shape drawings made directly on the canvas are not yet carried across tab switches
+
 ## 0.22.0 — Layers v2 (Photoshop-style)
 
 - **Reorder**: drag rows to reorder (real z-order on canvas) or use ▲▼ per row

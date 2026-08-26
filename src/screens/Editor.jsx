@@ -272,6 +272,13 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const [selectedLayer, setSelectedLayer] = useState('subject')
   const [selCollageId, setSelCollageId] = useState(null) // selected collage photo for the on-canvas bar
   const [pixelStudio, setPixelStudio] = useState(false) // Photoshop-style toolset bar
+  /* ---- document tabs: several images open at once, copy/paste between ---- */
+  const [docs, setDocs] = useState([{ id: 'doc-1', name: (project && project.name) || 'Untitled' }])
+  const [activeDocId, setActiveDocId] = useState('doc-1')
+  const activeDocIdRef = useRef('doc-1')
+  const newDocAwait = useRef(false)
+  const docLoadingRef = useRef(false)
+  const clipRef = useRef(null) // cross-document layer clipboard
   const [describeOpen, setDescribeOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -1009,6 +1016,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         img.filters = buildFabricFilters(filtersRef.current)
         if (imgObjRef.current) c.remove(imgObjRef.current)
         c.add(img)
+        // when a document tab loads, the base photo goes BEHIND its layers
+        if (docLoadingRef.current) {
+          try { c.sendObjectToBack(img) } catch { /* older fabric */ }
+          docLoadingRef.current = false
+        }
         c.requestRenderAll()
         imgObjRef.current = img
         // Compare v2: remember how the canvas looked after this change
@@ -1125,6 +1137,195 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     },
     [fit.w],
   )
+
+  /* save the CURRENT document's full state into its tab */
+  const saveCurrentDoc = useCallback(() => {
+    const c = fabricRef.current
+    // layers saved as PLAIN DATA (src + geometry) — deterministic restore,
+    // immune to fabric's loadFromJSON quirks. The base photo comes back via
+    // imageSrc; text/shapes are not part of document tabs in v1.
+    const layersData = decompRef.current
+      .filter((d) => d.img)
+      .map((d) => ({
+        id: d.id,
+        src: d.dataUrl || (d.img.getSrc ? d.img.getSrc() : null),
+        name: d.name, type: d.type,
+        left: d.img.left, top: d.img.top,
+        scaleX: d.img.scaleX, scaleY: d.img.scaleY,
+        angle: d.img.angle || 0, opacity: d.img.opacity == null ? 1 : d.img.opacity,
+        visible: d.visible !== false, locked: !!d.locked,
+        frame: d.img.ikFrame ? { ...d.img.ikFrame } : null,
+        slotRect: d.img.slotRect ? { ...d.img.slotRect } : null,
+      }))
+    setDocs((ds) => ds.map((d) => (d.id === activeDocIdRef.current ? {
+      ...d,
+      imageSrc: imageSrcRef.current,
+      filters: { ...filtersRef.current },
+      fx: { ...fxRef.current },
+      hist: histRef.current.slice(),
+      histPos: histPosRef.current,
+      visual: visualHistRef.current.slice(),
+      layersData,
+    } : d)))
+  }, [])
+
+  /* rebuild a document's layers from plain data (deterministic) */
+  const restoreDocLayers = async (doc) => {
+    const c = fabricRef.current
+    if (!c) return
+    decompRef.current = []
+    for (let i = 0; i < (doc.layersData || []).length; i++) {
+      const L = doc.layersData[i]
+      if (!L.src) continue
+      try {
+        const img = await FabricImage.fromURL(L.src)
+        img.set({
+          left: L.left, top: L.top, scaleX: L.scaleX, scaleY: L.scaleY,
+          angle: L.angle || 0, opacity: L.opacity == null ? 1 : L.opacity,
+          visible: L.visible !== false,
+          selectable: !L.locked, evented: !L.locked,
+          lockMovementX: !!L.locked, lockMovementY: !!L.locked,
+          lockScalingX: !!L.locked, lockScalingY: !!L.locked,
+        })
+        if (L.frame) {
+          img.set('ikFrame', L.frame)
+          img.set('clipPath', new Rect({ left: L.frame.x, top: L.frame.y, width: L.frame.w, height: L.frame.h, absolutePositioned: true }))
+        }
+        if (L.slotRect) img.set('slotRect', L.slotRect)
+        c.add(img)
+        decompRef.current.push({ id: L.id || `doc-layer-${Date.now()}-${i}`, img, name: L.name, type: L.type, dataUrl: L.src, visible: L.visible !== false, locked: !!L.locked })
+      } catch { /* skip broken layer */ }
+    }
+    // the base photo must sit under everything
+    if (imgObjRef.current && !c.getObjects().includes(imgObjRef.current)) {
+      c.add(imgObjRef.current)
+    }
+    if (imgObjRef.current) { try { c.sendObjectToBack(imgObjRef.current) } catch { /* noop */ } }
+    setExtraLayers(decompRef.current.map((x) => ({ ...x })))
+    c.requestRenderAll()
+  }
+
+  /* switch to another document tab (Photoshop-style) */
+  const switchDoc = (id) => {
+    if (id === activeDocIdRef.current) return
+    const target = docs.find((d) => d.id === id)
+    if (!target) return
+    saveCurrentDoc()
+    const c = fabricRef.current
+    decompRef.current = []
+    setExtraLayers([])
+    setSelFrameId(null)
+    setSelCollageId(null)
+    visualHistRef.current = (target.visual || []).slice()
+    setVisualHist(visualHistRef.current)
+    if (target.hist && target.hist.length) {
+      histRef.current = target.hist.slice()
+      histPosRef.current = target.histPos != null ? target.histPos : target.hist.length - 1
+    } else {
+      histRef.current = []
+      histPosRef.current = -1
+    }
+    setHistVer((v) => v + 1)
+    if (c) c.clear()
+    setFilters(target.filters || { ...DEFAULT_FILTERS })
+    setFx(target.fx || { ...QUICK_DEFAULTS })
+    setImageSrc(target.imageSrc)
+    imageSrcRef.current = target.imageSrc
+    activeDocIdRef.current = id
+    setActiveDocId(id)
+    // layers rebuild once the base has been placed
+    setTimeout(() => { restoreDocLayers(target) }, 350)
+  }
+
+  /* open files as NEW document tabs */
+  const openFilesAsDocs = async (files) => {
+    for (const f of files) {
+      const url = URL.createObjectURL(f)
+      const clean = (f.name || 'Untitled').replace(/\.[^.]+$/, '').slice(0, 24)
+      const id = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      saveCurrentDoc()
+      decompRef.current = []
+      setExtraLayers([])
+      visualHistRef.current = []
+      setVisualHist([])
+      histRef.current = []
+      histPosRef.current = -1
+      if (fabricRef.current) fabricRef.current.clear()
+      setDocs((ds) => [...ds, { id, name: clean }])
+      activeDocIdRef.current = id
+      setActiveDocId(id)
+      await loadIntoCanvas(url, `Open — ${clean}`)
+    }
+    showToast('Opened as new document tabs — copy/paste layers between them (⌘C / ⌘V)', 'layers')
+  }
+
+  const closeDoc = (id) => {
+    if (docs.length <= 1) { showToast('This is the only document', 'info'); return }
+    const idx = docs.findIndex((d) => d.id === id)
+    const remaining = docs.filter((d) => d.id !== id)
+    setDocs(remaining)
+    if (id === activeDocIdRef.current) {
+      const next = remaining[Math.max(0, idx - 1)]
+      activeDocIdRef.current = next.id
+      setActiveDocId(next.id)
+      // restore that doc's state
+      if (next.imageSrc) {
+        decompRef.current = []
+        setExtraLayers([])
+        const c = fabricRef.current
+        if (c) c.clear()
+        setTimeout(() => { restoreDocLayers(next) }, 350)
+        visualHistRef.current = (next.visual || []).slice()
+        setVisualHist(visualHistRef.current)
+        if (next.hist && next.hist.length) {
+          histRef.current = next.hist.slice()
+          histPosRef.current = next.histPos != null ? next.histPos : next.hist.length - 1
+          setHistVer((v) => v + 1)
+        }
+        setFilters(next.filters || { ...DEFAULT_FILTERS })
+        setFx(next.fx || { ...QUICK_DEFAULTS })
+        setImageSrc(next.imageSrc)
+        imageSrcRef.current = next.imageSrc
+      }
+    }
+  }
+
+  /* copy/paste layers ACROSS documents */
+  const copyActiveLayer = async () => {
+    const c = fabricRef.current
+    const o = c && c.getActiveObject && c.getActiveObject()
+    if (!o) { showToast('Select a layer on the canvas first', 'info'); return }
+    const known = decompRef.current.find((d) => d.img === o)
+    const meta = known
+      ? { id: known.id, name: known.name, type: known.type, dataUrl: known.dataUrl, locked: !!known.locked }
+      : { id: null, name: o.ikMeta?.name || (isTextObject(o) ? 'Text' : 'Layer'), type: o.ikMeta?.type || (isTextObject(o) ? 'Text' : 'Layer'), dataUrl: o.ikMeta?.dataUrl || null, locked: false }
+    try {
+      const clone = await o.clone()
+      clipRef.current = { obj: clone, meta }
+      showToast(`Copied "${meta.name}" — switch tabs and Paste (⌘V)`, 'copy')
+    } catch {
+      showToast('Could not copy this layer', 'close')
+    }
+  }
+
+  const pasteLayer = async () => {
+    const c = fabricRef.current
+    if (!clipRef.current || !c) { showToast('Nothing copied yet', 'info'); return }
+    try {
+      const clone = await clipRef.current.obj.clone()
+      clone.set({ left: (clone.left || 0) + 36, top: (clone.top || 0) + 36 })
+      c.add(clone)
+      const id = `paste-${Date.now()}`
+      const name = `${clipRef.current.meta.name || 'Layer'} copy`
+      decompRef.current.push({ id, img: clone, name, type: clipRef.current.meta.type || 'Layer', dataUrl: clipRef.current.meta.dataUrl, visible: true, locked: false })
+      setExtraLayers(decompRef.current.map((x) => ({ ...x })))
+      c.setActiveObject(clone)
+      c.requestRenderAll()
+      showToast(`Pasted "${name}"`, 'check')
+    } catch {
+      showToast('Paste failed', 'close')
+    }
+  }
 
   const revertToOriginal = () => {
     if (!histRef.current.length) return
@@ -1315,6 +1516,17 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
       } else if (mod && k === 'o') {
         e.preventDefault()
         fileRef.current && fileRef.current.click()
+      } else if (mod && (k === 'c' || k === 'v')) {
+        // copy/paste layers across document tabs — never hijack text inputs
+        const el = document.activeElement
+        const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+        const c2 = fabricRef.current
+        const act = c2 && c2.getActiveObject && c2.getActiveObject()
+        const editing = act && act.isEditing
+        if (!typing && !editing) {
+          if (k === 'c' && act) { e.preventDefault(); copyActiveLayer() }
+          else if (k === 'v' && clipRef.current) { e.preventDefault(); pasteLayer() }
+        }
       } else if (mod && k === '0') {
         e.preventDefault()
         zoomFit()
@@ -1440,6 +1652,21 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
     ex.img.set('opacity', pct / 100)
     if (fabricRef.current) fabricRef.current.requestRenderAll()
     setExtraLayers((xs) => xs.map((x) => (x.id === id ? { ...x, opacity: pct } : x)))
+  }
+
+  /* copy a layer by id (Layers panel) — cross-document clipboard */
+  const copyLayerById = async (id) => {
+    const ex = decompRef.current.find((d) => d.id === id)
+    const c = fabricRef.current
+    if (!ex || !ex.img || !c) return
+    try {
+      c.setActiveObject(ex.img)
+      const clone = await ex.img.clone()
+      clipRef.current = { obj: clone, meta: { id: ex.id, name: ex.name, type: ex.type, dataUrl: ex.dataUrl, locked: !!ex.locked } }
+      showToast(`Copied "${ex.name}" — switch tabs and Paste (⌘V or the tab bar)`, 'copy')
+    } catch {
+      showToast('Could not copy this layer', 'close')
+    }
   }
 
   const selectLayerById = (id) => {
@@ -4078,6 +4305,11 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
   const importFiles = async (fileList) => {
     let files = Array.from(fileList || []).filter((f) => f && f.type && f.type.startsWith('image/'))
     if (!files.length) return
+    if (newDocAwait.current) {
+      newDocAwait.current = false
+      await openFilesAsDocs(files)
+      return
+    }
     if (frameAwait.current) {
       frameAwait.current = false
       try {
@@ -4458,6 +4690,7 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
         onToggleGroupHidden={toggleGroupHidden}
         onDeleteGroup={deleteLayerGroup}
         onToggleGroupCollapse={toggleGroupCollapse}
+        onCopyLayer={copyLayerById}
       />
     )
   }
@@ -4558,6 +4791,52 @@ export function Editor({ project, onBack, onRename = () => {}, pendingCollage = 
           <IconBtn icon="gear" title="Settings" active={settingsOpen} onClick={() => openModal(setSettingsOpen)} />
         </div>
       </header>
+
+      {/* document tabs — multiple images open at once, Photoshop-style */}
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 py-1.5 no-scrollbar">
+        {docs.map((d) => (
+          <div
+            key={d.id}
+            className={cn(
+              'group flex shrink-0 items-center gap-1.5 rounded-ink border px-2.5 py-1.5 transition-colors',
+              d.id === activeDocId ? 'border-white bg-surface-2' : 'border-line text-dim hover:border-line-2 hover:text-fg',
+            )}
+          >
+            <button type="button" onClick={() => switchDoc(d.id)} className="flex items-center gap-1.5" title={`Switch to ${d.name}`}>
+              <Icon name="image" size={13} />
+              <span className="max-w-32 truncate text-[0.75rem] font-bold uppercase tracking-[0.06em]">{d.name}</span>
+            </button>
+            {docs.length > 1 && (
+              <button
+                type="button"
+                onClick={() => closeDoc(d.id)}
+                aria-label={`Close ${d.name}`}
+                className="rounded-ink px-1 text-[0.6875rem] text-mute opacity-60 transition-opacity hover:text-danger group-hover:opacity-100"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => { newDocAwait.current = true; if (fileRef.current) fileRef.current.click() }}
+          title="Open image(s) as new document tabs"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-ink border border-dashed border-line text-dim transition-colors hover:border-white hover:text-fg"
+        >
+          <Icon name="plus" size={14} />
+        </button>
+        {clipRef.current && (
+          <button
+            type="button"
+            onClick={pasteLayer}
+            className="ml-1 shrink-0 rounded-ink border border-line px-2 py-1 text-[0.6875rem] font-bold uppercase tracking-[0.08em] text-dim hover:border-white hover:text-fg"
+            title="Paste the copied layer into this document (⌘V)"
+          >
+            Paste layer
+          </button>
+        )}
+      </div>
 
       {/* website-style section menu — every workflow one obvious click away */}
       <SectionNav items={EDITOR_SECTIONS} onPick={goSection} active={tab} />
@@ -7573,7 +7852,7 @@ function LayersExtraList({
   onMoveLayer, onReorderLayer, onToggleVisibility, onToggleLockLayer, onSetLayerOpacity,
   onSelectLayer, onDeleteLayer, onCreateGroup, onAssignToGroup, onToggleGroupHidden,
   onDeleteGroup, onToggleGroupCollapse, onFitPhoto, onRotatePhoto, onShiftSlot,
-  onReplacePhoto, onRemovePhoto, showToast,
+  onReplacePhoto, onRemovePhoto, showToast, onCopyLayer,
 }) {
   const [selId, setSelId] = useState(null)
   const [dragId, setDragId] = useState(null)
@@ -7657,6 +7936,9 @@ function LayersExtraList({
               {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           </label>
+          {onCopyLayer && (
+            <button type="button" className={mini} onClick={() => onCopyLayer(l.id)} title="Copy this layer — switch document tabs and paste (⌘V)">Copy</button>
+          )}
           {l.type === 'Collage' && onFitPhoto && (
             <span className="flex items-center gap-1">
               <button type="button" className={mini} onClick={() => onFitPhoto(l.id, 'contain')}>Fit</button>
@@ -7740,7 +8022,7 @@ function LayersTab({
   onFitPhoto, onRotatePhoto, onShiftSlot, onReplacePhoto, onRemovePhoto, imageSrc, showToast, layerOpacity, setLayerOpacity, blendMode, setBlendMode, onDuplicateLayer,
   search = '',
   layerGroups = [], onMoveLayer, onReorderLayer, onToggleLockLayer, onSetLayerOpacity, onSelectLayer,
-  onCreateGroup, onAssignToGroup, onToggleGroupHidden, onDeleteGroup, onToggleGroupCollapse,
+  onCreateGroup, onAssignToGroup, onToggleGroupHidden, onDeleteGroup, onToggleGroupCollapse, onCopyLayer,
 }) {
   const previews = {
     vignette: (
@@ -7812,6 +8094,7 @@ function LayersTab({
           onReplacePhoto={onReplacePhoto}
           onRemovePhoto={onRemovePhoto}
           showToast={showToast}
+          onCopyLayer={onCopyLayer}
         />
       </div>
 
